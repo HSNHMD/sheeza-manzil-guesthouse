@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
-from ..models import db, User
+from ..models import db, User, Room
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -77,3 +77,52 @@ def staff():
             return redirect(url_for('auth.staff'))
 
     return render_template('auth/staff.html', users=users)
+
+
+SEED_ROOMS = [
+    # (number, name,          type,    floor, capacity, price)
+    ('1', 'Deluxe Double', 'Deluxe',   0,     2,        600.0),
+    ('2', 'Deluxe Double', 'Deluxe',   0,     2,        600.0),
+    ('3', 'Deluxe Double', 'Deluxe',   0,     2,        600.0),
+    ('4', 'Deluxe Double', 'Deluxe',   0,     2,        600.0),
+    ('5', 'Deluxe Double', 'Deluxe',   1,     2,        600.0),
+    ('6', 'Deluxe Double', 'Deluxe',   1,     2,        600.0),
+    ('7', 'Twin Room',     'Twin',     1,     2,        600.0),
+    ('8', 'Twin Room',     'Twin',     0,     2,        600.0),
+]
+
+
+@auth_bp.route('/admin/seed', methods=['GET', 'POST'])
+@login_required
+def seed():
+    if not current_user.is_admin:
+        flash('Admin access required.', 'error')
+        return redirect(url_for('auth.index'))
+
+    existing = Room.query.count()
+    seeded = []
+    skipped = []
+
+    if request.method == 'POST':
+        for number, name, rtype, floor, cap, price in SEED_ROOMS:
+            if Room.query.filter_by(number=number).first():
+                skipped.append(number)
+            else:
+                room = Room(
+                    number=number, name=name, room_type=rtype,
+                    floor=floor, capacity=cap, price_per_night=price,
+                    amenities='WiFi, AC, TV, En-suite Bathroom'
+                )
+                db.session.add(room)
+                seeded.append(number)
+        db.session.commit()
+
+        if seeded:
+            flash(f'Seeded {len(seeded)} room(s): {", ".join(seeded)}.', 'success')
+        if skipped:
+            flash(f'Skipped {len(skipped)} already-existing room(s): {", ".join(skipped)}.', 'info')
+        if not seeded and not skipped:
+            flash('Nothing to seed.', 'info')
+        return redirect(url_for('auth.seed'))
+
+    return render_template('auth/seed.html', existing=existing, seed_rooms=SEED_ROOMS)

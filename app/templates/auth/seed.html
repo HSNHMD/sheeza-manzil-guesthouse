@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}Seed Database — Sheeza Manzil Guesthouse{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto space-y-5">
+  <div class="flex items-center gap-3">
+    <a href="{{ url_for('rooms.index') }}" class="text-gray-400 hover:text-gray-600">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <h1 class="text-xl font-bold text-gray-800">Seed Database</h1>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-lg font-bold shrink-0">
+        🏨
+      </div>
+      <div>
+        <p class="font-semibold text-gray-800">Sheeza Manzil Guesthouse — Room Setup</p>
+        <p class="text-sm text-gray-500">Currently <strong>{{ existing }}</strong> room(s) in the database.</p>
+      </div>
+    </div>
+
+    <table class="w-full text-sm mb-5">
+      <thead class="bg-gray-50 border-b border-gray-200">
+        <tr>
+          <th class="text-left px-3 py-2 font-medium text-gray-600">Room</th>
+          <th class="text-left px-3 py-2 font-medium text-gray-600">Type</th>
+          <th class="text-left px-3 py-2 font-medium text-gray-600">Floor</th>
+          <th class="text-right px-3 py-2 font-medium text-gray-600">Price</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for number, name, rtype, floor, cap, price in seed_rooms %}
+        <tr>
+          <td class="px-3 py-2 font-medium text-gray-800">Room {{ number }}</td>
+          <td class="px-3 py-2 text-gray-600">{{ name }}</td>
+          <td class="px-3 py-2 text-gray-600">{{ 'Ground Floor' if floor == 0 else 'First Floor' }}</td>
+          <td class="px-3 py-2 text-right text-gray-800">MVR {{ price|int }}/night</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if existing >= seed_rooms|length %}
+    <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 mb-4">
+      ✅ All {{ seed_rooms|length }} rooms are already in the database. You can still run the seed — existing rooms will be skipped.
+    </div>
+    {% else %}
+    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800 mb-4">
+      ⚠️ {{ seed_rooms|length - existing }} room(s) are missing. Click the button below to add them.
+    </div>
+    {% endif %}
+
+    <form method="POST">
+      <button type="submit"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors">
+        Run Seed (skips existing rooms)
+      </button>
+    </form>
+  </div>
+
+  <p class="text-xs text-gray-400 text-center">
+    This page is only accessible to admin users.
+    <a href="{{ url_for('rooms.index') }}" class="underline hover:text-gray-600">Back to Rooms</a>
+  </p>
+</div>
+{% endblock %}
