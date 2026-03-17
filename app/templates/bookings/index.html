@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}Bookings{% endblock %}
+{% block content %}
+<div class="space-y-5">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-xl font-bold text-gray-800">Bookings</h1>
+    <a href="{{ url_for('bookings.new') }}"
+      class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+      + New Booking
+    </a>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-3 gap-3">
+    <div class="bg-blue-50 rounded-xl border border-blue-200 p-4 text-center">
+      <p class="text-xs text-blue-600 font-medium">Arrivals Today</p>
+      <p class="text-2xl font-bold text-blue-700 mt-1">{{ arrivals_today }}</p>
+    </div>
+    <div class="bg-green-50 rounded-xl border border-green-200 p-4 text-center">
+      <p class="text-xs text-green-600 font-medium">In-House</p>
+      <p class="text-2xl font-bold text-green-700 mt-1">{{ in_house }}</p>
+    </div>
+    <div class="bg-orange-50 rounded-xl border border-orange-200 p-4 text-center">
+      <p class="text-xs text-orange-600 font-medium">Departures</p>
+      <p class="text-2xl font-bold text-orange-700 mt-1">{{ departures_today }}</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="flex flex-wrap gap-2">
+    <input type="text" name="search" value="{{ search }}" placeholder="Search guest, ref, room..."
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto flex-1 min-w-48">
+    <select name="status" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All Status</option>
+      <option value="confirmed" {% if status_filter=='confirmed' %}selected{% endif %}>Confirmed</option>
+      <option value="checked_in" {% if status_filter=='checked_in' %}selected{% endif %}>Checked In</option>
+      <option value="checked_out" {% if status_filter=='checked_out' %}selected{% endif %}>Checked Out</option>
+      <option value="cancelled" {% if status_filter=='cancelled' %}selected{% endif %}>Cancelled</option>
+      <option value="unpaid" {% if status_filter=='unpaid' %}selected{% endif %}>⚠ Unpaid</option>
+    </select>
+    <input type="date" name="date" value="{{ date_filter }}"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Search</button>
+    {% if search or status_filter or date_filter %}
+    <a href="{{ url_for('bookings.index') }}" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    {% if bookings %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Ref</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Guest</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Room</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Dates</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Payment</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Total</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for b in bookings %}
+          <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='{{ url_for('bookings.detail', booking_id=b.id) }}'">
+            <td class="px-4 py-3 font-mono text-xs text-blue-600 font-medium">{{ b.booking_ref }}</td>
+            <td class="px-4 py-3">
+              <p class="font-medium text-gray-800">{{ b.guest.full_name }}</p>
+              <p class="text-xs text-gray-500">{{ b.guest.phone or b.guest.email or '' }}</p>
+            </td>
+            <td class="px-4 py-3 hidden sm:table-cell">
+              <span class="font-medium text-gray-800">{{ b.room.number }}</span>
+              <p class="text-xs text-gray-500">{{ b.room.room_type }}</p>
+            </td>
+            <td class="px-4 py-3 text-gray-600 hidden md:table-cell">
+              {{ b.check_in_date.strftime('%b %d') }} → {{ b.check_out_date.strftime('%b %d, %Y') }}
+              <p class="text-xs text-gray-400">{{ b.nights }} night{{ 's' if b.nights != 1 }}</p>
+            </td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-0.5 rounded-full text-xs font-medium
+                {% if b.status == 'confirmed' %}bg-yellow-100 text-yellow-700
+                {% elif b.status == 'checked_in' %}bg-green-100 text-green-700
+                {% elif b.status == 'checked_out' %}bg-gray-100 text-gray-600
+                {% else %}bg-red-100 text-red-600{% endif %}">
+                {{ b.status.replace('_',' ').title() }}
+              </span>
+              {% if b.check_in_date == today and b.status == 'confirmed' %}
+              <span class="ml-1 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded-full">Today</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 hidden sm:table-cell">
+              {% if b.invoice %}
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium
+                  {% if b.invoice.payment_status == 'paid' %}bg-green-100 text-green-700
+                  {% elif b.invoice.payment_status == 'partial' %}bg-yellow-100 text-yellow-700
+                  {% else %}bg-red-100 text-red-600{% endif %}">
+                  {{ b.invoice.payment_status.title() }}
+                </span>
+              {% elif b.status == 'confirmed' %}
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">Unpaid</span>
+              {% else %}
+                <span class="text-gray-300 text-xs">—</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-gray-800 font-medium hidden sm:table-cell">MVR {{ '%.0f'|format(b.total_amount) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-12 text-center">
+      <p class="text-gray-400 text-lg mb-2">No bookings found</p>
+      <a href="{{ url_for('bookings.new') }}" class="text-blue-600 hover:underline text-sm">Create a booking</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

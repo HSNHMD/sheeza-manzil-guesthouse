@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% block title %}Housekeeping{% endblock %}
+{% block content %}
+<div class="space-y-5">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-xl font-bold text-gray-800">Housekeeping Board</h1>
+    <button onclick="document.getElementById('bulkModal').classList.remove('hidden')"
+      class="border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+      Bulk Update
+    </button>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-3 gap-3">
+    <div class="bg-green-50 rounded-xl border border-green-200 p-4 text-center">
+      <p class="text-xs text-green-600 font-medium">Clean</p>
+      <p class="text-2xl font-bold text-green-700 mt-1">{{ stats.clean }}</p>
+    </div>
+    <div class="bg-red-50 rounded-xl border border-red-200 p-4 text-center">
+      <p class="text-xs text-red-600 font-medium">Dirty</p>
+      <p class="text-2xl font-bold text-red-700 mt-1">{{ stats.dirty }}</p>
+    </div>
+    <div class="bg-yellow-50 rounded-xl border border-yellow-200 p-4 text-center">
+      <p class="text-xs text-yellow-600 font-medium">In Progress</p>
+      <p class="text-2xl font-bold text-yellow-700 mt-1">{{ stats.in_progress }}</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="flex flex-wrap gap-2">
+    <select name="status" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All Status</option>
+      {% for s in hk_statuses %}
+      <option value="{{ s }}" {% if status_filter==s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
+      {% endfor %}
+    </select>
+    <select name="floor" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All Floors</option>
+      {% for f in floors %}
+      <option value="{{ f }}" {% if floor_filter|string==f|string %}selected{% endif %}>Floor {{ f }}</option>
+      {% endfor %}
+    </select>
+    {% if status_filter or floor_filter %}
+    <a href="{{ url_for('housekeeping.index') }}" class="px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- Room Grid -->
+  {% if rooms %}
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+    {% for room in rooms %}
+    <div class="bg-white rounded-xl border-2 overflow-hidden
+      {% if room.housekeeping_status == 'clean' %}border-green-200
+      {% elif room.housekeeping_status == 'in_progress' %}border-yellow-300
+      {% else %}border-red-200{% endif %}">
+      <div class="p-3">
+        <div class="flex items-start justify-between mb-2">
+          <div>
+            <p class="font-bold text-gray-800 text-lg">{{ room.number }}</p>
+            <p class="text-xs text-gray-500">Floor {{ room.floor }}</p>
+          </div>
+          <span class="text-lg">
+            {% if room.housekeeping_status == 'clean' %}✅
+            {% elif room.housekeeping_status == 'in_progress' %}🔄
+            {% else %}🧹{% endif %}
+          </span>
+        </div>
+
+        <div class="flex gap-1 mb-2">
+          <span class="text-xs px-1.5 py-0.5 rounded
+            {% if room.status == 'available' %}bg-green-100 text-green-700
+            {% elif room.status == 'occupied' %}bg-blue-100 text-blue-700
+            {% elif room.status == 'cleaning' %}bg-yellow-100 text-yellow-700
+            {% else %}bg-red-100 text-red-700{% endif %}">
+            {{ room.status.title() }}
+          </span>
+        </div>
+
+        <!-- Quick action buttons -->
+        <div class="space-y-1">
+          {% if room.housekeeping_status == 'dirty' %}
+          <form method="POST" action="{{ url_for('housekeeping.update', room_id=room.id) }}">
+            <input type="hidden" name="action" value="started_cleaning">
+            <button type="submit" class="w-full text-xs py-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded-lg transition-colors">
+              Start Cleaning
+            </button>
+          </form>
+          {% elif room.housekeeping_status == 'in_progress' %}
+          <form method="POST" action="{{ url_for('housekeeping.update', room_id=room.id) }}">
+            <input type="hidden" name="action" value="completed">
+            <button type="submit" class="w-full text-xs py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors">
+              Mark Clean
+            </button>
+          </form>
+          {% endif %}
+
+          <button onclick="openActionModal({{ room.id }}, '{{ room.number }}')"
+            class="w-full text-xs py-1.5 border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-lg transition-colors">
+            Log Action
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
+    <p class="text-gray-400">No rooms found</p>
+  </div>
+  {% endif %}
+
+  <!-- Recent Activity -->
+  {% if recent_logs %}
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-100">
+      <h2 class="font-semibold text-gray-700 text-sm">Recent Activity</h2>
+    </div>
+    <div class="divide-y divide-gray-50">
+      {% for log in recent_logs %}
+      <div class="px-4 py-2.5 flex items-start gap-3 text-sm">
+        <span class="text-gray-400 shrink-0 text-xs mt-0.5">{{ log.created_at.strftime('%H:%M') }}</span>
+        <div class="flex-1 min-w-0">
+          <span class="font-medium text-gray-700">Room {{ log.room.number }}</span>
+          <span class="text-gray-500"> — {{ log.action.replace('_',' ').title() }}</span>
+          {% if log.staff %}<span class="text-gray-400 text-xs"> by {{ log.staff.username }}</span>{% endif %}
+          {% if log.notes %}<p class="text-xs text-gray-400 truncate">{{ log.notes }}</p>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Action Modal -->
+<div id="actionModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-sm">
+    <div class="flex items-center justify-between p-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800">Log Action — Room <span id="modalRoom"></span></h2>
+      <button onclick="document.getElementById('actionModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <form id="actionForm" method="POST" class="p-4 space-y-3">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Action</label>
+        <select name="action" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="started_cleaning">Started Cleaning</option>
+          <option value="completed">Completed / Mark Clean</option>
+          <option value="inspected">Inspected</option>
+          <option value="maintenance_request">Maintenance Request</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+        <textarea name="notes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">Submit</button>
+    </form>
+  </div>
+</div>
+
+<!-- Bulk Modal -->
+<div id="bulkModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-sm">
+    <div class="flex items-center justify-between p-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800">Bulk Update Rooms</h2>
+      <button onclick="document.getElementById('bulkModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('housekeeping.bulk_update') }}" class="p-4 space-y-3">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-2">Select Rooms</label>
+        <div class="space-y-1.5 max-h-48 overflow-y-auto">
+          {% for room in rooms %}
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="room_ids" value="{{ room.id }}" class="rounded">
+            <span class="font-medium">{{ room.number }}</span>
+            <span class="text-gray-500 text-xs">({{ room.housekeeping_status.replace('_',' ') }})</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Action</label>
+        <select name="action" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="mark_clean">Mark All Clean</option>
+          <option value="mark_dirty">Mark All Dirty</option>
+        </select>
+      </div>
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg">Apply</button>
+    </form>
+  </div>
+</div>
+
+<script>
+function openActionModal(roomId, roomNumber) {
+  document.getElementById('actionModal').classList.remove('hidden');
+  document.getElementById('modalRoom').textContent = roomNumber;
+  document.getElementById('actionForm').action = `/housekeeping/update/${roomId}`;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Invoices{% endblock %}
+{% block content %}
+<div class="space-y-5">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-xl font-bold text-gray-800">Invoices</h1>
+    <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm">
+      <span class="text-red-600 font-medium">Outstanding: </span>
+      <span class="text-red-800 font-bold">MVR {{ '%.0f'|format(total_outstanding) }}</span>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="flex flex-wrap gap-2">
+    <input type="text" name="search" value="{{ search }}" placeholder="Invoice # or booking ref..."
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-48">
+    <select name="status" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All</option>
+      <option value="unpaid" {% if status_filter=='unpaid' %}selected{% endif %}>Unpaid</option>
+      <option value="partial" {% if status_filter=='partial' %}selected{% endif %}>Partial</option>
+      <option value="paid" {% if status_filter=='paid' %}selected{% endif %}>Paid</option>
+    </select>
+    <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg">Search</button>
+    {% if search or status_filter %}
+    <a href="{{ url_for('invoices.index') }}" class="px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg">Clear</a>
+    {% endif %}
+  </form>
+
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    {% if invoices %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Invoice #</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Guest</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Date</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Total</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-600">Balance</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for inv in invoices %}
+          <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='{{ url_for('invoices.detail', invoice_id=inv.id) }}'">
+            <td class="px-4 py-3 font-mono text-xs text-blue-600 font-medium">{{ inv.invoice_number }}</td>
+            <td class="px-4 py-3 hidden sm:table-cell">
+              <p class="font-medium text-gray-800">{{ inv.booking.guest.full_name }}</p>
+              <p class="text-xs text-gray-500">Room {{ inv.booking.room.number }}</p>
+            </td>
+            <td class="px-4 py-3 text-gray-600 hidden md:table-cell">{{ inv.issue_date.strftime('%b %d, %Y') }}</td>
+            <td class="px-4 py-3 text-right font-medium text-gray-800">MVR {{ '%.0f'|format(inv.total_amount) }}</td>
+            <td class="px-4 py-3 text-right font-medium
+              {% if inv.balance_due > 0 %}text-red-600{% else %}text-green-600{% endif %}">
+              MVR {{ '%.0f'|format(inv.balance_due) }}
+            </td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-0.5 rounded-full text-xs font-medium
+                {% if inv.payment_status == 'paid' %}bg-green-100 text-green-700
+                {% elif inv.payment_status == 'partial' %}bg-yellow-100 text-yellow-700
+                {% else %}bg-red-100 text-red-600{% endif %}">
+                {{ inv.payment_status.title() }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-12 text-center">
+      <p class="text-gray-400">No invoices found</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

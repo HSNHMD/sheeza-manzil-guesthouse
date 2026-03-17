@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% block title %}New Booking{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="flex items-center gap-3 mb-5">
+    <a href="{{ url_for('bookings.index') }}" class="text-gray-400 hover:text-gray-600">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <h1 class="text-xl font-bold text-gray-800">New Booking</h1>
+  </div>
+
+  <form method="POST" class="space-y-5">
+    <!-- Room & Dates -->
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="font-semibold text-gray-700 mb-4">Room & Dates</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Room <span class="text-red-500">*</span></label>
+          <select name="room_id" required id="roomSelect"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select a room...</option>
+            {% for room in rooms %}
+            <option value="{{ room.id }}" data-price="{{ room.price_per_night }}"
+              {% if request.args.get('room_id')|int == room.id %}selected{% endif %}>
+              Room {{ room.number }} — {{ room.room_type }} · MVR {{ '%.0f'|format(room.price_per_night) }}/night · {{ room.capacity }} guest{{ 's' if room.capacity > 1 }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Check-in <span class="text-red-500">*</span></label>
+            <input type="date" name="check_in_date" id="checkIn" required
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Check-out <span class="text-red-500">*</span></label>
+            <input type="date" name="check_out_date" id="checkOut" required
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Number of Guests</label>
+          <input type="number" name="num_guests" value="1" min="1"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <!-- Total preview -->
+        <div id="totalPreview" class="hidden bg-blue-50 rounded-lg p-3 text-sm">
+          <span class="text-blue-700">Estimated total: <strong id="totalAmount" class="text-blue-800"></strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Guest -->
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="font-semibold text-gray-700 mb-4">Guest</h2>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Select Guest</label>
+        <select name="guest_id" id="guestSelect"
+          class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="new">+ New Guest</option>
+          {% for g in guests %}
+          <option value="{{ g.id }}">{{ g.full_name }}{% if g.phone %} · {{ g.phone }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- New guest fields -->
+      <div id="newGuestFields" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">First Name <span class="text-red-500">*</span></label>
+            <input type="text" name="first_name"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Last Name <span class="text-red-500">*</span></label>
+            <input type="text" name="last_name"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            WhatsApp / Phone <span class="text-red-500">*</span>
+            <span class="ml-1 text-xs font-normal text-green-600 bg-green-50 px-1.5 py-0.5 rounded">WhatsApp primary</span>
+          </label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm select-none">+</span>
+            <input type="tel" name="phone" id="phoneInput"
+              placeholder="9607XXXXXX"
+              class="w-full pl-6 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+          </div>
+          <p class="text-xs text-gray-400 mt-1">Include country code, e.g. 9607123456 for Maldives</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input type="email" name="email"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ID Type</label>
+            <select name="id_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select...</option>
+              <option value="passport">Passport</option>
+              <option value="national_id">National ID</option>
+              <option value="driver_license">Driver's License</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ID Number</label>
+            <input type="text" name="id_number"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Nationality</label>
+          <input type="text" name="nationality"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+    </div>
+
+    <!-- Special Requests -->
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Special Requests</label>
+      <textarea name="special_requests" rows="2"
+        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        placeholder="Early check-in, extra pillows, etc."></textarea>
+    </div>
+
+    <div class="flex gap-3">
+      <a href="{{ url_for('bookings.index') }}"
+        class="flex-1 text-center px-4 py-3 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</a>
+      <button type="submit"
+        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-3 rounded-lg transition-colors">
+        Confirm Booking
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  const guestSelect = document.getElementById('guestSelect');
+  const newGuestFields = document.getElementById('newGuestFields');
+
+  function toggleGuestFields() {
+    const isNew = guestSelect.value === 'new';
+    newGuestFields.style.display = isNew ? 'block' : 'none';
+    newGuestFields.querySelectorAll('input[name="first_name"], input[name="last_name"]').forEach(el => {
+      el.required = isNew;
+    });
+    const phoneInput = document.getElementById('phoneInput');
+    if (phoneInput) phoneInput.required = isNew;
+  }
+  guestSelect.addEventListener('change', toggleGuestFields);
+  toggleGuestFields();
+
+  // Price calculator
+  const checkIn = document.getElementById('checkIn');
+  const checkOut = document.getElementById('checkOut');
+  const roomSelect = document.getElementById('roomSelect');
+
+  function updateTotal() {
+    const inDate = checkIn.value ? new Date(checkIn.value) : null;
+    const outDate = checkOut.value ? new Date(checkOut.value) : null;
+    const selected = roomSelect.options[roomSelect.selectedIndex];
+    const price = selected?.dataset?.price;
+
+    if (inDate && outDate && price && outDate > inDate) {
+      const nights = (outDate - inDate) / (1000 * 60 * 60 * 24);
+      const total = (nights * parseFloat(price)).toFixed(2);
+      document.getElementById('totalAmount').textContent = `MVR ${total} (${nights} night${nights !== 1 ? 's' : ''})`;
+      document.getElementById('totalPreview').classList.remove('hidden');
+    } else {
+      document.getElementById('totalPreview').classList.add('hidden');
+    }
+  }
+
+  checkIn.addEventListener('change', updateTotal);
+  checkOut.addEventListener('change', updateTotal);
+  roomSelect.addEventListener('change', updateTotal);
+
+  // Set min date to today
+  const today = new Date().toISOString().split('T')[0];
+  checkIn.min = today;
+  checkIn.addEventListener('change', () => { checkOut.min = checkIn.value; });
+</script>
+{% endblock %}

@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block title %}Rooms{% endblock %}
+{% block content %}
+<div class="space-y-5">
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-xl font-bold text-gray-800">Rooms</h1>
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('rooms.new') }}"
+      class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+      + Add Room
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 font-medium">Total Rooms</p>
+      <p class="text-2xl font-bold text-gray-800 mt-1">{{ stats.total }}</p>
+    </div>
+    <div class="bg-green-50 rounded-xl border border-green-200 p-4">
+      <p class="text-xs text-green-600 font-medium">Available</p>
+      <p class="text-2xl font-bold text-green-700 mt-1">{{ stats.available }}</p>
+    </div>
+    <div class="bg-blue-50 rounded-xl border border-blue-200 p-4">
+      <p class="text-xs text-blue-600 font-medium">Occupied</p>
+      <p class="text-2xl font-bold text-blue-700 mt-1">{{ stats.occupied }}</p>
+    </div>
+    <div class="bg-yellow-50 rounded-xl border border-yellow-200 p-4">
+      <p class="text-xs text-yellow-600 font-medium">Maintenance/Cleaning</p>
+      <p class="text-2xl font-bold text-yellow-700 mt-1">{{ stats.maintenance + stats.cleaning }}</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="flex flex-wrap gap-2">
+    <select name="status" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All Status</option>
+      <option value="available" {% if status_filter=='available' %}selected{% endif %}>Available</option>
+      <option value="occupied" {% if status_filter=='occupied' %}selected{% endif %}>Occupied</option>
+      <option value="cleaning" {% if status_filter=='cleaning' %}selected{% endif %}>Cleaning</option>
+      <option value="maintenance" {% if status_filter=='maintenance' %}selected{% endif %}>Maintenance</option>
+    </select>
+    <select name="type" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All Types</option>
+      {% for rt in room_types %}
+      <option value="{{ rt }}" {% if type_filter==rt %}selected{% endif %}>{{ rt }}</option>
+      {% endfor %}
+    </select>
+    <select name="floor" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All Floors</option>
+      {% for f in floors %}
+      <option value="{{ f }}" {% if floor_filter|string==f|string %}selected{% endif %}>Floor {{ f }}</option>
+      {% endfor %}
+    </select>
+    {% if status_filter or type_filter or floor_filter %}
+    <a href="{{ url_for('rooms.index') }}" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- Room Cards -->
+  {% if rooms %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    {% for room in rooms %}
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+      <!-- Status bar -->
+      <div class="h-1.5
+        {% if room.status == 'available' %}bg-green-400
+        {% elif room.status == 'occupied' %}bg-blue-500
+        {% elif room.status == 'cleaning' %}bg-yellow-400
+        {% else %}bg-red-400{% endif %}">
+      </div>
+      <div class="p-4">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <h3 class="font-bold text-gray-800 text-lg">{{ room.number }}</h3>
+            <p class="text-xs text-gray-500">{{ room.room_type }} · Floor {{ room.floor }}</p>
+          </div>
+          <div class="text-right">
+            <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium
+              {% if room.status == 'available' %}bg-green-100 text-green-700
+              {% elif room.status == 'occupied' %}bg-blue-100 text-blue-700
+              {% elif room.status == 'cleaning' %}bg-yellow-100 text-yellow-700
+              {% else %}bg-red-100 text-red-700{% endif %}">
+              {{ room.status.title() }}
+            </span>
+          </div>
+        </div>
+
+        {% if room.name %}
+        <p class="text-sm text-gray-600 mb-2">{{ room.name }}</p>
+        {% endif %}
+
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-sm text-gray-500">👥 {{ room.capacity }} guest{{ 's' if room.capacity > 1 }}</span>
+          <span class="font-semibold text-gray-800">MVR {{ '%.0f'|format(room.price_per_night) }}<span class="text-xs text-gray-400">/night</span></span>
+        </div>
+
+        <!-- HK status badge -->
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-xs px-2 py-0.5 rounded-full
+            {% if room.housekeeping_status == 'clean' %}bg-green-50 text-green-600
+            {% elif room.housekeeping_status == 'in_progress' %}bg-yellow-50 text-yellow-600
+            {% else %}bg-red-50 text-red-600{% endif %}">
+            🧹 {{ room.housekeeping_status.replace('_',' ').title() }}
+          </span>
+        </div>
+
+        {% if room.current_booking %}
+        <div class="text-xs bg-blue-50 rounded-lg p-2 mb-3">
+          <p class="font-medium text-blue-800">{{ room.current_booking.guest.full_name }}</p>
+          <p class="text-blue-600">Out: {{ room.current_booking.check_out_date.strftime('%b %d') }}</p>
+        </div>
+        {% endif %}
+
+        <div class="flex gap-2">
+          {% if current_user.is_admin %}
+          <a href="{{ url_for('rooms.edit', room_id=room.id) }}"
+            class="flex-1 text-center text-xs py-1.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">Edit</a>
+          {% endif %}
+          <button onclick="openStatusModal({{ room.id }}, '{{ room.number }}', '{{ room.status }}')"
+            class="flex-1 text-xs py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors">Status</button>
+          {% if room.status == 'available' %}
+          <a href="{{ url_for('bookings.new') }}?room_id={{ room.id }}"
+            class="flex-1 text-center text-xs py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">Book</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
+    <p class="text-gray-400 text-lg mb-2">No rooms found</p>
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('rooms.new') }}" class="text-blue-600 hover:underline text-sm">Add your first room</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Status Modal -->
+<div id="statusModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-xs">
+    <div class="flex items-center justify-between p-4 border-b border-gray-200">
+      <h2 class="font-semibold text-gray-800">Update Room <span id="modalRoomNumber"></span></h2>
+      <button onclick="document.getElementById('statusModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <form id="statusForm" method="POST" class="p-4 space-y-3">
+      <label class="block text-sm font-medium text-gray-700">Status</label>
+      <select name="status" id="modalStatus" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="available">Available</option>
+        <option value="occupied">Occupied</option>
+        <option value="cleaning">Cleaning</option>
+        <option value="maintenance">Maintenance</option>
+      </select>
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">Update</button>
+    </form>
+  </div>
+</div>
+
+<script>
+function openStatusModal(roomId, roomNumber, currentStatus) {
+  document.getElementById('statusModal').classList.remove('hidden');
+  document.getElementById('modalRoomNumber').textContent = roomNumber;
+  document.getElementById('statusForm').action = `/rooms/${roomId}/status`;
+  document.getElementById('modalStatus').value = currentStatus;
+}
+</script>
+{% endblock %}

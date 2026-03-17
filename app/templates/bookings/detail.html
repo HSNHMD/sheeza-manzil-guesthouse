@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% block title %}Booking {{ booking.booking_ref }}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5">
+  <div class="flex items-center gap-3">
+    <a href="{{ url_for('bookings.index') }}" class="text-gray-400 hover:text-gray-600">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div>
+      <h1 class="text-xl font-bold text-gray-800 font-mono">{{ booking.booking_ref }}</h1>
+      <span class="text-xs px-2 py-0.5 rounded-full font-medium
+        {% if booking.status == 'confirmed' %}bg-yellow-100 text-yellow-700
+        {% elif booking.status == 'checked_in' %}bg-green-100 text-green-700
+        {% elif booking.status == 'checked_out' %}bg-gray-100 text-gray-600
+        {% else %}bg-red-100 text-red-600{% endif %}">
+        {{ booking.status.replace('_',' ').title() }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Room & Dates -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <h2 class="font-semibold text-gray-700 mb-4">Booking Details</h2>
+    <div class="grid grid-cols-2 gap-4 text-sm">
+      <div>
+        <p class="text-gray-500">Room</p>
+        <p class="font-medium text-gray-800">{{ booking.room.number }} — {{ booking.room.room_type }}</p>
+      </div>
+      <div>
+        <p class="text-gray-500">Total Amount</p>
+        <p class="font-semibold text-gray-800 text-lg">MVR {{ '%.0f'|format(booking.total_amount) }}</p>
+      </div>
+      <div>
+        <p class="text-gray-500">Check-in</p>
+        <p class="font-medium text-gray-800">{{ booking.check_in_date.strftime('%A, %b %d, %Y') }}</p>
+        {% if booking.actual_check_in %}
+        <p class="text-xs text-green-600">Actual: {{ booking.actual_check_in.strftime('%b %d %H:%M') }}</p>
+        {% endif %}
+      </div>
+      <div>
+        <p class="text-gray-500">Check-out</p>
+        <p class="font-medium text-gray-800">{{ booking.check_out_date.strftime('%A, %b %d, %Y') }}</p>
+        {% if booking.actual_check_out %}
+        <p class="text-xs text-gray-500">Actual: {{ booking.actual_check_out.strftime('%b %d %H:%M') }}</p>
+        {% endif %}
+      </div>
+      <div>
+        <p class="text-gray-500">Duration</p>
+        <p class="font-medium text-gray-800">{{ booking.nights }} night{{ 's' if booking.nights != 1 }}</p>
+      </div>
+      <div>
+        <p class="text-gray-500">Guests</p>
+        <p class="font-medium text-gray-800">{{ booking.num_guests }}</p>
+      </div>
+      {% if booking.special_requests %}
+      <div class="col-span-2">
+        <p class="text-gray-500">Special Requests</p>
+        <p class="font-medium text-gray-800">{{ booking.special_requests }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Guest Info -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <h2 class="font-semibold text-gray-700 mb-4">Guest Information</h2>
+    <div class="grid grid-cols-2 gap-4 text-sm">
+      <div>
+        <p class="text-gray-500">Name</p>
+        <p class="font-medium text-gray-800">{{ booking.guest.full_name }}</p>
+      </div>
+      {% if booking.guest.phone %}
+      <div>
+        <p class="text-gray-500">Phone</p>
+        <p class="font-medium text-gray-800">{{ booking.guest.phone }}</p>
+      </div>
+      {% endif %}
+      {% if booking.guest.email %}
+      <div>
+        <p class="text-gray-500">Email</p>
+        <p class="font-medium text-gray-800">{{ booking.guest.email }}</p>
+      </div>
+      {% endif %}
+      {% if booking.guest.nationality %}
+      <div>
+        <p class="text-gray-500">Nationality</p>
+        <p class="font-medium text-gray-800">{{ booking.guest.nationality }}</p>
+      </div>
+      {% endif %}
+      {% if booking.guest.id_type and booking.guest.id_number %}
+      <div>
+        <p class="text-gray-500">ID</p>
+        <p class="font-medium text-gray-800">{{ booking.guest.id_type.replace('_',' ').title() }}: {{ booking.guest.id_number }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Payment status panel -->
+  {% if booking.status in ('confirmed', 'checked_in', 'checked_out') %}
+  {% set inv = booking.invoice %}
+  <div class="rounded-xl border p-5
+    {% if inv and inv.payment_status == 'paid' %}bg-green-50 border-green-200
+    {% elif inv and inv.payment_status == 'partial' %}bg-yellow-50 border-yellow-200
+    {% else %}bg-red-50 border-red-200{% endif %}">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        {% if inv %}
+        <h2 class="font-semibold {% if inv.payment_status == 'paid' %}text-green-800{% elif inv.payment_status == 'partial' %}text-yellow-800{% else %}text-red-800{% endif %}">
+          Invoice {{ inv.invoice_number }}
+        </h2>
+        <p class="text-sm mt-0.5">
+          <span class="{% if inv.payment_status == 'paid' %}text-green-700{% elif inv.payment_status == 'partial' %}text-yellow-700{% else %}text-red-700{% endif %}">
+            MVR {{ '%.0f'|format(inv.total_amount) }} ·
+          </span>
+          <span class="font-semibold px-1.5 py-0.5 rounded text-xs
+            {% if inv.payment_status == 'paid' %}bg-green-100 text-green-800
+            {% elif inv.payment_status == 'partial' %}bg-yellow-100 text-yellow-800
+            {% else %}bg-red-100 text-red-800{% endif %}">
+            {{ inv.payment_status.upper() }}
+          </span>
+          {% if inv.payment_status == 'partial' %}
+          <span class="text-yellow-700 text-xs ml-1">· MVR {{ '%.0f'|format(inv.balance_due) }} remaining</span>
+          {% endif %}
+        </p>
+        {% else %}
+        <h2 class="font-semibold text-red-800">No Payment Recorded</h2>
+        <p class="text-sm text-red-600 mt-0.5">Payment is required before check-in</p>
+        {% endif %}
+      </div>
+      {% if inv %}
+      <a href="{{ url_for('invoices.detail', invoice_id=inv.id) }}"
+        class="text-sm underline {% if inv.payment_status == 'paid' %}text-green-700{% elif inv.payment_status == 'partial' %}text-yellow-700{% else %}text-red-700{% endif %}">
+        View Invoice
+      </a>
+      {% endif %}
+    </div>
+
+    <!-- Inline payment form for confirmed/unpaid bookings -->
+    {% if booking.status == 'confirmed' and (not inv or inv.payment_status != 'paid') %}
+    <form method="POST" action="{{ url_for('bookings.record_payment', booking_id=booking.id) }}"
+      class="flex flex-wrap gap-2 pt-3 border-t {% if inv and inv.payment_status == 'partial' %}border-yellow-200{% else %}border-red-200{% endif %}">
+      <input type="number" name="amount" step="1" min="1"
+        value="{{ '%.0f'|format(inv.balance_due) if inv else '%.0f'|format(booking.total_amount) }}"
+        placeholder="Amount (MVR)"
+        class="flex-1 min-w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        required>
+      <select name="payment_method"
+        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="cash">Cash</option>
+        <option value="card">Card</option>
+        <option value="bank_transfer">Bank Transfer</option>
+        <option value="online">Online</option>
+      </select>
+      <button type="submit"
+        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
+        Record Payment
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Actions -->
+  <div class="flex flex-wrap gap-3">
+    {% if booking.status == 'confirmed' %}
+      {% set inv = booking.invoice %}
+      {% set can_checkin = inv and inv.payment_status in ('paid', 'partial') %}
+    <form method="POST" action="{{ url_for('bookings.checkin', booking_id=booking.id) }}" class="flex-1">
+      <button type="submit"
+        {% if not can_checkin %}disabled title="Payment required before check-in"{% endif %}
+        class="w-full font-medium py-3 rounded-lg text-sm transition-colors
+          {% if can_checkin %}bg-green-600 hover:bg-green-700 text-white
+          {% else %}bg-gray-200 text-gray-400 cursor-not-allowed{% endif %}">
+        ✓ Check In{% if not can_checkin %} — Payment Required{% endif %}
+      </button>
+    </form>
+    <form method="POST" action="{{ url_for('bookings.cancel', booking_id=booking.id) }}"
+      onsubmit="return confirm('Cancel booking {{ booking.booking_ref }}?')" class="flex-1">
+      <button type="submit" class="w-full border border-red-300 text-red-600 hover:bg-red-50 font-medium py-3 rounded-lg text-sm transition-colors">
+        Cancel Booking
+      </button>
+    </form>
+    {% elif booking.status == 'checked_in' %}
+    <form method="POST" action="{{ url_for('bookings.checkout', booking_id=booking.id) }}" class="flex-1">
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg text-sm transition-colors">
+        Check Out & Generate Invoice
+      </button>
+    </form>
+    {% endif %}
+    <a href="{{ url_for('bookings.index') }}"
+      class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-3 rounded-lg text-sm transition-colors">
+      Back to Bookings
+    </a>
+  </div>
+</div>
+{% endblock %}
