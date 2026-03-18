@@ -76,6 +76,26 @@ def detail(invoice_id):
     return render_template('invoices/detail.html', invoice=invoice)
 
 
+@invoices_bp.route('/<int:invoice_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+
+    if request.method == 'POST':
+        invoice.invoice_to      = request.form.get('invoice_to', '').strip() or None
+        invoice.company_name    = request.form.get('company_name', '').strip() or None
+        invoice.billing_address = request.form.get('billing_address', '').strip() or None
+        invoice.notes           = request.form.get('notes', '').strip() or None
+        issue_date_str = request.form.get('issue_date', '').strip()
+        if issue_date_str:
+            invoice.issue_date = date.fromisoformat(issue_date_str)
+        db.session.commit()
+        flash(f'Invoice {invoice.invoice_number} updated.', 'success')
+        return redirect(url_for('invoices.detail', invoice_id=invoice_id))
+
+    return render_template('invoices/edit.html', invoice=invoice)
+
+
 @invoices_bp.route('/<int:invoice_id>/payment', methods=['POST'])
 @login_required
 def record_payment(invoice_id):
