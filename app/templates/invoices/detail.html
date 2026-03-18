@@ -1,198 +1,307 @@
 {% extends 'base.html' %}
 {% block title %}Invoice {{ invoice.invoice_number }}{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto space-y-5">
 
-  <!-- Back + actions -->
-  <div class="flex items-center justify-between print:hidden">
-    <div class="flex items-center gap-3">
-      <a href="{{ url_for('bookings.detail', booking_id=invoice.booking_id) }}" class="text-gray-400 hover:text-gray-600">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-      </a>
-      <div>
-        <h1 class="text-xl font-bold text-gray-800 font-mono">{{ invoice.invoice_number }}</h1>
-        <span class="text-xs px-2 py-0.5 rounded-full font-medium
-          {% if invoice.payment_status == 'paid' %}bg-green-100 text-green-700
-          {% elif invoice.payment_status == 'partial' %}bg-yellow-100 text-yellow-700
-          {% else %}bg-red-100 text-red-600{% endif %}">
-          {{ invoice.payment_status.title() }}
-        </span>
-      </div>
+<!-- Screen toolbar (hidden on print) -->
+<div class="max-w-3xl mx-auto mb-4 flex items-center justify-between print:hidden">
+  <div class="flex items-center gap-3">
+    <a href="{{ url_for('bookings.detail', booking_id=invoice.booking_id) }}"
+      class="text-gray-400 hover:text-gray-600">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </a>
+    <div>
+      <h1 class="text-xl font-bold text-gray-800 font-mono">{{ invoice.invoice_number }}</h1>
+      <span class="text-xs px-2 py-0.5 rounded-full font-medium
+        {% if invoice.payment_status == 'paid' %}bg-green-100 text-green-700
+        {% elif invoice.payment_status == 'partial' %}bg-yellow-100 text-yellow-700
+        {% else %}bg-red-100 text-red-600{% endif %}">
+        {{ invoice.payment_status.title() }}
+      </span>
     </div>
-    <button onclick="window.print()"
-      class="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a1 1 0 001-1v-4a1 1 0 00-1-1H9a1 1 0 00-1 1v4a1 1 0 001 1zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-      Print
-    </button>
+  </div>
+  <button onclick="window.print()"
+    class="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a1 1 0 001-1v-4a1 1 0 00-1-1H9a1 1 0 00-1 1v4a1 1 0 001 1zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+    </svg>
+    Print Invoice
+  </button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ INVOICE ══ -->
+<div class="max-w-3xl mx-auto bg-white border border-gray-200 shadow-sm rounded-lg overflow-hidden"
+  id="invoice-doc">
+
+  <!-- ── HEADER ──────────────────────────────────────────────────────────── -->
+  <div class="px-10 pt-10 pb-6 flex justify-between items-start">
+    <!-- Left: property brand -->
+    <div>
+      <p class="text-2xl font-extrabold text-gray-900 tracking-tight leading-none">
+        Sheeza Manzil Guesthouse
+      </p>
+      <p class="text-sm text-gray-500 mt-1">Maafanu, Malé 20093, Maldives</p>
+      <p class="text-sm text-gray-500">Tel: +960 300 0000 &nbsp;·&nbsp; info@sheezamanzil.mv</p>
+    </div>
+    <!-- Right: invoice meta -->
+    <div class="text-right">
+      <p class="text-3xl font-extrabold text-gray-900 tracking-tight leading-none">INVOICE</p>
+      <p class="text-sm text-gray-500 mt-2">
+        <span class="font-semibold text-gray-700">No:</span>
+        {{ invoice.invoice_number }}
+      </p>
+      <p class="text-sm text-gray-500">
+        <span class="font-semibold text-gray-700">Date:</span>
+        {{ invoice.issue_date.strftime('%d %B %Y') }}
+      </p>
+      <p class="text-sm text-gray-500">
+        <span class="font-semibold text-gray-700">Booking:</span>
+        {{ invoice.booking.booking_ref }}
+      </p>
+    </div>
   </div>
 
-  <!-- Invoice card -->
-  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm" id="invoice-print">
+  <hr class="mx-10 border-gray-900" style="border-top-width:2px">
 
-    <!-- Header -->
-    <div class="bg-gray-900 text-white px-6 py-5 flex justify-between items-start">
-      <div>
-        <h2 class="text-lg font-bold tracking-tight">🏨 Sheeza Manzil Guesthouse</h2>
-        <p class="text-gray-400 text-sm mt-0.5">Tax Invoice</p>
-      </div>
-      <div class="text-right">
-        <p class="font-mono font-bold text-lg">{{ invoice.invoice_number }}</p>
-        <p class="text-gray-400 text-sm">{{ invoice.issue_date.strftime('%d %B %Y') }}</p>
-        <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-semibold
-          {% if invoice.payment_status == 'paid' %}bg-green-500 text-white
-          {% elif invoice.payment_status == 'partial' %}bg-yellow-400 text-gray-900
-          {% else %}bg-red-500 text-white{% endif %}">
-          {{ invoice.payment_status.upper() }}
-        </span>
-      </div>
+  <!-- ── BILL TO / BOOKING DETAILS ─────────────────────────────────────── -->
+  <div class="px-10 py-6 grid grid-cols-2 gap-8 text-sm">
+    <!-- Bill To -->
+    <div>
+      <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Bill To</p>
+      <p class="font-bold text-gray-900 text-base leading-snug">{{ invoice.bill_to_name }}</p>
+      {% if invoice.company_name %}
+      <p class="text-gray-700 font-medium">{{ invoice.company_name }}</p>
+      {% endif %}
+      {% if invoice.billing_address %}
+      <p class="text-gray-600 mt-1 whitespace-pre-line">{{ invoice.billing_address }}</p>
+      {% endif %}
+      {% if invoice.bill_to_name != invoice.booking.guest.full_name %}
+      <p class="text-gray-400 text-xs mt-1">Guest: {{ invoice.booking.guest.full_name }}</p>
+      {% endif %}
+      {% if invoice.booking.guest.phone %}
+      <p class="text-gray-600 mt-1">{{ invoice.booking.guest.phone }}</p>
+      {% endif %}
+      {% if invoice.booking.guest.email %}
+      <p class="text-gray-600">{{ invoice.booking.guest.email }}</p>
+      {% endif %}
     </div>
-
-    <!-- Guest & Booking info -->
-    <div class="px-6 py-5 grid grid-cols-2 gap-6 border-b border-gray-100 text-sm">
-      <div>
-        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Bill To</p>
-        <p class="font-bold text-gray-800 text-base">{{ invoice.bill_to_name }}</p>
-        {% if invoice.company_name %}
-        <p class="text-gray-600 font-medium">{{ invoice.company_name }}</p>
-        {% endif %}
-        {% if invoice.billing_address %}
-        <p class="text-gray-500 mt-0.5 whitespace-pre-line">{{ invoice.billing_address }}</p>
-        {% endif %}
-        {% if invoice.bill_to_name != invoice.booking.guest.full_name %}
-        <p class="text-gray-400 text-xs mt-1">Guest: {{ invoice.booking.guest.full_name }}</p>
-        {% endif %}
-        {% if invoice.booking.guest.phone %}
-        <p class="text-gray-500 mt-1">📱 {{ invoice.booking.guest.phone }}</p>
-        {% endif %}
-        {% if invoice.booking.guest.email %}
-        <p class="text-gray-500">✉️ {{ invoice.booking.guest.email }}</p>
-        {% endif %}
-      </div>
-      <div>
-        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Booking</p>
-        <p class="font-mono font-semibold text-gray-800">{{ invoice.booking.booking_ref }}</p>
-        <p class="text-gray-500 mt-0.5">Room {{ invoice.booking.room.number }} — {{ invoice.booking.room.room_type }}</p>
-        <p class="text-gray-500">
-          {{ invoice.booking.check_in_date.strftime('%d %b %Y') }}
-          →
-          {{ invoice.booking.check_out_date.strftime('%d %b %Y') }}
-        </p>
-        <p class="text-gray-500">{{ invoice.booking.nights }} night{{ 's' if invoice.booking.nights != 1 }}</p>
-      </div>
-    </div>
-
-    <!-- Line items -->
-    <div class="px-6 py-5 border-b border-gray-100">
+    <!-- Stay Details -->
+    <div>
+      <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Stay Details</p>
       <table class="w-full text-sm">
-        <thead>
-          <tr class="border-b border-gray-100">
-            <th class="text-left pb-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">Description</th>
-            <th class="text-center pb-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">Nights</th>
-            <th class="text-right pb-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">Rate</th>
-            <th class="text-right pb-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="py-3 text-gray-800 font-medium">
-              Room {{ invoice.booking.room.number }} — {{ invoice.booking.room.room_type }}
-              <p class="text-xs text-gray-400 font-normal mt-0.5">
-                {{ invoice.booking.check_in_date.strftime('%d %b') }} – {{ invoice.booking.check_out_date.strftime('%d %b %Y') }}
-              </p>
-            </td>
-            <td class="py-3 text-center text-gray-600">{{ invoice.booking.nights }}</td>
-            <td class="py-3 text-right text-gray-600">MVR {{ '%.0f'|format(invoice.booking.room.price_per_night) }}</td>
-            <td class="py-3 text-right font-semibold text-gray-800">MVR {{ '%.0f'|format(invoice.subtotal) }}</td>
-          </tr>
-        </tbody>
+        <tr>
+          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Room</td>
+          <td class="font-semibold text-gray-800">
+            {{ invoice.booking.room.number }} — {{ invoice.booking.room.room_type }}
+          </td>
+        </tr>
+        <tr>
+          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Check-in</td>
+          <td class="font-semibold text-gray-800">
+            {{ invoice.booking.check_in_date.strftime('%d %B %Y') }}
+          </td>
+        </tr>
+        <tr>
+          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Check-out</td>
+          <td class="font-semibold text-gray-800">
+            {{ invoice.booking.check_out_date.strftime('%d %B %Y') }}
+          </td>
+        </tr>
+        <tr>
+          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Nights</td>
+          <td class="font-semibold text-gray-800">
+            {{ invoice.booking.nights }} night{{ 's' if invoice.booking.nights != 1 }}
+          </td>
+        </tr>
+        <tr>
+          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Guests</td>
+          <td class="font-semibold text-gray-800">{{ invoice.booking.num_guests }}</td>
+        </tr>
       </table>
     </div>
-
-    <!-- Totals -->
-    <div class="px-6 py-5 border-b border-gray-100">
-      <div class="max-w-xs ml-auto space-y-2 text-sm">
-        <div class="flex justify-between text-gray-600">
-          <span>Subtotal</span>
-          <span>MVR {{ '%.0f'|format(invoice.subtotal) }}</span>
-        </div>
-        <div class="flex justify-between font-bold text-gray-800 text-base border-t border-gray-200 pt-2 mt-2">
-          <span>Total</span>
-          <span>MVR {{ '%.0f'|format(invoice.total_amount) }}</span>
-        </div>
-        <div class="flex justify-between text-green-600">
-          <span>Amount Paid</span>
-          <span>MVR {{ '%.0f'|format(invoice.amount_paid) }}</span>
-        </div>
-        <div class="flex justify-between font-bold text-base border-t border-gray-200 pt-2
-          {% if invoice.balance_due > 0 %}text-red-600{% else %}text-green-600{% endif %}">
-          <span>Balance Due</span>
-          <span>MVR {{ '%.0f'|format(invoice.balance_due) }}</span>
-        </div>
-      </div>
-    </div>
-
-    {% if invoice.payment_method %}
-    <div class="px-6 py-3 bg-gray-50 text-xs text-gray-500 border-b border-gray-100">
-      Payment method: {{ invoice.payment_method.replace('_', ' ').title() }}
-    </div>
-    {% endif %}
-
-    {% if invoice.notes %}
-    <div class="px-6 py-4 text-sm text-gray-600 border-b border-gray-100">
-      <p class="font-medium text-gray-700 mb-1">Notes</p>
-      <p>{{ invoice.notes }}</p>
-    </div>
-    {% endif %}
-
-    <!-- Footer -->
-    <div class="px-6 py-3 text-center text-xs text-gray-400">
-      Thank you for choosing Sheeza Manzil Guesthouse
-    </div>
   </div>
 
-  <!-- Record payment (if not fully paid) -->
-  {% if invoice.payment_status != 'paid' %}
-  <div class="bg-white rounded-xl border border-gray-200 p-5 print:hidden">
-    <h2 class="font-semibold text-gray-700 mb-4">Record Payment</h2>
-    <form method="POST" action="{{ url_for('invoices.record_payment', invoice_id=invoice.id) }}"
-      class="flex flex-wrap gap-2">
-      <input type="number" name="amount" step="1" min="1"
-        value="{{ '%.0f'|format(invoice.balance_due) }}"
-        class="flex-1 min-w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        required>
-      <select name="payment_method"
-        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        <option value="cash">Cash</option>
-        <option value="card">Card</option>
-        <option value="bank_transfer">Bank Transfer</option>
-        <option value="online">Online</option>
-      </select>
-      <button type="submit"
-        class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
-        Record Payment
-      </button>
-    </form>
+  <hr class="mx-10 border-gray-200">
+
+  <!-- ── LINE ITEMS TABLE ───────────────────────────────────────────────── -->
+  <div class="px-10 py-6">
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr style="background:#1f2937">
+          <th class="text-left px-4 py-3 font-semibold text-white">Description</th>
+          <th class="text-center px-4 py-3 font-semibold text-white w-20">Nights</th>
+          <th class="text-right px-4 py-3 font-semibold text-white w-32">Rate (MVR)</th>
+          <th class="text-right px-4 py-3 font-semibold text-white w-36">Amount (MVR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-b border-gray-200">
+          <td class="px-4 py-4 text-gray-800">
+            <span class="font-semibold">
+              Room {{ invoice.booking.room.number }} — {{ invoice.booking.room.room_type }}
+            </span>
+            <br>
+            <span class="text-xs text-gray-500">
+              {{ invoice.booking.check_in_date.strftime('%d %b %Y') }}
+              –
+              {{ invoice.booking.check_out_date.strftime('%d %b %Y') }}
+            </span>
+          </td>
+          <td class="px-4 py-4 text-center text-gray-700">{{ invoice.booking.nights }}</td>
+          <td class="px-4 py-4 text-right text-gray-700">
+            {{ '%.0f'|format(invoice.booking.room.price_per_night) }}
+          </td>
+          <td class="px-4 py-4 text-right font-semibold text-gray-900">
+            {{ '%.0f'|format(invoice.subtotal) }}
+          </td>
+        </tr>
+        <!-- blank padding row -->
+        <tr><td colspan="4" class="py-2"></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr class="mx-10 border-gray-200">
+
+  <!-- ── TOTALS ─────────────────────────────────────────────────────────── -->
+  <div class="px-10 py-6 flex justify-end">
+    <table class="text-sm w-64">
+      <tr>
+        <td class="py-1 text-gray-500">Subtotal</td>
+        <td class="py-1 text-right font-medium text-gray-800">
+          MVR {{ '%.0f'|format(invoice.subtotal) }}
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2"><hr class="my-2 border-gray-300"></td>
+      </tr>
+      <tr>
+        <td class="py-1 font-bold text-gray-900 text-base">Total</td>
+        <td class="py-1 text-right font-bold text-gray-900 text-base">
+          MVR {{ '%.0f'|format(invoice.total_amount) }}
+        </td>
+      </tr>
+      <tr>
+        <td class="py-1 text-gray-500">Amount Paid</td>
+        <td class="py-1 text-right text-gray-700">
+          MVR {{ '%.0f'|format(invoice.amount_paid) }}
+        </td>
+      </tr>
+      {% if invoice.payment_method and invoice.amount_paid > 0 %}
+      <tr>
+        <td class="pb-1 text-gray-400 text-xs">via {{ invoice.payment_method.replace('_',' ').title() }}</td>
+        <td></td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td colspan="2"><hr class="my-2 border-gray-900" style="border-top-width:2px"></td>
+      </tr>
+      <tr>
+        <td class="py-1 font-extrabold text-base
+          {% if invoice.balance_due > 0 %}text-red-600{% else %}text-green-700{% endif %}">
+          Balance Due
+        </td>
+        <td class="py-1 text-right font-extrabold text-base
+          {% if invoice.balance_due > 0 %}text-red-600{% else %}text-green-700{% endif %}">
+          MVR {{ '%.0f'|format(invoice.balance_due) }}
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  {% if invoice.notes %}
+  <hr class="mx-10 border-gray-200">
+  <div class="px-10 py-4 text-sm">
+    <p class="font-semibold text-gray-700 mb-1">Notes</p>
+    <p class="text-gray-600">{{ invoice.notes }}</p>
   </div>
   {% endif %}
 
-  <div class="flex gap-3 print:hidden">
-    <a href="{{ url_for('bookings.detail', booking_id=invoice.booking_id) }}"
-      class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-2.5 rounded-lg text-sm transition-colors">
-      Back to Booking
-    </a>
-    <a href="{{ url_for('invoices.index') }}"
-      class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-2.5 rounded-lg text-sm transition-colors">
-      All Invoices
-    </a>
+  <!-- ── FOOTER ─────────────────────────────────────────────────────────── -->
+  <hr class="mx-10 border-gray-200">
+  <div class="px-10 py-6 text-center">
+    <p class="text-sm font-semibold text-gray-700">Thank you for staying at Sheeza Manzil Guesthouse</p>
+    <p class="text-xs text-gray-400 mt-1">
+      Maafanu, Malé 20093, Maldives &nbsp;·&nbsp;
+      Tel: +960 300 0000 &nbsp;·&nbsp;
+      info@sheezamanzil.mv
+    </p>
+    <p class="text-xs text-gray-300 mt-3">{{ invoice.invoice_number }}</p>
   </div>
+
+</div>
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+
+<!-- Screen-only: Record Payment + nav buttons -->
+{% if invoice.payment_status != 'paid' %}
+<div class="max-w-3xl mx-auto mt-5 bg-white border border-gray-200 rounded-lg p-5 print:hidden">
+  <h2 class="font-semibold text-gray-700 mb-3">Record Payment</h2>
+  <form method="POST" action="{{ url_for('invoices.record_payment', invoice_id=invoice.id) }}"
+    class="flex flex-wrap gap-2">
+    <input type="number" name="amount" step="1" min="1"
+      value="{{ '%.0f'|format(invoice.balance_due) }}"
+      class="flex-1 min-w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      required>
+    <select name="payment_method"
+      class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="cash">Cash</option>
+      <option value="card">Card</option>
+      <option value="bank_transfer">Bank Transfer</option>
+      <option value="online">Online</option>
+    </select>
+    <button type="submit"
+      class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
+      Record Payment
+    </button>
+  </form>
+</div>
+{% endif %}
+
+<div class="max-w-3xl mx-auto mt-3 flex gap-3 print:hidden">
+  <a href="{{ url_for('bookings.detail', booking_id=invoice.booking_id) }}"
+    class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-2.5 rounded-lg text-sm transition-colors">
+    Back to Booking
+  </a>
+  <a href="{{ url_for('invoices.index') }}"
+    class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-2.5 rounded-lg text-sm transition-colors">
+    All Invoices
+  </a>
 </div>
 
 <style>
 @media print {
+  /* Hide absolutely everything except the invoice doc */
+  body * { visibility: hidden; }
+  #invoice-doc, #invoice-doc * { visibility: visible; }
+  #invoice-doc {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%;
+    margin: 0;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Force white background, black text throughout */
   body { background: white !important; }
-  header, nav, #sidebar, #overlay, .print\\:hidden { display: none !important; }
-  #invoice-print { box-shadow: none !important; border: none !important; }
-  main { padding: 0 !important; }
+  #invoice-doc { background: white !important; }
+
+  /* Keep the dark header row on the line-items table */
+  thead tr { background: #1f2937 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  thead th { color: white !important; }
+
+  /* Balance due stays red when unpaid */
+  .text-red-600 { color: #dc2626 !important; }
+  .text-green-700 { color: #15803d !important; }
+
+  /* Page setup */
+  @page {
+    size: A4;
+    margin: 1.5cm;
+  }
 }
 </style>
 {% endblock %}
