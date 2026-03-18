@@ -362,6 +362,8 @@
 /* Switch viewport to fixed 794px (≈A4 at 96dpi) before the print
    dialog opens so mobile browsers lay out at full page width. */
 (function () {
+  var _title = document.title;
+
   function setPrintViewport() {
     document.querySelector('meta[name="viewport"]')
       .setAttribute('content', 'width=794, initial-scale=1.0');
@@ -370,11 +372,22 @@
     document.querySelector('meta[name="viewport"]')
       .setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0');
   }
-  window.addEventListener('beforeprint', setPrintViewport);
-  window.addEventListener('afterprint',  setNormalViewport);
-  // Fallback for browsers that don't fire beforeprint
+
+  window.onbeforeprint = function() {
+    document.title = '';
+    setPrintViewport();
+  };
+  window.onafterprint = function() {
+    document.title = _title;
+    setNormalViewport();
+  };
+
+  // Fallback for browsers that don't fire onbeforeprint
   var mq = window.matchMedia('print');
-  if (mq.addListener) mq.addListener(function(e){ e.matches ? setPrintViewport() : setNormalViewport(); });
+  if (mq.addListener) mq.addListener(function(e){
+    if (e.matches) { document.title = ''; setPrintViewport(); }
+    else { document.title = _title; setNormalViewport(); }
+  });
 })();
 </script>
 {% endblock %}
