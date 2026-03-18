@@ -139,7 +139,12 @@ def new():
         db.session.add(booking)
         db.session.flush()  # get booking.id before generating invoice
         from .invoices import generate_invoice
-        generate_invoice(booking)
+        generate_invoice(
+            booking,
+            invoice_to=request.form.get('invoice_to', '').strip() or None,
+            company_name=request.form.get('company_name', '').strip() or None,
+            billing_address=request.form.get('billing_address', '').strip() or None,
+        )
         db.session.commit()
         send_booking_confirmation(booking)
         flash(f'Booking {booking.booking_ref} created. Invoice generated.', 'success')

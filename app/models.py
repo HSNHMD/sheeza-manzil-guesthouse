@@ -132,8 +132,16 @@ class Invoice(db.Model):
     payment_status = db.Column(db.String(20), default='unpaid')  # unpaid, partial, paid
     payment_method = db.Column(db.String(30))  # cash, card, bank_transfer, online
     amount_paid = db.Column(db.Float, default=0.0)
+    invoice_to = db.Column(db.String(150))    # defaults to guest name if blank
+    company_name = db.Column(db.String(150))
+    billing_address = db.Column(db.Text)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def bill_to_name(self):
+        """Display name for 'Invoice To' — falls back to guest full name."""
+        return self.invoice_to or self.booking.guest.full_name
 
     @property
     def balance_due(self):

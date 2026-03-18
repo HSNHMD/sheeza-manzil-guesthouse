@@ -17,7 +17,7 @@ def generate_invoice_number():
             return num
 
 
-def generate_invoice(booking):
+def generate_invoice(booking, invoice_to=None, company_name=None, billing_address=None):
     """Create invoice for a booking. Safe to call multiple times — returns existing invoice if present."""
     if booking.invoice:
         return booking.invoice
@@ -33,7 +33,10 @@ def generate_invoice(booking):
         tax_rate=0,
         tax_amount=0,
         total_amount=total,
-        payment_status='unpaid'
+        payment_status='unpaid',
+        invoice_to=invoice_to or None,
+        company_name=company_name or None,
+        billing_address=billing_address or None,
     )
     db.session.add(invoice)
     return invoice
