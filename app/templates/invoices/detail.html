@@ -267,35 +267,90 @@
 
 <style>
 @media print {
-  /* Hide absolutely everything except the invoice doc */
+  /* Override mobile viewport: render at full desktop width */
+  @viewport { width: 210mm; }
+
+  /* Page setup — portrait A4 with consistent margins */
+  @page {
+    size: A4 portrait;
+    margin: 15mm;
+  }
+
+  /* Hide everything except the invoice */
   body * { visibility: hidden; }
   #invoice-doc, #invoice-doc * { visibility: visible; }
+
+  /* Reset body and html for print */
+  html, body {
+    width: 210mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-size: 12pt !important;
+  }
+
+  /* Invoice container: full width, no mobile shrinkage */
   #invoice-doc {
     position: fixed;
     top: 0; left: 0;
-    width: 100%;
-    margin: 0;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+    background: white !important;
+    overflow: visible !important;
   }
 
-  /* Force white background, black text throughout */
-  body { background: white !important; }
-  #invoice-doc { background: white !important; }
+  /* Tighten padding on print so table columns fit on one page */
+  #invoice-doc .px-10 { padding-left: 6mm !important; padding-right: 6mm !important; }
+  #invoice-doc table th,
+  #invoice-doc table td { padding: 4pt 6pt !important; }
+
+  /* Prevent text/cells from being clipped */
+  #invoice-doc table { width: 100% !important; table-layout: fixed; word-wrap: break-word; }
+  #invoice-doc td, #invoice-doc th { overflow-wrap: break-word; }
 
   /* Keep the dark header row on the line-items table */
-  thead tr { background: #1f2937 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  thead tr { background: #1f2937 !important; }
   thead th { color: white !important; }
 
   /* Balance due stays red when unpaid */
   .text-red-600 { color: #dc2626 !important; }
 
-  /* Page setup */
-  @page {
-    size: A4;
-    margin: 1.5cm;
-  }
+  /* Explicitly hide nav/sidebar/footer on mobile print */
+  header, nav, #sidebar, #overlay, footer,
+  .print\:hidden { display: none !important; visibility: hidden !important; }
 }
 </style>
+
+<script>
+/* Inject a wider viewport for mobile browsers when printing,
+   so the layout renders at full page width rather than phone width. */
+(function () {
+  var mq = window.matchMedia('print');
+  function onPrint(e) {
+    if (e.matches) {
+      document.querySelector('meta[name="viewport"]')
+        .setAttribute('content', 'width=900');
+    } else {
+      document.querySelector('meta[name="viewport"]')
+        .setAttribute('content', 'width=device-width, initial-scale=1.0');
+    }
+  }
+  mq.addListener(onPrint);
+  window.addEventListener('beforeprint', function () {
+    document.querySelector('meta[name="viewport"]')
+      .setAttribute('content', 'width=900');
+  });
+  window.addEventListener('afterprint', function () {
+    document.querySelector('meta[name="viewport"]')
+      .setAttribute('content', 'width=device-width, initial-scale=1.0');
+  });
+})();
+</script>
 {% endblock %}
