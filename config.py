@@ -28,9 +28,15 @@ class Config:
         else 'sqlite:///' + os.path.join(basedir, 'guesthouse.db')
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Use larger pool for PostgreSQL, minimal for SQLite
+    _is_postgres = bool(_raw_db_url)
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,       # reconnect on stale connections
-        'pool_recycle': 300,         # recycle connections every 5 min
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        **(
+            {'pool_size': 5, 'max_overflow': 10}
+            if _is_postgres else {}
+        ),
     }
 
     # ── Sessions ───────────────────────────────────────────────────────────────

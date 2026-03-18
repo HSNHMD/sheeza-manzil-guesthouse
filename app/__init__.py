@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_login import LoginManager
-from .models import db, User
+from .models import db, User, Room
 from config import Config
 
 login_manager = LoginManager()
@@ -37,6 +37,7 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
         _seed_admin(app)
+        _seed_rooms(app)
 
     return app
 
@@ -49,3 +50,28 @@ def _seed_admin(app):
         db.session.add(admin)
         db.session.commit()
         app.logger.info('Default admin created: admin / admin123')
+
+
+def _seed_rooms(app):
+    """Seed the 8 Sheeza Manzil rooms if the rooms table is empty."""
+    if Room.query.count() > 0:
+        return
+    rooms = [
+        # (number, name,          type,    floor, capacity, price)
+        ('1', 'Deluxe Double', 'Deluxe', 0, 2, 600.0),
+        ('2', 'Deluxe Double', 'Deluxe', 0, 2, 600.0),
+        ('3', 'Deluxe Double', 'Deluxe', 0, 2, 600.0),
+        ('4', 'Deluxe Double', 'Deluxe', 0, 2, 600.0),
+        ('5', 'Deluxe Double', 'Deluxe', 1, 2, 600.0),
+        ('6', 'Deluxe Double', 'Deluxe', 1, 2, 600.0),
+        ('7', 'Twin Room',     'Twin',   1, 2, 600.0),
+        ('8', 'Twin Room',     'Twin',   0, 2, 600.0),
+    ]
+    for number, name, rtype, floor, cap, price in rooms:
+        db.session.add(Room(
+            number=number, name=name, room_type=rtype,
+            floor=floor, capacity=cap, price_per_night=price,
+            amenities='WiFi, AC, TV, En-suite Bathroom',
+        ))
+    db.session.commit()
+    app.logger.info('Seeded 8 rooms automatically.')
