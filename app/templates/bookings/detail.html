@@ -175,6 +175,10 @@
     {% if booking.status == 'confirmed' %}
       {% set inv = booking.invoice %}
       {% set can_checkin = inv and inv.payment_status in ('paid', 'partial') %}
+    <a href="{{ url_for('bookings.edit', booking_id=booking.id) }}"
+      class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-3 rounded-lg text-sm transition-colors">
+      Edit Booking
+    </a>
     <form method="POST" action="{{ url_for('bookings.checkin', booking_id=booking.id) }}" class="flex-1">
       <button type="submit"
         {% if not can_checkin %}disabled title="Payment required before check-in"{% endif %}

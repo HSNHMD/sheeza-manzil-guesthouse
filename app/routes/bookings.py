@@ -227,6 +227,67 @@ def record_payment(booking_id):
     return redirect(url_for('bookings.detail', booking_id=booking_id))
 
 
+@bookings_bp.route('/<int:booking_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit(booking_id):
+    booking = Booking.query.get_or_404(booking_id)
+    if booking.status != 'confirmed':
+        flash('Only confirmed bookings can be edited.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    rooms = Room.query.filter_by(is_active=True).order_by(Room.number).all()
+
+    if request.method == 'POST':
+        room_id = int(request.form.get('room_id'))
+        check_in = date.fromisoformat(request.form.get('check_in_date'))
+        check_out = date.fromisoformat(request.form.get('check_out_date'))
+
+        if check_out <= check_in:
+            flash('Check-out must be after check-in.', 'error')
+            return render_template('bookings/edit.html', booking=booking, rooms=rooms)
+
+        if not check_room_availability(room_id, check_in, check_out, exclude_booking_id=booking_id):
+            flash('Room is not available for the selected dates.', 'error')
+            return render_template('bookings/edit.html', booking=booking, rooms=rooms)
+
+        room = Room.query.get_or_404(room_id)
+        nights = (check_out - check_in).days
+        new_total = nights * room.price_per_night
+
+        booking.room_id = room_id
+        booking.check_in_date = check_in
+        booking.check_out_date = check_out
+        booking.num_guests = int(request.form.get('num_guests', 1))
+        booking.special_requests = request.form.get('special_requests', '').strip()
+        booking.total_amount = new_total
+
+        # Keep invoice in sync
+        if booking.invoice:
+            inv = booking.invoice
+            inv.subtotal = new_total
+            inv.total_amount = new_total
+            # Clamp amount_paid if total dropped below it
+            if inv.amount_paid > new_total:
+                inv.amount_paid = new_total
+            if inv.amount_paid >= inv.total_amount:
+                inv.payment_status = 'paid'
+            elif inv.amount_paid > 0:
+                inv.payment_status = 'partial'
+            else:
+                inv.payment_status = 'unpaid'
+            # Update invoice billing fields
+            invoice_to = request.form.get('invoice_to', '').strip() or None
+            inv.invoice_to = invoice_to
+            inv.company_name = request.form.get('company_name', '').strip() or None
+            inv.billing_address = request.form.get('billing_address', '').strip() or None
+
+        db.session.commit()
+        flash(f'Booking {booking.booking_ref} updated.', 'success')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    return render_template('bookings/edit.html', booking=booking, rooms=rooms)
+
+
 @bookings_bp.route('/<int:booking_id>/cancel', methods=['POST'])
 @login_required
 def cancel(booking_id):
