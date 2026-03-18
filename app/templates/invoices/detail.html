@@ -14,9 +14,8 @@
     <div>
       <h1 class="text-xl font-bold text-gray-800 font-mono">{{ invoice.invoice_number }}</h1>
       <span class="text-xs px-2 py-0.5 rounded-full font-medium
-        {% if invoice.payment_status == 'paid' %}bg-green-100 text-green-700
-        {% elif invoice.payment_status == 'partial' %}bg-yellow-100 text-yellow-700
-        {% else %}bg-red-100 text-red-600{% endif %}">
+        {% if invoice.payment_status == 'unpaid' %}bg-red-100 text-red-600
+        {% else %}bg-gray-100 text-gray-700{% endif %}">
         {{ invoice.payment_status.title() }}
       </span>
     </div>
@@ -42,22 +41,22 @@
       <p class="text-2xl font-extrabold text-gray-900 tracking-tight leading-none">
         Sheeza Manzil Guesthouse
       </p>
-      <p class="text-sm text-gray-500 mt-1">Maafanu, Malé 20093, Maldives</p>
-      <p class="text-sm text-gray-500">Tel: +960 737 5797 &nbsp;·&nbsp; info@sheezamanzil.mv</p>
+      <p class="text-sm text-black mt-1">Maaveyo Magu, Hdh. Hanimaadhoo, Maldives</p>
+      <p class="text-sm text-black">Tel: +960 737 5797</p>
     </div>
     <!-- Right: invoice meta -->
     <div class="text-right">
-      <p class="text-3xl font-extrabold text-gray-900 tracking-tight leading-none">INVOICE</p>
-      <p class="text-sm text-gray-500 mt-2">
-        <span class="font-semibold text-gray-700">No:</span>
+      <p class="text-3xl font-extrabold text-black tracking-tight leading-none">INVOICE</p>
+      <p class="text-sm text-black mt-2">
+        <span class="font-semibold text-black">No:</span>
         {{ invoice.invoice_number }}
       </p>
-      <p class="text-sm text-gray-500">
-        <span class="font-semibold text-gray-700">Date:</span>
+      <p class="text-sm text-black">
+        <span class="font-semibold text-black">Date:</span>
         {{ invoice.issue_date.strftime('%d %B %Y') }}
       </p>
-      <p class="text-sm text-gray-500">
-        <span class="font-semibold text-gray-700">Booking:</span>
+      <p class="text-sm text-black">
+        <span class="font-semibold text-black">Booking:</span>
         {{ invoice.booking.booking_ref }}
       </p>
     </div>
@@ -69,55 +68,52 @@
   <div class="px-10 py-6 grid grid-cols-2 gap-8 text-sm">
     <!-- Bill To -->
     <div>
-      <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Bill To</p>
-      <p class="font-bold text-gray-900 text-base leading-snug">{{ invoice.bill_to_name }}</p>
+      <p class="text-xs font-bold text-black uppercase tracking-widest mb-2">Bill To</p>
+      <p class="font-bold text-black text-base leading-snug">{{ invoice.bill_to_name }}</p>
       {% if invoice.company_name %}
-      <p class="text-gray-700 font-medium">{{ invoice.company_name }}</p>
+      <p class="text-black font-medium">{{ invoice.company_name }}</p>
       {% endif %}
       {% if invoice.billing_address %}
-      <p class="text-gray-600 mt-1 whitespace-pre-line">{{ invoice.billing_address }}</p>
+      <p class="text-black mt-1 whitespace-pre-line">{{ invoice.billing_address }}</p>
       {% endif %}
       {% if invoice.bill_to_name != invoice.booking.guest.full_name %}
-      <p class="text-gray-400 text-xs mt-1">Guest: {{ invoice.booking.guest.full_name }}</p>
+      <p class="text-black text-xs mt-1">Guest: {{ invoice.booking.guest.full_name }}</p>
       {% endif %}
       {% if invoice.booking.guest.phone %}
-      <p class="text-gray-600 mt-1">{{ invoice.booking.guest.phone }}</p>
-      {% endif %}
-      {% if invoice.booking.guest.email %}
-      <p class="text-gray-600">{{ invoice.booking.guest.email }}</p>
+      <p class="text-black mt-1">{{ invoice.booking.guest.phone }}</p>
       {% endif %}
     </div>
     <!-- Stay Details -->
     <div>
-      <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Stay Details</p>
+      <p class="text-xs font-bold text-black uppercase tracking-widest mb-2">Stay Details</p>
       <table class="w-full text-sm">
         <tr>
-          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Room</td>
-          <td class="font-semibold text-gray-800">
+          <td class="text-black py-0.5 pr-3 whitespace-nowrap">Room</td>
+          <td class="font-semibold text-black">
             {{ invoice.booking.room.number }} — {{ invoice.booking.room.room_type }}
           </td>
         </tr>
         <tr>
-          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Check-in</td>
-          <td class="font-semibold text-gray-800">
+          <td class="text-black py-0.5 pr-3 whitespace-nowrap">Check-in</td>
+          <td class="font-semibold text-black">
             {{ invoice.booking.check_in_date.strftime('%d %B %Y') }}
           </td>
         </tr>
         <tr>
-          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Check-out</td>
-          <td class="font-semibold text-gray-800">
+          <td class="text-black py-0.5 pr-3 whitespace-nowrap">Check-out</td>
+          <td class="font-semibold text-black">
             {{ invoice.booking.check_out_date.strftime('%d %B %Y') }}
           </td>
         </tr>
         <tr>
-          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Nights</td>
-          <td class="font-semibold text-gray-800">
+          <td class="text-black py-0.5 pr-3 whitespace-nowrap">Nights</td>
+          <td class="font-semibold text-black">
             {{ invoice.booking.nights }} night{{ 's' if invoice.booking.nights != 1 }}
           </td>
         </tr>
         <tr>
-          <td class="text-gray-500 py-0.5 pr-3 whitespace-nowrap">Guests</td>
-          <td class="font-semibold text-gray-800">{{ invoice.booking.num_guests }}</td>
+          <td class="text-black py-0.5 pr-3 whitespace-nowrap">Guests</td>
+          <td class="font-semibold text-black">{{ invoice.booking.num_guests }}</td>
         </tr>
       </table>
     </div>
@@ -138,22 +134,22 @@
       </thead>
       <tbody>
         <tr class="border-b border-gray-200">
-          <td class="px-4 py-4 text-gray-800">
+          <td class="px-4 py-4 text-black">
             <span class="font-semibold">
               Room {{ invoice.booking.room.number }} — {{ invoice.booking.room.room_type }}
             </span>
             <br>
-            <span class="text-xs text-gray-500">
+            <span class="text-xs text-black">
               {{ invoice.booking.check_in_date.strftime('%d %b %Y') }}
               –
               {{ invoice.booking.check_out_date.strftime('%d %b %Y') }}
             </span>
           </td>
-          <td class="px-4 py-4 text-center text-gray-700">{{ invoice.booking.nights }}</td>
-          <td class="px-4 py-4 text-right text-gray-700">
+          <td class="px-4 py-4 text-center text-black">{{ invoice.booking.nights }}</td>
+          <td class="px-4 py-4 text-right text-black">
             {{ '%.0f'|format(invoice.booking.room.price_per_night) }}
           </td>
-          <td class="px-4 py-4 text-right font-semibold text-gray-900">
+          <td class="px-4 py-4 text-right font-semibold text-black">
             {{ '%.0f'|format(invoice.subtotal) }}
           </td>
         </tr>
@@ -169,42 +165,42 @@
   <div class="px-10 py-6 flex justify-end">
     <table class="text-sm w-64">
       <tr>
-        <td class="py-1 text-gray-500">Subtotal</td>
-        <td class="py-1 text-right font-medium text-gray-800">
+        <td class="py-1 text-black">Subtotal</td>
+        <td class="py-1 text-right font-medium text-black">
           MVR {{ '%.0f'|format(invoice.subtotal) }}
         </td>
       </tr>
       <tr>
-        <td colspan="2"><hr class="my-2 border-gray-300"></td>
+        <td colspan="2"><hr class="my-2 border-black"></td>
       </tr>
       <tr>
-        <td class="py-1 font-bold text-gray-900 text-base">Total</td>
-        <td class="py-1 text-right font-bold text-gray-900 text-base">
+        <td class="py-1 font-bold text-black text-base">Total</td>
+        <td class="py-1 text-right font-bold text-black text-base">
           MVR {{ '%.0f'|format(invoice.total_amount) }}
         </td>
       </tr>
       <tr>
-        <td class="py-1 text-gray-500">Amount Paid</td>
-        <td class="py-1 text-right text-gray-700">
+        <td class="py-1 text-black">Amount Paid</td>
+        <td class="py-1 text-right text-black">
           MVR {{ '%.0f'|format(invoice.amount_paid) }}
         </td>
       </tr>
       {% if invoice.payment_method and invoice.amount_paid > 0 %}
       <tr>
-        <td class="pb-1 text-gray-400 text-xs">via {{ invoice.payment_method.replace('_',' ').title() }}</td>
+        <td class="pb-1 text-black text-xs">via {{ invoice.payment_method.replace('_',' ').title() }}</td>
         <td></td>
       </tr>
       {% endif %}
       <tr>
-        <td colspan="2"><hr class="my-2 border-gray-900" style="border-top-width:2px"></td>
+        <td colspan="2"><hr class="my-2 border-black" style="border-top-width:2px"></td>
       </tr>
       <tr>
         <td class="py-1 font-extrabold text-base
-          {% if invoice.balance_due > 0 %}text-red-600{% else %}text-green-700{% endif %}">
+          {% if invoice.balance_due > 0 %}text-red-600{% else %}text-black{% endif %}">
           Balance Due
         </td>
         <td class="py-1 text-right font-extrabold text-base
-          {% if invoice.balance_due > 0 %}text-red-600{% else %}text-green-700{% endif %}">
+          {% if invoice.balance_due > 0 %}text-red-600{% else %}text-black{% endif %}">
           MVR {{ '%.0f'|format(invoice.balance_due) }}
         </td>
       </tr>
@@ -212,23 +208,22 @@
   </div>
 
   {% if invoice.notes %}
-  <hr class="mx-10 border-gray-200">
+  <hr class="mx-10 border-black">
   <div class="px-10 py-4 text-sm">
-    <p class="font-semibold text-gray-700 mb-1">Notes</p>
-    <p class="text-gray-600">{{ invoice.notes }}</p>
+    <p class="font-semibold text-black mb-1">Notes</p>
+    <p class="text-black">{{ invoice.notes }}</p>
   </div>
   {% endif %}
 
   <!-- ── FOOTER ─────────────────────────────────────────────────────────── -->
-  <hr class="mx-10 border-gray-200">
+  <hr class="mx-10 border-black">
   <div class="px-10 py-6 text-center">
-    <p class="text-sm font-semibold text-gray-700">Thank you for staying at Sheeza Manzil Guesthouse</p>
-    <p class="text-xs text-gray-400 mt-1">
-      Maafanu, Malé 20093, Maldives &nbsp;·&nbsp;
-      Tel: +960 737 5797 &nbsp;·&nbsp;
-      info@sheezamanzil.mv
+    <p class="text-sm font-semibold text-black">Thank you for staying at Sheeza Manzil Guesthouse</p>
+    <p class="text-xs text-black mt-1">
+      Maaveyo Magu, Hdh. Hanimaadhoo, Maldives &nbsp;·&nbsp;
+      Tel: +960 737 5797
     </p>
-    <p class="text-xs text-gray-300 mt-3">{{ invoice.invoice_number }}</p>
+    <p class="text-xs text-black mt-3">{{ invoice.invoice_number }}</p>
   </div>
 
 </div>
@@ -295,7 +290,6 @@
 
   /* Balance due stays red when unpaid */
   .text-red-600 { color: #dc2626 !important; }
-  .text-green-700 { color: #15803d !important; }
 
   /* Page setup */
   @page {

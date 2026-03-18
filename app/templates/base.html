@@ -77,23 +77,28 @@
   <div id="overlay" class="fixed inset-0 bg-black/30 z-20 hidden lg:hidden"></div>
 
   <!-- Main -->
-  <main class="flex-1 min-w-0 p-4 lg:p-6">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="mb-4 space-y-2">
-          {% for category, message in messages %}
-            <div class="flex items-start gap-3 p-3 rounded-lg text-sm
-              {% if category == 'error' %}bg-red-50 text-red-800 border border-red-200
-              {% elif category == 'success' %}bg-green-50 text-green-800 border border-green-200
-              {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
-              <span>{{ message }}</span>
-              <button onclick="this.parentElement.remove()" class="ml-auto text-current opacity-60 hover:opacity-100">&times;</button>
-            </div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
+  <main class="flex-1 min-w-0 p-4 lg:p-6 flex flex-col min-h-[calc(100vh-3.5rem)]">
+    <div class="flex-1">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="mb-4 space-y-2">
+            {% for category, message in messages %}
+              <div class="flex items-start gap-3 p-3 rounded-lg text-sm
+                {% if category == 'error' %}bg-red-50 text-red-800 border border-red-200
+                {% elif category == 'success' %}bg-green-50 text-green-800 border border-green-200
+                {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
+                <span>{{ message }}</span>
+                <button onclick="this.parentElement.remove()" class="ml-auto text-current opacity-60 hover:opacity-100">&times;</button>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+    <footer class="mt-8 pt-4 border-t border-gray-200 text-center text-xs text-gray-400 print:hidden">
+      &copy; Hussain Hamid. All rights reserved.
+    </footer>
   </main>
 </div>
 
