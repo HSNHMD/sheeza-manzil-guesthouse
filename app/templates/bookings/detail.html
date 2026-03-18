@@ -2,20 +2,29 @@
 {% block title %}Booking {{ booking.booking_ref }}{% endblock %}
 {% block content %}
 <div class="max-w-2xl mx-auto space-y-5">
-  <div class="flex items-center gap-3">
-    <a href="{{ url_for('bookings.index') }}" class="text-gray-400 hover:text-gray-600">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-    </a>
-    <div>
-      <h1 class="text-xl font-bold text-gray-800 font-mono">{{ booking.booking_ref }}</h1>
-      <span class="text-xs px-2 py-0.5 rounded-full font-medium
-        {% if booking.status == 'confirmed' %}bg-yellow-100 text-yellow-700
-        {% elif booking.status == 'checked_in' %}bg-green-100 text-green-700
-        {% elif booking.status == 'checked_out' %}bg-gray-100 text-gray-600
-        {% else %}bg-red-100 text-red-600{% endif %}">
-        {{ booking.status.replace('_',' ').title() }}
-      </span>
+  <div class="flex items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <a href="{{ url_for('bookings.index') }}" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </a>
+      <div>
+        <h1 class="text-xl font-bold text-gray-800 font-mono">{{ booking.booking_ref }}</h1>
+        <span class="text-xs px-2 py-0.5 rounded-full font-medium
+          {% if booking.status == 'confirmed' %}bg-yellow-100 text-yellow-700
+          {% elif booking.status == 'checked_in' %}bg-green-100 text-green-700
+          {% elif booking.status == 'checked_out' %}bg-gray-100 text-gray-600
+          {% else %}bg-red-100 text-red-600{% endif %}">
+          {{ booking.status.replace('_',' ').title() }}
+        </span>
+      </div>
     </div>
+    {% if booking.invoice %}
+    <a href="{{ url_for('invoices.detail', invoice_id=booking.invoice.id) }}"
+      class="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      View Invoice
+    </a>
+    {% endif %}
   </div>
 
   <!-- Room & Dates -->

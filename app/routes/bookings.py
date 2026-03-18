@@ -137,9 +137,12 @@ def new():
             status='confirmed'
         )
         db.session.add(booking)
+        db.session.flush()  # get booking.id before generating invoice
+        from .invoices import generate_invoice
+        generate_invoice(booking)
         db.session.commit()
         send_booking_confirmation(booking)
-        flash(f'Booking {booking.booking_ref} created successfully.', 'success')
+        flash(f'Booking {booking.booking_ref} created. Invoice generated.', 'success')
         return redirect(url_for('bookings.detail', booking_id=booking.id))
 
     return render_template('bookings/form.html', rooms=rooms, guests=guests, booking=None)
@@ -187,10 +190,10 @@ def checkout(booking_id):
     booking.room.status = 'cleaning'
     booking.room.housekeeping_status = 'dirty'
 
-    invoice = generate_invoice(booking)
+    invoice = generate_invoice(booking)  # no-op if already exists from booking creation
     db.session.commit()
     send_checkout_invoice_summary(booking, invoice)
-    flash(f'Guest {booking.guest.full_name} checked out. Invoice {invoice.invoice_number} generated.', 'success')
+    flash(f'Guest {booking.guest.full_name} checked out. Invoice {invoice.invoice_number} updated.', 'success')
     return redirect(url_for('invoices.detail', invoice_id=invoice.id))
 
 

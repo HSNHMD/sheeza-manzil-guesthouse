@@ -7,7 +7,7 @@ from ..models import db, Invoice, Booking
 
 invoices_bp = Blueprint('invoices', __name__, url_prefix='/invoices')
 
-TAX_RATE = 0.10  # 10% tax
+TAX_RATE = 0.0  # No tax applied
 
 
 def generate_invoice_number():
@@ -18,21 +18,20 @@ def generate_invoice_number():
 
 
 def generate_invoice(booking):
-    """Create invoice for a booking. Called on checkout."""
+    """Create invoice for a booking. Safe to call multiple times — returns existing invoice if present."""
     if booking.invoice:
         return booking.invoice
 
     subtotal = booking.total_amount
-    tax = round(subtotal * TAX_RATE, 2)
-    total = round(subtotal + tax, 2)
+    total = round(subtotal, 2)
 
     invoice = Invoice(
         invoice_number=generate_invoice_number(),
         booking_id=booking.id,
         issue_date=date.today(),
         subtotal=subtotal,
-        tax_rate=TAX_RATE * 100,
-        tax_amount=tax,
+        tax_rate=0,
+        tax_amount=0,
         total_amount=total,
         payment_status='unpaid'
     )
