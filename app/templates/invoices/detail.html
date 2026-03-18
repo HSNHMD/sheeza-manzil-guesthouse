@@ -1,5 +1,11 @@
 {% extends 'base.html' %}
 {% block title %}Invoice {{ invoice.invoice_number }}{% endblock %}
+
+{# Override viewport for this page: prevent mobile browsers scaling down the invoice #}
+{% block head_extra %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+{% endblock %}
+
 {% block content %}
 
 <!-- Screen toolbar (hidden on print) -->
@@ -65,7 +71,7 @@
   <hr class="mx-10 border-gray-900" style="border-top-width:2px">
 
   <!-- ── BILL TO / BOOKING DETAILS ─────────────────────────────────────── -->
-  <div class="px-10 py-6 grid grid-cols-2 gap-8 text-sm">
+  <div id="invoice-cols" class="px-10 py-6 grid grid-cols-2 gap-8 text-sm">
     <!-- Bill To -->
     <div>
       <p class="text-xs font-bold text-black uppercase tracking-widest mb-2">Bill To</p>
@@ -267,90 +273,108 @@
 
 <style>
 @media print {
-  /* Override mobile viewport: render at full desktop width */
-  @viewport { width: 210mm; }
-
-  /* Page setup — portrait A4 with consistent margins */
+  /* ── Page setup ─────────────────────────────────────────── */
   @page {
     size: A4 portrait;
-    margin: 15mm;
+    margin: 8mm;
   }
 
-  /* Hide everything except the invoice */
+  /* ── Hide everything except the invoice ─────────────────── */
   body * { visibility: hidden; }
   #invoice-doc, #invoice-doc * { visibility: visible; }
 
-  /* Reset body and html for print */
+  /* Explicitly hide nav/sidebar/header/footer on mobile */
+  header, nav, #sidebar, #overlay, footer,
+  .print\:hidden { display: none !important; visibility: hidden !important; }
+
+  /* ── Body / html reset ──────────────────────────────────── */
   html, body {
     width: 210mm !important;
+    max-width: 210mm !important;
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    font-size: 12pt !important;
+    font-size: 10pt !important;
+    overflow: hidden !important;
   }
 
-  /* Invoice container: full width, no mobile shrinkage */
+  /* ── Invoice wrapper: exact A4 width, no bleeding ───────── */
   #invoice-doc {
     position: fixed;
     top: 0; left: 0;
-    width: 100% !important;
-    max-width: none !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
+    padding: 10mm !important;
     margin: 0 !important;
-    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
     background: white !important;
-    overflow: visible !important;
+    overflow: hidden !important;
+    /* Scale slightly to ensure nothing bleeds on small print engines */
+    transform: scale(1);
+    transform-origin: top left;
+    zoom: 0.85;
   }
 
-  /* Tighten padding on print so table columns fit on one page */
-  #invoice-doc .px-10 { padding-left: 6mm !important; padding-right: 6mm !important; }
+  /* ── Tighten section padding ────────────────────────────── */
+  #invoice-doc .px-10 { padding-left: 0 !important; padding-right: 0 !important; }
+  #invoice-doc .pt-10 { padding-top: 4mm !important; }
+  #invoice-doc .py-6  { padding-top: 3mm !important; padding-bottom: 3mm !important; }
+  #invoice-doc .py-4  { padding-top: 2mm !important; padding-bottom: 2mm !important; }
+
+  /* ── Line-items table: 9pt, tight cells ─────────────────── */
+  #invoice-doc table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 9pt !important;
+    word-wrap: break-word;
+  }
   #invoice-doc table th,
-  #invoice-doc table td { padding: 4pt 6pt !important; }
+  #invoice-doc table td {
+    padding: 3px 4px !important;
+    overflow-wrap: break-word;
+  }
 
-  /* Prevent text/cells from being clipped */
-  #invoice-doc table { width: 100% !important; table-layout: fixed; word-wrap: break-word; }
-  #invoice-doc td, #invoice-doc th { overflow-wrap: break-word; }
+  /* ── Bill To / Stay Details two-column section ──────────── */
+  #invoice-cols {
+    display: grid !important;
+    grid-template-columns: 48% 48% !important;
+    gap: 4% !important;
+    font-size: 9pt !important;
+  }
 
-  /* Keep the dark header row on the line-items table */
+  /* ── Totals table: keep tight ───────────────────────────── */
+  #invoice-doc .w-64 { width: 52mm !important; }
+
+  /* ── Table header row ───────────────────────────────────── */
   thead tr { background: #1f2937 !important; }
   thead th { color: white !important; }
 
-  /* Balance due stays red when unpaid */
+  /* ── Balance due stays red when unpaid ──────────────────── */
   .text-red-600 { color: #dc2626 !important; }
-
-  /* Explicitly hide nav/sidebar/footer on mobile print */
-  header, nav, #sidebar, #overlay, footer,
-  .print\:hidden { display: none !important; visibility: hidden !important; }
 }
 </style>
 
 <script>
-/* Inject a wider viewport for mobile browsers when printing,
-   so the layout renders at full page width rather than phone width. */
+/* Switch viewport to fixed 794px (≈A4 at 96dpi) before the print
+   dialog opens so mobile browsers lay out at full page width. */
 (function () {
-  var mq = window.matchMedia('print');
-  function onPrint(e) {
-    if (e.matches) {
-      document.querySelector('meta[name="viewport"]')
-        .setAttribute('content', 'width=900');
-    } else {
-      document.querySelector('meta[name="viewport"]')
-        .setAttribute('content', 'width=device-width, initial-scale=1.0');
-    }
+  function setPrintViewport() {
+    document.querySelector('meta[name="viewport"]')
+      .setAttribute('content', 'width=794, initial-scale=1.0');
   }
-  mq.addListener(onPrint);
-  window.addEventListener('beforeprint', function () {
+  function setNormalViewport() {
     document.querySelector('meta[name="viewport"]')
-      .setAttribute('content', 'width=900');
-  });
-  window.addEventListener('afterprint', function () {
-    document.querySelector('meta[name="viewport"]')
-      .setAttribute('content', 'width=device-width, initial-scale=1.0');
-  });
+      .setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0');
+  }
+  window.addEventListener('beforeprint', setPrintViewport);
+  window.addEventListener('afterprint',  setNormalViewport);
+  // Fallback for browsers that don't fire beforeprint
+  var mq = window.matchMedia('print');
+  if (mq.addListener) mq.addListener(function(e){ e.matches ? setPrintViewport() : setNormalViewport(); });
 })();
 </script>
 {% endblock %}
