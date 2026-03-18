@@ -76,6 +76,20 @@ def detail(invoice_id):
     return render_template('invoices/detail.html', invoice=invoice)
 
 
+@invoices_bp.route('/<int:invoice_id>/pdf')
+@login_required
+def download_pdf(invoice_id):
+    from ..services.pdf import generate_invoice_pdf
+    invoice = Invoice.query.get_or_404(invoice_id)
+    buf = generate_invoice_pdf(invoice)
+    response = make_response(buf.read())
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = (
+        f'attachment; filename="{invoice.invoice_number}.pdf"'
+    )
+    return response
+
+
 @invoices_bp.route('/<int:invoice_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit(invoice_id):
