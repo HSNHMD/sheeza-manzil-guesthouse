@@ -288,6 +288,22 @@ def edit(booking_id):
     return render_template('bookings/edit.html', booking=booking, rooms=rooms)
 
 
+@bookings_bp.route('/<int:booking_id>/delete', methods=['POST'])
+@login_required
+def delete(booking_id):
+    booking = Booking.query.get_or_404(booking_id)
+    if booking.status == 'checked_in':
+        flash('Cannot delete a booking while the guest is checked in.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+    ref = booking.booking_ref
+    if booking.invoice:
+        db.session.delete(booking.invoice)
+    db.session.delete(booking)
+    db.session.commit()
+    flash(f'Booking {ref} deleted.', 'success')
+    return redirect(url_for('bookings.index'))
+
+
 @bookings_bp.route('/<int:booking_id>/cancel', methods=['POST'])
 @login_required
 def cancel(booking_id):

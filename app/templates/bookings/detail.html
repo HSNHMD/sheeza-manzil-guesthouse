@@ -209,6 +209,15 @@
       class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-3 rounded-lg text-sm transition-colors">
       Back to Bookings
     </a>
+    {% if booking.status != 'checked_in' %}
+    <form method="POST" action="{{ url_for('bookings.delete', booking_id=booking.id) }}"
+      onsubmit="return confirm('Permanently delete booking {{ booking.booking_ref }} and its invoice? This cannot be undone.')">
+      <button type="submit"
+        class="px-4 py-3 text-red-600 hover:bg-red-50 border border-red-200 font-medium rounded-lg text-sm transition-colors whitespace-nowrap">
+        Delete
+      </button>
+    </form>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
