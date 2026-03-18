@@ -26,6 +26,7 @@ def create_app(config_class=Config):
     from .routes.invoices import invoices_bp
     from .routes.housekeeping import housekeeping_bp
     from .routes.calendar import calendar_bp
+    from .routes.guests import guests_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -33,6 +34,7 @@ def create_app(config_class=Config):
     app.register_blueprint(invoices_bp)
     app.register_blueprint(housekeeping_bp)
     app.register_blueprint(calendar_bp)
+    app.register_blueprint(guests_bp)
 
     with app.app_context():
         db.create_all()

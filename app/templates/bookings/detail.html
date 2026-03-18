@@ -72,7 +72,11 @@
 
   <!-- Guest Info -->
   <div class="bg-white rounded-xl border border-gray-200 p-5">
-    <h2 class="font-semibold text-gray-700 mb-4">Guest Information</h2>
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-gray-700">Guest Information</h2>
+      <a href="{{ url_for('guests.edit', guest_id=booking.guest_id, next=url_for('bookings.detail', booking_id=booking.id)) }}"
+        class="text-xs text-blue-600 hover:text-blue-800 font-medium">Edit Guest</a>
+    </div>
     <div class="grid grid-cols-2 gap-4 text-sm">
       <div>
         <p class="text-gray-500">Name</p>
