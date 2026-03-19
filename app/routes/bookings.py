@@ -291,13 +291,27 @@ def edit(booking_id):
 @bookings_bp.route('/<int:booking_id>/confirm', methods=['POST'])
 @login_required
 def confirm(booking_id):
+    from .invoices import generate_invoice
     booking = Booking.query.get_or_404(booking_id)
     if booking.status not in ('unconfirmed', 'pending_verification'):
         flash('Only unconfirmed or pending bookings can be confirmed.', 'error')
         return redirect(url_for('bookings.detail', booking_id=booking_id))
     booking.status = 'confirmed'
+
+    # Auto-mark payment if guest uploaded a payment slip
+    if booking.payment_slip_filename:
+        if not booking.invoice:
+            db.session.flush()
+            generate_invoice(booking)
+        inv = booking.invoice
+        inv.amount_paid = inv.total_amount
+        inv.payment_status = 'paid'
+        inv.payment_method = 'bank_transfer'
+        flash(f'Booking {booking.booking_ref} confirmed. Payment marked as received (bank transfer).', 'success')
+    else:
+        flash(f'Booking {booking.booking_ref} confirmed. Record payment separately.', 'success')
+
     db.session.commit()
-    flash(f'Booking {booking.booking_ref} confirmed.', 'success')
     return redirect(url_for('bookings.detail', booking_id=booking_id))
 
 
