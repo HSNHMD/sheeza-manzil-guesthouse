@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Book a Room — Sheeza Manzil Guesthouse{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+
+<header class="bg-white border-b border-gray-200">
+  <div class="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+    <div>
+      <p class="text-lg font-extrabold text-gray-900 tracking-tight leading-none">Sheeza Manzil Guesthouse</p>
+      <p class="text-xs text-gray-500 mt-0.5">Maaveyo Magu, Hdh. Hanimaadhoo, Maldives · Tel: +960 737 5797</p>
+    </div>
+  </div>
+</header>
+
+<main class="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="border-t border-gray-200 text-center text-xs text-gray-400 py-4">
+  &copy; Hussain Hamid. All rights reserved.
+</footer>
+
+</body>
+</html>

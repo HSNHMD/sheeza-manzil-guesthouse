@@ -97,12 +97,15 @@ class Booking(db.Model):
     actual_check_in = db.Column(db.DateTime)
     actual_check_out = db.Column(db.DateTime)
     num_guests = db.Column(db.Integer, default=1)
-    status = db.Column(db.String(20), default='confirmed')  # confirmed, checked_in, checked_out, cancelled
+    status = db.Column(db.String(20), default='confirmed')  # unconfirmed, pending_verification, confirmed, checked_in, checked_out, cancelled
     special_requests = db.Column(db.Text)
     total_amount = db.Column(db.Float, default=0.0)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id_card_filename   = db.Column(db.String(255))
+    id_card_drive_url  = db.Column(db.String(500))
+    payment_slip_filename = db.Column(db.String(255))
 
     invoice = db.relationship('Invoice', backref='booking', uselist=False)
     creator = db.relationship('User', foreign_keys=[created_by])

@@ -24,7 +24,7 @@ def generate_booking_ref():
 def check_room_availability(room_id, check_in, check_out, exclude_booking_id=None):
     query = Booking.query.filter(
         Booking.room_id == room_id,
-        Booking.status.in_(['confirmed', 'checked_in']),
+        Booking.status.in_(['unconfirmed', 'pending_verification', 'confirmed', 'checked_in']),
         Booking.check_in_date < check_out,
         Booking.check_out_date > check_in
     )
@@ -286,6 +286,28 @@ def edit(booking_id):
         return redirect(url_for('bookings.detail', booking_id=booking_id))
 
     return render_template('bookings/edit.html', booking=booking, rooms=rooms)
+
+
+@bookings_bp.route('/<int:booking_id>/confirm', methods=['POST'])
+@login_required
+def confirm(booking_id):
+    booking = Booking.query.get_or_404(booking_id)
+    if booking.status not in ('unconfirmed', 'pending_verification'):
+        flash('Only unconfirmed or pending bookings can be confirmed.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+    booking.status = 'confirmed'
+    db.session.commit()
+    flash(f'Booking {booking.booking_ref} confirmed.', 'success')
+    return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+
+@bookings_bp.route('/uploads/<path:filename>')
+@login_required
+def download_upload(filename):
+    from flask import send_from_directory, current_app
+    import os
+    upload_dir = os.path.join(current_app.root_path, 'uploads')
+    return send_from_directory(upload_dir, filename)
 
 
 @bookings_bp.route('/<int:booking_id>/delete', methods=['POST'])

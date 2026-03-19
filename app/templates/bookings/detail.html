@@ -10,7 +10,9 @@
       <div>
         <h1 class="text-xl font-bold text-gray-800 font-mono">{{ booking.booking_ref }}</h1>
         <span class="text-xs px-2 py-0.5 rounded-full font-medium
-          {% if booking.status == 'confirmed' %}bg-yellow-100 text-yellow-700
+          {% if booking.status == 'unconfirmed' %}bg-red-100 text-red-700
+          {% elif booking.status == 'pending_verification' %}bg-amber-100 text-amber-700
+          {% elif booking.status == 'confirmed' %}bg-yellow-100 text-yellow-700
           {% elif booking.status == 'checked_in' %}bg-green-100 text-green-700
           {% elif booking.status == 'checked_out' %}bg-gray-100 text-gray-600
           {% else %}bg-red-100 text-red-600{% endif %}">
@@ -109,6 +111,35 @@
     </div>
   </div>
 
+  <!-- Uploaded Documents -->
+  {% if booking.id_card_filename or booking.payment_slip_filename %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <h2 class="font-semibold text-gray-700 mb-4">Uploaded Documents</h2>
+    <div class="space-y-2 text-sm">
+      {% if booking.id_card_filename %}
+      <div class="flex items-center justify-between">
+        <span class="text-gray-600">ID Card / Passport</span>
+        <div class="flex gap-2">
+          {% if booking.id_card_drive_url %}
+          <a href="{{ booking.id_card_drive_url }}" target="_blank"
+            class="text-blue-600 hover:underline text-xs">View on Drive</a>
+          {% endif %}
+          <a href="{{ url_for('bookings.download_upload', filename=booking.id_card_filename) }}"
+            class="text-blue-600 hover:underline text-xs">Download</a>
+        </div>
+      </div>
+      {% endif %}
+      {% if booking.payment_slip_filename %}
+      <div class="flex items-center justify-between">
+        <span class="text-gray-600">Payment Slip</span>
+        <a href="{{ url_for('bookings.download_upload', filename=booking.payment_slip_filename) }}"
+          class="text-blue-600 hover:underline text-xs">Download</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Payment status panel -->
   {% if booking.status in ('confirmed', 'checked_in', 'checked_out') %}
   {% set inv = booking.invoice %}
@@ -176,7 +207,20 @@
 
   <!-- Actions -->
   <div class="flex flex-wrap gap-3">
-    {% if booking.status == 'confirmed' %}
+    {% if booking.status in ('unconfirmed', 'pending_verification') %}
+    <form method="POST" action="{{ url_for('bookings.confirm', booking_id=booking.id) }}" class="flex-1">
+      <button type="submit"
+        class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg text-sm transition-colors">
+        ✓ Confirm Booking (Payment Verified)
+      </button>
+    </form>
+    <form method="POST" action="{{ url_for('bookings.cancel', booking_id=booking.id) }}"
+      onsubmit="return confirm('Cancel booking {{ booking.booking_ref }}?')" class="flex-1">
+      <button type="submit" class="w-full border border-red-300 text-red-600 hover:bg-red-50 font-medium py-3 rounded-lg text-sm transition-colors">
+        Cancel Booking
+      </button>
+    </form>
+    {% elif booking.status == 'confirmed' %}
       {% set inv = booking.invoice %}
       {% set can_checkin = inv and inv.payment_status in ('paid', 'partial') %}
     <a href="{{ url_for('bookings.edit', booking_id=booking.id) }}"

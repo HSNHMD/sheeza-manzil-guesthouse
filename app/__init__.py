@@ -27,6 +27,7 @@ def create_app(config_class=Config):
     from .routes.housekeeping import housekeeping_bp
     from .routes.calendar import calendar_bp
     from .routes.guests import guests_bp
+    from .routes.public import public_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -35,8 +36,12 @@ def create_app(config_class=Config):
     app.register_blueprint(housekeeping_bp)
     app.register_blueprint(calendar_bp)
     app.register_blueprint(guests_bp)
+    app.register_blueprint(public_bp)
 
     with app.app_context():
+        import os
+        upload_dir = os.path.join(app.root_path, 'uploads')
+        os.makedirs(upload_dir, exist_ok=True)
         db.create_all()
         _seed_admin(app)
         _seed_rooms(app)

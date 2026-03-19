@@ -1,0 +1,72 @@
+{% extends 'public/base.html' %}
+{% block title %}Booking Confirmed — Sheeza Manzil Guesthouse{% endblock %}
+{% block content %}
+<div class="text-center mb-8">
+  {% if booking.status == 'pending_verification' %}
+  <div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+    <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+  </div>
+  <h1 class="text-2xl font-bold text-gray-900">Thank you!</h1>
+  <p class="text-gray-500 mt-2 text-sm">Your payment slip has been received and is under review.</p>
+  {% else %}
+  <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+  </div>
+  <h1 class="text-2xl font-bold text-gray-900">Booking Received</h1>
+  <p class="text-gray-500 mt-2 text-sm">Your booking request has been submitted.</p>
+  {% endif %}
+</div>
+
+<!-- Booking ref card -->
+<div class="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+  <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Booking Details</p>
+  <div class="space-y-2 text-sm">
+    <div class="flex justify-between">
+      <span class="text-gray-500">Reference</span>
+      <span class="font-bold text-gray-900 font-mono text-base">{{ booking.booking_ref }}</span>
+    </div>
+    <div class="flex justify-between">
+      <span class="text-gray-500">Room</span>
+      <span class="font-medium text-gray-800">{{ booking.room.number }} — {{ booking.room.room_type }}</span>
+    </div>
+    <div class="flex justify-between">
+      <span class="text-gray-500">Check-in</span>
+      <span class="font-medium text-gray-800">{{ booking.check_in_date.strftime('%d %B %Y') }}</span>
+    </div>
+    <div class="flex justify-between">
+      <span class="text-gray-500">Check-out</span>
+      <span class="font-medium text-gray-800">{{ booking.check_out_date.strftime('%d %B %Y') }}</span>
+    </div>
+    <div class="flex justify-between">
+      <span class="text-gray-500">Nights</span>
+      <span class="font-medium text-gray-800">{{ booking.nights }}</span>
+    </div>
+    <hr class="border-gray-100">
+    <div class="flex justify-between text-base">
+      <span class="font-semibold text-gray-800">Total Due</span>
+      <span class="font-bold text-gray-900">MVR {{ '%.0f'|format(booking.total_amount) }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- Status message -->
+{% if booking.status == 'pending_verification' %}
+<div class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-800">
+  <p class="font-semibold mb-1">Pending Payment Verification</p>
+  <p>Your booking reference is <strong>{{ booking.booking_ref }}</strong>. We have received your payment slip and will verify and confirm your booking shortly. Our team will contact you via WhatsApp.</p>
+</div>
+{% else %}
+<div class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm text-blue-800">
+  <p class="font-semibold mb-1">Payment Required to Confirm</p>
+  <p>Your booking reference is <strong>{{ booking.booking_ref }}</strong>. Please complete payment of <strong>MVR {{ '%.0f'|format(booking.total_amount) }}</strong> to confirm your reservation. Our team will follow up with you via WhatsApp shortly.</p>
+</div>
+{% endif %}
+
+<a href="{{ url_for('public.index') }}" class="block text-center mt-5 text-blue-600 hover:underline text-sm">
+  Make another booking
+</a>
+{% endblock %}
