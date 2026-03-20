@@ -1,5 +1,6 @@
 import random
 import string
+from datetime import date
 from flask import Blueprint, render_template, redirect, url_for, flash, request, make_response
 from flask_login import login_required, current_user
 from ..models import db, Invoice, Booking
