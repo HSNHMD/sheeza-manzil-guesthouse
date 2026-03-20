@@ -1,12 +1,12 @@
 import os
 import uuid
-from datetime import date
 from flask import (Blueprint, render_template, request, jsonify,
                    redirect, url_for, current_app)
 from werkzeug.utils import secure_filename
 from ..models import db, Booking, Room, Guest
 from ..routes.invoices import generate_invoice
 from ..routes.bookings import generate_booking_ref
+from ..utils import hotel_date
 
 public_bp = Blueprint('public', __name__, url_prefix='/book')
 
@@ -29,7 +29,7 @@ def _save_file(file, prefix):
 
 @public_bp.route('/')
 def index():
-    return render_template('public/book.html', today=date.today().isoformat())
+    return render_template('public/book.html', today=hotel_date().isoformat())
 
 
 @public_bp.route('/availability')
@@ -76,7 +76,7 @@ def submit():
         check_in  = date.fromisoformat(request.form.get('check_in_date', ''))
         check_out = date.fromisoformat(request.form.get('check_out_date', ''))
     except (ValueError, TypeError):
-        return render_template('public/book.html', today=date.today().isoformat(),
+        return render_template('public/book.html', today=hotel_date().isoformat(),
                                error='Invalid submission. Please try again.')
 
     room = Room.query.get_or_404(room_id)
@@ -89,13 +89,13 @@ def submit():
         Booking.check_out_date > check_in,
     ).first()
     if conflict:
-        return render_template('public/book.html', today=date.today().isoformat(),
+        return render_template('public/book.html', today=hotel_date().isoformat(),
                                error='Sorry, that room is no longer available. Please select different dates.')
 
     # ID card (required)
     id_file = request.files.get('id_card')
     if not id_file or not id_file.filename or not _allowed(id_file.filename):
-        return render_template('public/book.html', today=date.today().isoformat(),
+        return render_template('public/book.html', today=hotel_date().isoformat(),
                                error='ID card / passport upload is required.')
 
     first_name = request.form.get('first_name', '').strip()

@@ -53,7 +53,8 @@ class Room(db.Model):
 
     @property
     def current_booking(self):
-        today = date.today()
+        from .utils import hotel_date
+        today = hotel_date()
         return Booking.query.filter(
             Booking.room_id == self.id,
             Booking.status == 'checked_in',

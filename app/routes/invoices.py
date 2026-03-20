@@ -1,9 +1,9 @@
 import random
 import string
-from datetime import date
 from flask import Blueprint, render_template, redirect, url_for, flash, request, make_response
 from flask_login import login_required, current_user
 from ..models import db, Invoice, Booking
+from ..utils import hotel_date
 
 invoices_bp = Blueprint('invoices', __name__, url_prefix='/invoices')
 
@@ -12,7 +12,7 @@ TAX_RATE = 0.0  # No tax applied
 
 def generate_invoice_number():
     while True:
-        num = 'INV' + date.today().strftime('%Y%m') + ''.join(random.choices(string.digits, k=4))
+        num = 'INV' + hotel_date().strftime('%Y%m') + ''.join(random.choices(string.digits, k=4))
         if not Invoice.query.filter_by(invoice_number=num).first():
             return num
 
@@ -28,7 +28,7 @@ def generate_invoice(booking, invoice_to=None, company_name=None, billing_addres
     invoice = Invoice(
         invoice_number=generate_invoice_number(),
         booking_id=booking.id,
-        issue_date=date.today(),
+        issue_date=hotel_date(),
         subtotal=subtotal,
         tax_rate=0,
         tax_amount=0,

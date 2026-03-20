@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from flask import Blueprint, render_template, request
 from flask_login import login_required
 from ..models import Room, Booking
+from ..utils import hotel_date
 
 calendar_bp = Blueprint('cal', __name__, url_prefix='/calendar')
 
@@ -10,7 +11,7 @@ calendar_bp = Blueprint('cal', __name__, url_prefix='/calendar')
 @calendar_bp.route('/')
 @login_required
 def index():
-    today = date.today()
+    today = hotel_date()
     year = int(request.args.get('year', today.year))
     month = int(request.args.get('month', today.month))
 

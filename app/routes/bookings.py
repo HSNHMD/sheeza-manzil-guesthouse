@@ -2,6 +2,7 @@ import random
 import string
 from datetime import datetime, date
 from flask import Blueprint, render_template, redirect, url_for, flash, request
+from ..utils import hotel_date
 from flask_login import login_required, current_user
 from ..models import db, Booking, Room, Guest, Invoice
 from ..services.whatsapp import (
@@ -69,7 +70,7 @@ def index():
 
     bookings = query.order_by(Booking.check_in_date.desc()).all()
 
-    today = date.today()
+    today = hotel_date()
     arrivals_today = Booking.query.filter_by(check_in_date=today, status='confirmed').count()
     departures_today = Booking.query.filter_by(check_out_date=today, status='checked_in').count()
     in_house = Booking.query.filter_by(status='checked_in').count()
