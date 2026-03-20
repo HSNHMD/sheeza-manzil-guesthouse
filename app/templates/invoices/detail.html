@@ -229,6 +229,27 @@
     </table>
   </div>
 
+  <!-- ── PAYMENT DETAILS ───────────────────────────────────────────────── -->
+  {% if invoice.balance_due > 0 %}
+  <hr class="mx-10 border-gray-200">
+  <div class="px-10 py-5">
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;">
+      <p class="text-xs font-bold text-black uppercase tracking-widest mb-2">Payment Details</p>
+      <p class="text-sm text-black mb-1">Bank Transfer to:</p>
+      <table class="text-sm">
+        <tr>
+          <td class="text-black pr-4 py-0.5 whitespace-nowrap">Account Name</td>
+          <td class="font-semibold text-black">SHEEZA IMAD / MOHAMED S.R.</td>
+        </tr>
+        <tr>
+          <td class="text-black pr-4 py-0.5 whitespace-nowrap">Account Number</td>
+          <td class="font-semibold text-black tracking-wider">7770000212622</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
   {% if invoice.notes %}
   <hr class="mx-10 border-black">
   <div class="px-10 py-4 text-sm">
