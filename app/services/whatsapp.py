@@ -25,10 +25,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-_TOKEN    = os.environ.get('WHATSAPP_TOKEN', '')
-_PHONE_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID') or os.environ.get('WHATSAPP_PHONE_ID', '')
-_ENABLED  = os.environ.get('WHATSAPP_ENABLED', 'false').lower() == 'true'
-_API_URL  = 'https://graph.facebook.com/v18.0/{phone_id}/messages'
+# Read at call time (not module load time) so Railway env vars are always current.
+_API_BASE = 'https://graph.facebook.com/v18.0'
 _LANG     = 'en'
 
 STAFF_PHONE = '9607375797'
@@ -37,26 +35,34 @@ STAFF_PHONE = '9607375797'
 _TEMPLATE_NOT_READY_CODES = {132000, 132001, 132005, 132007, 132008, 132015}
 
 
+def _get_token()    -> str:  return os.environ.get('WHATSAPP_TOKEN', '')
+def _get_phone_id() -> str:  return os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '') or os.environ.get('WHATSAPP_PHONE_ID', '')
+def _is_enabled()   -> bool: return os.environ.get('WHATSAPP_ENABLED', 'false').lower() == 'true'
+def _api_url()      -> str:  return f'{_API_BASE}/{_get_phone_id()}/messages'
+
+
 def _config_status() -> dict:
     """Return current config state — used by the test route."""
+    token    = _get_token()
+    phone_id = _get_phone_id()
     return {
-        'enabled':       _ENABLED,
-        'has_token':     bool(_TOKEN),
-        'token_prefix':  (_TOKEN[:8] + '…') if len(_TOKEN) >= 8 else (_TOKEN or '(empty)'),
-        'phone_id':      _PHONE_ID or '(empty)',
-        'api_url':       _API_URL,
+        'enabled':       _is_enabled(),
+        'has_token':     bool(token),
+        'token_prefix':  (token[:8] + '…') if len(token) >= 8 else (token or '(empty)'),
+        'phone_id':      phone_id or '(empty)',
+        'api_url':       f'{_API_BASE}/{phone_id or "(missing)"}/messages',
         'language':      _LANG,
     }
 
 
 # ── Credential / library guard ─────────────────────────────────────────────────
-def _check_config() -> str | None:
+def _check_config():
     """Return an error string if config is incomplete, else None."""
-    if not _ENABLED:
+    if not _is_enabled():
         return 'WHATSAPP_ENABLED is not true'
-    if not _TOKEN:
+    if not _get_token():
         return 'WHATSAPP_TOKEN is not set'
-    if not _PHONE_ID:
+    if not _get_phone_id():
         return 'WHATSAPP_PHONE_NUMBER_ID is not set'
     if _requests is None:
         return 'requests library not installed'
@@ -64,7 +70,12 @@ def _check_config() -> str | None:
 
 
 def _clean_phone(phone: str) -> str:
-    return phone.lstrip('+').replace(' ', '').replace('-', '')
+    """Strip + and whitespace; ensure Maldives local numbers get 960 prefix."""
+    cleaned = phone.lstrip('+').replace(' ', '').replace('-', '')
+    # If it looks like a bare 7-digit Maldives local number, prepend 960
+    if len(cleaned) == 7 and cleaned[0] in '234567':
+        cleaned = '960' + cleaned
+    return cleaned
 
 
 # ── Low-level: plain text (used by test route only) ────────────────────────────
@@ -83,14 +94,14 @@ def _send(to: str, text: str) -> dict:
         return result
 
     to_clean = _clean_phone(to)
-    url = _API_URL.format(phone_id=_PHONE_ID)
+    url = _api_url()
     payload = {
         'messaging_product': 'whatsapp',
         'to': to_clean,
         'type': 'text',
         'text': {'preview_url': False, 'body': text},
     }
-    headers = {'Authorization': f'Bearer {_TOKEN}', 'Content-Type': 'application/json'}
+    headers = {'Authorization': f'Bearer {_get_token()}', 'Content-Type': 'application/json'}
 
     try:
         resp = _requests.post(url, json=payload, headers=headers, timeout=10)
@@ -132,7 +143,7 @@ def _send_template(to: str, template_name: str, params: list,
         return result
 
     to_clean = _clean_phone(to)
-    url = _API_URL.format(phone_id=_PHONE_ID)
+    url = _api_url()
     payload = {
         'messaging_product': 'whatsapp',
         'to': to_clean,
@@ -146,7 +157,7 @@ def _send_template(to: str, template_name: str, params: list,
             }],
         },
     }
-    headers = {'Authorization': f'Bearer {_TOKEN}', 'Content-Type': 'application/json'}
+    headers = {'Authorization': f'Bearer {_get_token()}', 'Content-Type': 'application/json'}
 
     try:
         resp = _requests.post(url, json=payload, headers=headers, timeout=10)
