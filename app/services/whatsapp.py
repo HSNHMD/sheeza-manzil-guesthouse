@@ -31,23 +31,47 @@ _API_URL  = 'https://graph.facebook.com/v18.0/{phone_id}/messages'
 STAFF_PHONE = '9607375797'   # front-desk notification recipient
 
 
+def _config_status() -> dict:
+    """Return current config state — used by the test route."""
+    return {
+        'enabled':    _ENABLED,
+        'has_token':  bool(_TOKEN),
+        'token_prefix': (_TOKEN[:8] + '…') if len(_TOKEN) >= 8 else (_TOKEN or '(empty)'),
+        'phone_id':   _PHONE_ID or '(empty)',
+        'api_url':    _API_URL,
+    }
+
+
 # ── Low-level sender ──────────────────────────────────────────────────────────
-def _send(to: str, text: str) -> bool:
+def _send(to: str, text: str) -> dict:
     """
     Send a plain-text WhatsApp message via the Cloud API.
     Always non-blocking — logs errors but never raises.
-    """
-    if not _ENABLED:
-        logger.info('[WhatsApp DISABLED] Would send to %s: %s', to, text[:80])
-        return False
 
-    if not _TOKEN or not _PHONE_ID:
-        logger.error('WhatsApp credentials missing (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)')
-        return False
+    Returns a dict with keys: success (bool), status_code, response_body, error.
+    """
+    result = {'success': False, 'status_code': None, 'response_body': None, 'error': None}
+
+    if not _ENABLED:
+        msg = f'WHATSAPP_ENABLED is not true — message NOT sent to {to}'
+        logger.info('[WhatsApp DISABLED] %s', msg)
+        result['error'] = msg
+        return result
+
+    if not _TOKEN:
+        result['error'] = 'WHATSAPP_TOKEN is not set'
+        logger.error(result['error'])
+        return result
+
+    if not _PHONE_ID:
+        result['error'] = 'WHATSAPP_PHONE_NUMBER_ID is not set'
+        logger.error(result['error'])
+        return result
 
     if _requests is None:
-        logger.error('requests library not installed')
-        return False
+        result['error'] = 'requests library not installed'
+        logger.error(result['error'])
+        return result
 
     to_clean = to.lstrip('+').replace(' ', '').replace('-', '')
     url = _API_URL.format(phone_id=_PHONE_ID)
@@ -64,14 +88,19 @@ def _send(to: str, text: str) -> bool:
 
     try:
         resp = _requests.post(url, json=payload, headers=headers, timeout=10)
+        result['status_code'] = resp.status_code
+        result['response_body'] = resp.text
         if resp.status_code == 200:
-            logger.info('WhatsApp sent to %s', to_clean)
-            return True
-        logger.error('WhatsApp API error %s: %s', resp.status_code, resp.text)
-        return False
+            logger.info('WhatsApp sent OK to %s', to_clean)
+            result['success'] = True
+        else:
+            result['error'] = f'API returned HTTP {resp.status_code}'
+            logger.error('WhatsApp API error %s to %s: %s', resp.status_code, to_clean, resp.text)
     except Exception as exc:
-        logger.error('WhatsApp send failed: %s', exc)
-        return False
+        result['error'] = str(exc)
+        logger.error('WhatsApp send exception to %s: %s', to_clean, exc)
+
+    return result
 
 
 # ── Message functions ─────────────────────────────────────────────────────────
@@ -99,7 +128,7 @@ def send_booking_acknowledgment(booking) -> bool:
         f"We will confirm your booking once payment is verified.\n"
         f"For assistance: +960 737 5797"
     )
-    return _send(phone, text)
+    return _send(phone, text)['success']
 
 
 def send_booking_confirmation(booking) -> bool:
@@ -122,7 +151,7 @@ def send_booking_confirmation(booking) -> bool:
         f"We look forward to welcoming you to Hanimaadhoo!\n"
         f"For any queries: +960 737 5797"
     )
-    return _send(phone, text)
+    return _send(phone, text)['success']
 
 
 def send_staff_new_booking_notification(booking) -> bool:
@@ -140,7 +169,7 @@ def send_staff_new_booking_notification(booking) -> bool:
         f"Total: MVR {booking.total_amount:.0f}\n\n"
         f"Status: Pending Verification — please verify payment and confirm."
     )
-    return _send(STAFF_PHONE, text)
+    return _send(STAFF_PHONE, text)['success']
 
 
 def send_checkin_reminder(booking) -> bool:
@@ -158,7 +187,7 @@ def send_checkin_reminder(booking) -> bool:
         f"Please arrive at the front desk at your convenience. "
         f"Call us at +960 737 5797 for early check-in or special arrangements."
     )
-    return _send(phone, text)
+    return _send(phone, text)['success']
 
 
 def send_checkout_invoice_summary(booking, invoice) -> bool:
@@ -182,4 +211,4 @@ def send_checkout_invoice_summary(booking, invoice) -> bool:
         f"{balance_line}\n\n"
         f"We hope to see you again soon at Sheeza Manzil Guesthouse! 🌟"
     )
-    return _send(phone, text)
+    return _send(phone, text)['success']

@@ -1,3 +1,4 @@
+import os
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 from ..models import db, User, Room
@@ -126,3 +127,50 @@ def seed():
         return redirect(url_for('auth.seed'))
 
     return render_template('auth/seed.html', existing=existing, seed_rooms=SEED_ROOMS)
+
+
+@auth_bp.route('/admin/test-whatsapp')
+@login_required
+def test_whatsapp():
+    if not current_user.is_admin:
+        flash('Admin access required.', 'error')
+        return redirect(url_for('auth.index'))
+
+    from ..services.whatsapp import _send, _config_status, STAFF_PHONE
+
+    config = _config_status()
+    result = None
+
+    if request.args.get('send'):
+        result = _send(STAFF_PHONE, 'Test message from Sheeza Manzil Guesthouse system ✅ WhatsApp integration is working.')
+
+    # Read env vars directly so we can show exactly what the server sees
+    env_debug = {
+        'WHATSAPP_ENABLED':          os.environ.get('WHATSAPP_ENABLED', '(not set)'),
+        'WHATSAPP_TOKEN':            ('set (' + os.environ.get('WHATSAPP_TOKEN','')[:8] + '…)') if os.environ.get('WHATSAPP_TOKEN') else '(not set)',
+        'WHATSAPP_PHONE_NUMBER_ID':  os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '(not set)'),
+        'WHATSAPP_PHONE_ID':         os.environ.get('WHATSAPP_PHONE_ID', '(not set)'),
+    }
+
+    html = '<div style="font-family:monospace;max-width:700px;margin:2rem auto;padding:1rem">'
+    html += '<h2>WhatsApp Integration Test</h2>'
+    html += '<h3>Environment Variables (live from server)</h3><pre style="background:#f3f4f6;padding:1rem;border-radius:8px">'
+    for k, v in env_debug.items():
+        html += f'{k} = {v}\n'
+    html += '</pre>'
+    html += '<h3>Service Config State</h3><pre style="background:#f3f4f6;padding:1rem;border-radius:8px">'
+    for k, v in config.items():
+        html += f'{k} = {v}\n'
+    html += '</pre>'
+
+    if result is not None:
+        color = '#d1fae5' if result['success'] else '#fee2e2'
+        html += f'<h3>API Call Result</h3><pre style="background:{color};padding:1rem;border-radius:8px">'
+        for k, v in result.items():
+            html += f'{k}: {v}\n'
+        html += '</pre>'
+    else:
+        html += f'<p><a href="?send=1" style="background:#2563eb;color:white;padding:0.6rem 1.2rem;border-radius:8px;text-decoration:none">Send Test Message to {STAFF_PHONE}</a></p>'
+
+    html += f'<p style="margin-top:1rem"><a href="{url_for("auth.index")}">← Back</a></p></div>'
+    return html
