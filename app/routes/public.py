@@ -161,6 +161,14 @@ def submit():
     except Exception:
         pass
 
+    # WhatsApp: acknowledge to guest + notify staff (non-blocking)
+    try:
+        from ..services.whatsapp import send_booking_acknowledgment, send_staff_new_booking_notification
+        send_booking_acknowledgment(booking)
+        send_staff_new_booking_notification(booking)
+    except Exception:
+        pass
+
     return redirect(url_for('public.confirmation', booking_ref=booking.booking_ref))
 
 

@@ -6,7 +6,9 @@ from ..utils import hotel_date
 from flask_login import login_required, current_user
 from ..models import db, Booking, Room, Guest, Invoice
 from ..services.whatsapp import (
+    send_booking_acknowledgment,
     send_booking_confirmation,
+    send_staff_new_booking_notification,
     send_checkin_reminder,
     send_checkout_invoice_summary,
 )
@@ -313,6 +315,7 @@ def confirm(booking_id):
         flash(f'Booking {booking.booking_ref} confirmed. Record payment separately.', 'success')
 
     db.session.commit()
+    send_booking_confirmation(booking)
     return redirect(url_for('bookings.detail', booking_id=booking_id))
 
 
