@@ -136,41 +136,63 @@ def test_whatsapp():
         flash('Admin access required.', 'error')
         return redirect(url_for('auth.index'))
 
-    from ..services.whatsapp import _send, _config_status, STAFF_PHONE
+    from ..services.whatsapp import _send, _send_template, _config_status, STAFF_PHONE
 
-    config = _config_status()
-    result = None
+    config  = _config_status()
+    result  = None
+    action  = request.args.get('action', '')
 
-    if request.args.get('send'):
+    if action == 'send_text':
         result = _send(STAFF_PHONE, 'Test message from Sheeza Manzil Guesthouse system ✅ WhatsApp integration is working.')
+        result['_action'] = 'Free-form text to ' + STAFF_PHONE
 
-    # Read env vars directly so we can show exactly what the server sees
+    elif action == 'send_template':
+        tpl = request.args.get('tpl', 'booking_confirmed')
+        result = _send_template(
+            STAFF_PHONE, tpl,
+            ['Test Guest', 'BKTEST01', 'Room 1 — Deluxe',
+             '25 March 2026', '27 March 2026', '1200'],
+            pending_approval=False,
+        )
+        result['_action'] = f'Template "{tpl}" to {STAFF_PHONE}'
+
     env_debug = {
-        'WHATSAPP_ENABLED':          os.environ.get('WHATSAPP_ENABLED', '(not set)'),
-        'WHATSAPP_TOKEN':            ('set (' + os.environ.get('WHATSAPP_TOKEN','')[:8] + '…)') if os.environ.get('WHATSAPP_TOKEN') else '(not set)',
-        'WHATSAPP_PHONE_NUMBER_ID':  os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '(not set)'),
-        'WHATSAPP_PHONE_ID':         os.environ.get('WHATSAPP_PHONE_ID', '(not set)'),
+        'WHATSAPP_ENABLED':         os.environ.get('WHATSAPP_ENABLED', '(not set)'),
+        'WHATSAPP_TOKEN':           ('set (' + os.environ.get('WHATSAPP_TOKEN','')[:8] + '…)') if os.environ.get('WHATSAPP_TOKEN') else '(not set)',
+        'WHATSAPP_PHONE_NUMBER_ID': os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '(not set)'),
+        'WHATSAPP_PHONE_ID':        os.environ.get('WHATSAPP_PHONE_ID', '(not set)'),
     }
 
-    html = '<div style="font-family:monospace;max-width:700px;margin:2rem auto;padding:1rem">'
-    html += '<h2>WhatsApp Integration Test</h2>'
-    html += '<h3>Environment Variables (live from server)</h3><pre style="background:#f3f4f6;padding:1rem;border-radius:8px">'
+    btn = 'background:#2563eb;color:white;padding:0.5rem 1rem;border-radius:6px;text-decoration:none;margin-right:8px;display:inline-block'
+    html  = '<div style="font-family:monospace;max-width:760px;margin:2rem auto;padding:1.5rem">'
+    html += '<h2 style="margin-bottom:1rem">WhatsApp Integration Test</h2>'
+
+    html += '<h3>Environment Variables</h3>'
+    html += '<pre style="background:#f3f4f6;padding:1rem;border-radius:8px;font-size:13px">'
     for k, v in env_debug.items():
         html += f'{k} = {v}\n'
     html += '</pre>'
-    html += '<h3>Service Config State</h3><pre style="background:#f3f4f6;padding:1rem;border-radius:8px">'
+
+    html += '<h3>Service Config</h3>'
+    html += '<pre style="background:#f3f4f6;padding:1rem;border-radius:8px;font-size:13px">'
     for k, v in config.items():
         html += f'{k} = {v}\n'
     html += '</pre>'
 
-    if result is not None:
-        color = '#d1fae5' if result['success'] else '#fee2e2'
-        html += f'<h3>API Call Result</h3><pre style="background:{color};padding:1rem;border-radius:8px">'
+    if result:
+        color = '#d1fae5' if result.get('success') else '#fee2e2'
+        html += f'<h3>Result: {result.get("_action","")}</h3>'
+        html += f'<pre style="background:{color};padding:1rem;border-radius:8px;font-size:13px">'
         for k, v in result.items():
-            html += f'{k}: {v}\n'
+            if k != '_action':
+                html += f'{k}: {v}\n'
         html += '</pre>'
-    else:
-        html += f'<p><a href="?send=1" style="background:#2563eb;color:white;padding:0.6rem 1.2rem;border-radius:8px;text-decoration:none">Send Test Message to {STAFF_PHONE}</a></p>'
 
-    html += f'<p style="margin-top:1rem"><a href="{url_for("auth.index")}">← Back</a></p></div>'
+    html += '<h3>Actions</h3><div style="margin-bottom:1rem">'
+    html += f'<a href="?action=send_text" style="{btn}">Send free-form text</a>'
+    html += f'<a href="?action=send_template&tpl=booking_confirmed" style="{btn}">Test booking_confirmed</a>'
+    html += f'<a href="?action=send_template&tpl=booking_received" style="{btn}">Test booking_received</a>'
+    html += f'<a href="?action=send_template&tpl=staff_new_booking" style="{btn}">Test staff_new_booking</a>'
+    html += '</div>'
+    html += f'<p><a href="{url_for("auth.index")}">← Back to dashboard</a></p></div>'
     return html
