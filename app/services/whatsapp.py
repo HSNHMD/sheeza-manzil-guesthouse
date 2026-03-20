@@ -86,14 +86,17 @@ def send_booking_acknowledgment(booking) -> bool:
         return False
 
     text = (
-        f"Dear {booking.guest.full_name}, thank you for your booking at "
-        f"Sheeza Manzil Guesthouse! 🏨\n\n"
+        f"Dear {booking.guest.full_name}, we have received your booking request at "
+        f"Sheeza Manzil Guesthouse. 🏨\n\n"
         f"Booking Reference: {booking.booking_ref}\n"
         f"Room: {booking.room.number} — {booking.room.room_type}\n"
         f"Check-in: {booking.check_in_date.strftime('%A, %d %B %Y')}\n"
         f"Check-out: {booking.check_out_date.strftime('%A, %d %B %Y')}\n"
         f"Total: MVR {booking.total_amount:.0f}\n\n"
-        f"Your booking will be confirmed once payment is verified.\n"
+        f"⏳ Your booking is pending payment verification. Please ensure payment has been sent to:\n"
+        f"Account Name: SHEEZA IMAD/MOHAMED S.R.\n"
+        f"Account Number: 7770000212622\n\n"
+        f"We will confirm your booking once payment is verified.\n"
         f"For assistance: +960 737 5797"
     )
     return _send(phone, text)
@@ -114,9 +117,10 @@ def send_booking_confirmation(booking) -> bool:
         f"Booking Reference: {booking.booking_ref}\n"
         f"Room: {booking.room.number} — {booking.room.room_type}\n"
         f"Check-in: {booking.check_in_date.strftime('%A, %d %B %Y')}\n"
-        f"Check-out: {booking.check_out_date.strftime('%A, %d %B %Y')}\n\n"
-        f"We look forward to welcoming you!\n"
-        f"+960 737 5797"
+        f"Check-out: {booking.check_out_date.strftime('%A, %d %B %Y')}\n"
+        f"Total: MVR {booking.total_amount:.0f}\n\n"
+        f"We look forward to welcoming you to Hanimaadhoo!\n"
+        f"For any queries: +960 737 5797"
     )
     return _send(phone, text)
 
@@ -125,16 +129,16 @@ def send_staff_new_booking_notification(booking) -> bool:
     """
     Sent to the staff phone whenever a guest submits a booking through /book.
     """
-    status_label = booking.status.replace('_', ' ').title()
     text = (
-        f"New booking received! 🔔\n\n"
-        f"{booking.booking_ref}\n"
+        f"New Booking Received! 🔔\n\n"
+        f"Reference: {booking.booking_ref}\n"
         f"Guest: {booking.guest.full_name}\n"
+        f"Phone: {booking.guest.phone or 'N/A'}\n"
         f"Room: {booking.room.number} — {booking.room.room_type}\n"
-        f"{booking.check_in_date.strftime('%d %b %Y')} to "
-        f"{booking.check_out_date.strftime('%d %b %Y')}\n"
-        f"Status: {status_label}\n"
-        f"Total: MVR {booking.total_amount:.0f}"
+        f"Check-in: {booking.check_in_date.strftime('%d %b %Y')}\n"
+        f"Check-out: {booking.check_out_date.strftime('%d %b %Y')}\n"
+        f"Total: MVR {booking.total_amount:.0f}\n\n"
+        f"Status: Pending Verification — please verify payment and confirm."
     )
     return _send(STAFF_PHONE, text)
 
