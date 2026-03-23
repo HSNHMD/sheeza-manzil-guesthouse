@@ -91,7 +91,7 @@ def submit():
     ).first()
     if conflict:
         return render_template('public/book.html', today=hotel_date().isoformat(),
-                               error='Sorry, that room is no longer available. Please select different dates.')
+                               error='Sorry, this room is not available for your selected dates. Please choose different dates or a different room.')
 
     # ID card (required)
     id_file = request.files.get('id_card')

@@ -27,7 +27,13 @@
       <span class="w-4 h-4 rounded bg-green-200 border border-green-300 inline-block"></span>Available
     </span>
     <span class="flex items-center gap-1.5">
-      <span class="w-4 h-4 rounded bg-blue-400 inline-block"></span>Confirmed
+      <span class="w-4 h-4 rounded bg-amber-400 inline-block"></span>Unconfirmed
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="w-4 h-4 rounded bg-amber-400 inline-block"></span>Pending Verification
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="w-4 h-4 rounded bg-red-500 inline-block"></span>Confirmed
     </span>
     <span class="flex items-center gap-1.5">
       <span class="w-4 h-4 rounded bg-indigo-500 inline-block"></span>Checked In
@@ -93,7 +99,8 @@
                   title="{{ booking.guest.full_name }}&#10;{{ booking.booking_ref }}&#10;{{ booking.check_in_date.strftime('%b %d') }} → {{ booking.check_out_date.strftime('%b %d') }}"
                   class="flex items-center justify-center w-full h-full relative group
                     {% if booking.status == 'checked_in' %}bg-indigo-500 hover:bg-indigo-600
-                    {% elif booking.status == 'confirmed' %}bg-blue-400 hover:bg-blue-500
+                    {% elif booking.status == 'confirmed' %}bg-red-500 hover:bg-red-600
+                    {% elif booking.status in ('unconfirmed', 'pending_verification') %}bg-amber-400 hover:bg-amber-500
                     {% else %}bg-gray-300 hover:bg-gray-400{% endif %}
                     {% if is_first %}rounded-l-md ml-0.5{% endif %}
                     {% if is_last %}rounded-r-md mr-0.5{% endif %}">

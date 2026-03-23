@@ -64,6 +64,7 @@
             <th class="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Payment</th>
             <th class="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Uploads</th>
             <th class="text-right px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Total</th>
+            <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -124,6 +125,19 @@
               </div>
             </td>
             <td class="px-4 py-3 text-right text-gray-800 font-medium hidden sm:table-cell">MVR {{ '%.0f'|format(b.total_amount) }}</td>
+            <td class="px-3 py-2 whitespace-nowrap" onclick="event.stopPropagation()">
+              {% if b.status not in ('cancelled', 'checked_in', 'checked_out') %}
+              <form method="POST" action="{{ url_for('bookings.cancel', booking_id=b.id) }}"
+                onsubmit="return confirm('Cancel booking {{ b.booking_ref }} for {{ b.guest.full_name }}?')">
+                <button type="submit"
+                  class="px-2.5 py-1 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                  Cancel
+                </button>
+              </form>
+              {% else %}
+              <span class="text-gray-300 text-xs">—</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

@@ -28,9 +28,9 @@ def index():
     # All active rooms ordered by number
     rooms = sorted(Room.query.filter_by(is_active=True).all(), key=lambda r: int(r.number))
 
-    # All bookings overlapping this month
+    # All bookings overlapping this month (all active + historical statuses except cancelled)
     bookings = Booking.query.filter(
-        Booking.status.in_(['confirmed', 'checked_in', 'checked_out']),
+        Booking.status.in_(['unconfirmed', 'pending_verification', 'confirmed', 'checked_in', 'checked_out']),
         Booking.check_in_date <= last_day,
         Booking.check_out_date > first_day
     ).all()
