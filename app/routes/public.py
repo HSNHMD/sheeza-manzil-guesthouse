@@ -147,19 +147,35 @@ def submit():
     )
     db.session.commit()
 
-    # Upload ID card to Google Drive (non-blocking)
+    # Upload files to Google Drive (non-blocking — failure does not affect the booking)
+    upload_dir = os.path.join(current_app.root_path, 'uploads')
+    guest_slug = f'{first_name}{last_name}'.replace(' ', '')
+
+    id_ext = id_card_filename.rsplit('.', 1)[-1].lower()
+    drive_id_name = f'{booking.booking_ref}-{guest_slug}-ID.{id_ext}'
     try:
         from ..services.drive import upload_id_card
-        upload_dir = os.path.join(current_app.root_path, 'uploads')
         _, drive_url = upload_id_card(
             os.path.join(upload_dir, id_card_filename),
-            f'{booking.booking_ref}_{id_card_filename}',
+            drive_id_name,
         )
         if drive_url:
             booking.id_card_drive_url = drive_url
             db.session.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        current_app.logger.error('[Drive] ID card upload failed for %s: %s', booking.booking_ref, exc)
+
+    if payment_slip_filename:
+        slip_ext = payment_slip_filename.rsplit('.', 1)[-1].lower()
+        drive_slip_name = f'{booking.booking_ref}-{guest_slug}-Payment.{slip_ext}'
+        try:
+            from ..services.drive import upload_payment_slip
+            upload_payment_slip(
+                os.path.join(upload_dir, payment_slip_filename),
+                drive_slip_name,
+            )
+        except Exception as exc:
+            current_app.logger.error('[Drive] Payment slip upload failed for %s: %s', booking.booking_ref, exc)
 
     # WhatsApp: acknowledge to guest + notify staff (non-blocking)
     try:
