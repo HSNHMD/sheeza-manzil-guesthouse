@@ -10,6 +10,36 @@ ID_FOLDER = 'Sheeza Manzil Guest IDs'
 PAYMENT_FOLDER = 'Sheeza Manzil Payment Slips'
 
 
+def _parse_credentials(creds_json: str) -> dict | None:
+    """Parse GOOGLE_CREDENTIALS JSON with fallback for Railway shell-interpolation edge case.
+
+    Railway sometimes stores env vars where the JSON content has real newlines
+    (not \\n escapes) if the value was set via shell expansion. This breaks
+    json.loads because JSON strings cannot contain literal newlines.
+    """
+    # Strategy 1: parse as-is (correct for properly stored JSON)
+    try:
+        info = json.loads(creds_json)
+        log.info('[Drive] Credentials parsed OK (strategy 1) — type=%s client_email=%s',
+                 info.get('type'), info.get('client_email'))
+        return info
+    except json.JSONDecodeError as exc:
+        log.warning('[Drive] Strategy 1 JSON parse failed: %s — trying strategy 2', exc)
+
+    # Strategy 2: escape real newlines inside the string before parsing
+    # Covers the case where shell interpolation turned \n escapes into real newlines
+    try:
+        cleaned = creds_json.replace('\r\n', '\\n').replace('\n', '\\n').replace('\r', '\\n')
+        info = json.loads(cleaned)
+        log.info('[Drive] Credentials parsed OK (strategy 2 — newline cleanup) — client_email=%s',
+                 info.get('client_email'))
+        return info
+    except json.JSONDecodeError as exc2:
+        log.error('[Drive] Both JSON parse strategies failed. Strategy 2 error: %s', exc2)
+        log.error('[Drive] Raw value starts with: %r', creds_json[:80])
+        return None
+
+
 def _service():
     creds_json = os.environ.get(CREDS_ENV)
     if not creds_json:
@@ -18,18 +48,18 @@ def _service():
 
     log.info('[Drive] %s env var found (%d chars)', CREDS_ENV, len(creds_json))
 
-    try:
-        info = json.loads(creds_json)
-        log.info('[Drive] credentials JSON parsed OK — type=%s, project=%s, client_email=%s',
-                 info.get('type'), info.get('project_id'), info.get('client_email'))
-    except json.JSONDecodeError as exc:
-        log.error('[Drive] Failed to parse %s as JSON: %s', CREDS_ENV, exc)
+    info = _parse_credentials(creds_json.strip())
+    if info is None:
         return None
 
-    # Normalize private_key: Railway env vars sometimes store literal \n instead of real newlines
+    # Normalize private_key: after parsing, check if literal \n slipped through
     if 'private_key' in info and '\\n' in info['private_key']:
         info['private_key'] = info['private_key'].replace('\\n', '\n')
-        log.info('[Drive] Normalized private_key newlines')
+        log.info('[Drive] Normalized private_key literal \\n sequences')
+
+    log.info('[Drive] Credential fields — type=%s project=%s email=%s private_key_len=%d',
+             info.get('type'), info.get('project_id'), info.get('client_email'),
+             len(info.get('private_key', '')))
 
     try:
         from google.oauth2 import service_account
@@ -79,6 +109,19 @@ def _get_or_create_folder(svc, folder_name):
         raise
 
 
+def _set_public_readable(svc, file_id: str):
+    """Grant anyone-with-link read access so the webViewLink actually works."""
+    try:
+        svc.permissions().create(
+            fileId=file_id,
+            body={'role': 'reader', 'type': 'anyone'},
+            fields='id'
+        ).execute()
+        log.info('[Drive] Set public-readable permission on file_id=%s', file_id)
+    except Exception as exc:
+        log.warning('[Drive] Could not set public permission on %s: %s', file_id, exc)
+
+
 def _upload_to_folder(file_path: str, filename: str, folder_name: str):
     """Upload a file to a named Drive folder. Returns (file_id, web_view_link) or (None, None)."""
     log.info('[Drive] Upload requested: file=%s folder="%s"', filename, folder_name)
@@ -100,6 +143,8 @@ def _upload_to_folder(file_path: str, filename: str, folder_name: str):
         file_id = f.get('id')
         web_link = f.get('webViewLink')
         log.info('[Drive] Upload success: file_id=%s link=%s', file_id, web_link)
+        # Make file viewable by anyone with the link
+        _set_public_readable(svc, file_id)
         return file_id, web_link
     except Exception as exc:
         log.error('[Drive] Upload failed for %s: %s', filename, exc, exc_info=True)
