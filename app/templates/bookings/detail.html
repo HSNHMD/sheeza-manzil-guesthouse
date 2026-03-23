@@ -115,14 +115,23 @@
   {% if booking.id_card_filename or booking.payment_slip_filename %}
   <div class="bg-white rounded-xl border border-gray-200 p-5">
     <h2 class="font-semibold text-gray-700 mb-4">Uploaded Documents</h2>
-    <div class="space-y-2 text-sm">
+    <div class="space-y-3 text-sm">
       {% if booking.id_card_filename %}
-      <div class="flex items-center justify-between">
-        <span class="text-gray-600">ID Card / Passport</span>
-        <div class="flex gap-2">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-gray-600 shrink-0">ID Card / Passport</span>
+        <div class="flex items-center gap-2 flex-wrap justify-end">
           {% if booking.id_card_drive_url %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+            On Drive
+          </span>
           <a href="{{ booking.id_card_drive_url }}" target="_blank"
             class="text-blue-600 hover:underline text-xs">View on Drive</a>
+          {% else %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+            Not on Drive
+          </span>
           {% endif %}
           <a href="{{ url_for('bookings.download_upload', filename=booking.id_card_filename) }}"
             class="text-blue-600 hover:underline text-xs">Download</a>
@@ -130,10 +139,25 @@
       </div>
       {% endif %}
       {% if booking.payment_slip_filename %}
-      <div class="flex items-center justify-between">
-        <span class="text-gray-600">Payment Slip</span>
-        <a href="{{ url_for('bookings.download_upload', filename=booking.payment_slip_filename) }}"
-          class="text-blue-600 hover:underline text-xs">Download</a>
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-gray-600 shrink-0">Payment Slip</span>
+        <div class="flex items-center gap-2 flex-wrap justify-end">
+          {% if booking.payment_slip_drive_url %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+            On Drive
+          </span>
+          <a href="{{ booking.payment_slip_drive_url }}" target="_blank"
+            class="text-blue-600 hover:underline text-xs">View on Drive</a>
+          {% else %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+            Not on Drive
+          </span>
+          {% endif %}
+          <a href="{{ url_for('bookings.download_upload', filename=booking.payment_slip_filename) }}"
+            class="text-blue-600 hover:underline text-xs">Download</a>
+        </div>
       </div>
       {% endif %}
     </div>

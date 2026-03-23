@@ -170,10 +170,13 @@ def submit():
         drive_slip_name = f'{booking.booking_ref}-{guest_slug}-Payment.{slip_ext}'
         try:
             from ..services.drive import upload_payment_slip
-            upload_payment_slip(
+            _, slip_drive_url = upload_payment_slip(
                 os.path.join(upload_dir, payment_slip_filename),
                 drive_slip_name,
             )
+            if slip_drive_url:
+                booking.payment_slip_drive_url = slip_drive_url
+                db.session.commit()
         except Exception as exc:
             current_app.logger.error('[Drive] Payment slip upload failed for %s: %s', booking.booking_ref, exc)
 

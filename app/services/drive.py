@@ -26,6 +26,11 @@ def _service():
         log.error('[Drive] Failed to parse %s as JSON: %s', CREDS_ENV, exc)
         return None
 
+    # Normalize private_key: Railway env vars sometimes store literal \n instead of real newlines
+    if 'private_key' in info and '\\n' in info['private_key']:
+        info['private_key'] = info['private_key'].replace('\\n', '\n')
+        log.info('[Drive] Normalized private_key newlines')
+
     try:
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
@@ -35,7 +40,7 @@ def _service():
 
     try:
         creds = service_account.Credentials.from_service_account_info(
-            info, scopes=['https://www.googleapis.com/auth/drive.file'])
+            info, scopes=['https://www.googleapis.com/auth/drive'])
         log.info('[Drive] Service account credentials created for %s', info.get('client_email'))
     except Exception as exc:
         log.error('[Drive] Failed to create service account credentials: %s', exc)

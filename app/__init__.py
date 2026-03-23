@@ -45,10 +45,24 @@ def create_app(config_class=Config):
         upload_dir = os.path.join(app.root_path, 'uploads')
         os.makedirs(upload_dir, exist_ok=True)
         db.create_all()
+        _migrate_columns(app)
         _seed_admin(app)
         _seed_rooms(app)
 
     return app
+
+
+def _migrate_columns(app):
+    """Add columns that were added after initial db.create_all() — idempotent."""
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(db.text(
+                'ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_slip_drive_url VARCHAR(500)'
+            ))
+            conn.execute(db.text('COMMIT'))
+        app.logger.info('DB migration: payment_slip_drive_url column ensured.')
+    except Exception as exc:
+        app.logger.warning('DB migration skipped (may be SQLite or already applied): %s', exc)
 
 
 def _seed_admin(app):
