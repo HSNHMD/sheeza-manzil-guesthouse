@@ -7,7 +7,8 @@ from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   request, make_response, send_from_directory, current_app)
+                   request, make_response, send_from_directory, current_app,
+                   jsonify)
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 
@@ -223,6 +224,32 @@ def delete_expense(expense_id):
     db.session.commit()
     flash('Expense deleted.', 'success')
     return redirect(url_for('accounting.expenses'))
+
+
+@accounting_bp.route('/expenses/scan-receipt', methods=['POST'])
+@login_required
+@admin_required
+def scan_receipt_view():
+    from ..services.receipt_scanner import scan_receipt
+
+    file = request.files.get('receipt')
+    if not file or not file.filename:
+        return jsonify({'success': False, 'error': 'No file provided'})
+
+    fname = file.filename.lower()
+    if fname.endswith('.pdf'):
+        media_type = 'application/pdf'
+    elif fname.endswith('.png'):
+        media_type = 'image/png'
+    elif fname.endswith(('.jpg', '.jpeg')):
+        media_type = 'image/jpeg'
+    else:
+        return jsonify({'success': False, 'error': 'Unsupported file type'})
+
+    result = scan_receipt(file.read(), media_type)
+    if 'error' in result:
+        return jsonify({'success': False, 'error': result['error']})
+    return jsonify({'success': True, **result})
 
 
 @accounting_bp.route('/receipts/<path:filename>')

@@ -19,13 +19,13 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">Date *</label>
-          <input type="date" name="date" required
-                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="date" name="date" id="expense-date" required
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">Category *</label>
-          <select name="category" required
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <select name="category" id="expense-category" required
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
             <option value="">Select category…</option>
             {% for cat in categories %}
             <option value="{{ cat }}">{{ cat }}</option>
@@ -34,19 +34,39 @@
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">Amount (MVR) *</label>
-          <input type="number" name="amount" step="0.01" min="0" required
+          <input type="number" name="amount" id="expense-amount" step="0.01" min="0" required
                  placeholder="0.00"
-                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
         </div>
         <div class="sm:col-span-2">
           <label class="block text-xs font-medium text-gray-600 mb-1">Description</label>
-          <input type="text" name="description" placeholder="Optional description…"
-                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="text" name="description" id="expense-description" placeholder="Optional description…"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">Receipt (optional)</label>
-          <input type="file" name="receipt" accept=".jpg,.jpeg,.png,.pdf"
+          <input type="file" name="receipt" id="receipt" accept=".jpg,.jpeg,.png,.pdf"
                  class="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+
+          <!-- Scanning indicator -->
+          <div id="scan-indicator" class="hidden mt-2 flex items-center gap-2 text-xs text-blue-600">
+            <svg class="animate-spin h-3.5 w-3.5 text-blue-600 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span>Scanning receipt…</span>
+          </div>
+
+          <!-- Scan success badge -->
+          <div id="scan-success" class="hidden mt-2 flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+            <svg class="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            <span>Fields pre-filled from receipt — review before saving</span>
+          </div>
+
+          <!-- Scan error message -->
+          <div id="scan-error" class="hidden mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5"></div>
         </div>
       </div>
       <button type="submit"
@@ -126,4 +146,79 @@
   </div>
 
 </div>
+
+<script>
+(function () {
+  const SCAN_URL = '{{ url_for("accounting.scan_receipt_view") }}';
+  const AI_FILLED_CLASSES = ['ring-2', 'ring-green-400', 'border-green-400'];
+
+  const receiptInput   = document.getElementById('receipt');
+  const dateField      = document.getElementById('expense-date');
+  const categorySelect = document.getElementById('expense-category');
+  const amountField    = document.getElementById('expense-amount');
+  const descField      = document.getElementById('expense-description');
+  const indicator      = document.getElementById('scan-indicator');
+  const successBadge   = document.getElementById('scan-success');
+  const errorBox       = document.getElementById('scan-error');
+
+  const AI_FIELDS = [dateField, categorySelect, amountField, descField];
+
+  function showIndicator()  { indicator.classList.remove('hidden'); }
+  function hideIndicator()  { indicator.classList.add('hidden'); }
+  function showSuccess()    { successBadge.classList.remove('hidden'); errorBox.classList.add('hidden'); }
+  function showError(msg)   { errorBox.textContent = msg; errorBox.classList.remove('hidden'); successBadge.classList.add('hidden'); }
+  function clearFeedback()  { hideIndicator(); successBadge.classList.add('hidden'); errorBox.classList.add('hidden'); }
+
+  function markAiFilled(field) { AI_FILLED_CLASSES.forEach(c => field.classList.add(c)); }
+  function clearAiMarks() { AI_FIELDS.forEach(f => AI_FILLED_CLASSES.forEach(c => f.classList.remove(c))); }
+
+  if (!receiptInput) return;
+
+  receiptInput.addEventListener('change', function () {
+    clearFeedback();
+    clearAiMarks();
+
+    const file = receiptInput.files && receiptInput.files[0];
+    if (!file) return;
+    if (file.name.toLowerCase().endsWith('.pdf')) return;
+
+    showIndicator();
+
+    const formData = new FormData();
+    formData.append('receipt', file);
+
+    fetch(SCAN_URL, { method: 'POST', body: formData })
+      .then(function (res) {
+        if (!res.ok) throw new Error('Server error ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        hideIndicator();
+        if (!data.success) {
+          showError('Could not scan receipt: ' + (data.error || 'Unknown error') + '. Please fill in manually.');
+          return;
+        }
+
+        if (data.date) { dateField.value = data.date; markAiFilled(dateField); }
+
+        if (data.category) {
+          const match = Array.from(categorySelect.options).find(o => o.value === data.category);
+          if (match) { categorySelect.value = data.category; markAiFilled(categorySelect); }
+        }
+
+        if (data.amount) { amountField.value = data.amount; markAiFilled(amountField); }
+
+        // Fall back to vendor name when description is absent
+        const desc = data.description || data.vendor || '';
+        if (desc) { descField.value = desc; markAiFilled(descField); }
+
+        showSuccess();
+      })
+      .catch(function () {
+        hideIndicator();
+        showError('Scan failed — please fill in manually.');
+      });
+  });
+}());
+</script>
 {% endblock %}

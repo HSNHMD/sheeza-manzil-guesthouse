@@ -50,5 +50,8 @@ class Config:
     WHATSAPP_PHONE_ID = os.environ.get('WHATSAPP_PHONE_ID', '')
     WHATSAPP_ENABLED = os.environ.get('WHATSAPP_ENABLED', 'false').lower() == 'true'
 
+    # ── Uploads ────────────────────────────────────────────────────────────────
+    MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max upload size
+
     # ── General ────────────────────────────────────────────────────────────────
     DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
