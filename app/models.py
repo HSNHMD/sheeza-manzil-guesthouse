@@ -105,9 +105,7 @@ class Booking(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     id_card_filename      = db.Column(db.String(255))
-    id_card_drive_url     = db.Column(db.String(500))
     payment_slip_filename = db.Column(db.String(255))
-    payment_slip_drive_url = db.Column(db.String(500))
 
     invoice = db.relationship('Invoice', backref='booking', uselist=False)
     creator = db.relationship('User', foreign_keys=[created_by])

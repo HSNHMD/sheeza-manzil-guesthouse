@@ -322,79 +322,14 @@ def confirm(booking_id):
 @bookings_bp.route('/uploads/<path:filename>')
 @login_required
 def download_upload(filename):
-    from flask import send_from_directory, current_app, abort
+    from flask import send_from_directory, current_app
     import os
     upload_dir = os.path.join(current_app.root_path, 'uploads')
     full_path = os.path.join(upload_dir, filename)
     if not os.path.isfile(full_path):
-        # File not on local disk — likely wiped by Railway redeploy.
-        # Staff should use the Google Drive link instead.
-        flash('Local file not found. The file may have been lost after a server restart. '
-              'Use the Google Drive link if available, or ask the guest to re-upload.', 'error')
+        flash('File not found. It may have been lost after a server restart — ask the guest to re-upload.', 'error')
         return redirect(request.referrer or url_for('bookings.index'))
     return send_from_directory(upload_dir, filename)
-
-
-@bookings_bp.route('/<int:booking_id>/retry-drive-upload', methods=['POST'])
-@login_required
-def retry_drive_upload(booking_id):
-    """Retry Google Drive upload for files that failed during booking submission."""
-    from flask import current_app
-    import os
-    from ..services.drive import upload_id_card, upload_payment_slip
-
-    booking = Booking.query.get_or_404(booking_id)
-    upload_dir = os.path.join(current_app.root_path, 'uploads')
-    guest_slug = f'{booking.guest.first_name}{booking.guest.last_name}'.replace(' ', '')
-    messages = []
-
-    # ID card
-    if booking.id_card_filename:
-        if booking.id_card_drive_url:
-            messages.append('ID card already on Drive.')
-        else:
-            local = os.path.join(upload_dir, booking.id_card_filename)
-            if os.path.isfile(local):
-                ext = booking.id_card_filename.rsplit('.', 1)[-1].lower()
-                drive_name = f'{booking.booking_ref}-{guest_slug}-ID.{ext}'
-                try:
-                    _, url = upload_id_card(local, drive_name)
-                    if url:
-                        booking.id_card_drive_url = url
-                        messages.append('ID card uploaded to Drive successfully.')
-                    else:
-                        messages.append('ID card Drive upload failed — check server logs for details.')
-                except Exception as exc:
-                    current_app.logger.error('[Drive] Retry ID card failed for %s: %s', booking.booking_ref, exc)
-                    messages.append(f'ID card error: {exc}')
-            else:
-                messages.append('ID card local file not found — cannot re-upload. Ask guest to resubmit.')
-
-    # Payment slip
-    if booking.payment_slip_filename:
-        if booking.payment_slip_drive_url:
-            messages.append('Payment slip already on Drive.')
-        else:
-            local = os.path.join(upload_dir, booking.payment_slip_filename)
-            if os.path.isfile(local):
-                ext = booking.payment_slip_filename.rsplit('.', 1)[-1].lower()
-                drive_name = f'{booking.booking_ref}-{guest_slug}-Payment.{ext}'
-                try:
-                    _, url = upload_payment_slip(local, drive_name)
-                    if url:
-                        booking.payment_slip_drive_url = url
-                        messages.append('Payment slip uploaded to Drive successfully.')
-                    else:
-                        messages.append('Payment slip Drive upload failed — check server logs for details.')
-                except Exception as exc:
-                    current_app.logger.error('[Drive] Retry slip failed for %s: %s', booking.booking_ref, exc)
-                    messages.append(f'Payment slip error: {exc}')
-            else:
-                messages.append('Payment slip local file not found — cannot re-upload. Ask guest to resubmit.')
-
-    db.session.commit()
-    flash(' | '.join(messages) if messages else 'No files to retry.', 'info')
-    return redirect(url_for('bookings.detail', booking_id=booking_id))
 
 
 @bookings_bp.route('/<int:booking_id>/delete', methods=['POST'])
