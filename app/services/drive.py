@@ -9,6 +9,12 @@ CREDS_ENV = 'GOOGLE_CREDENTIALS'
 ID_FOLDER = 'Sheeza Manzil Guest IDs'
 PAYMENT_FOLDER = 'Sheeza Manzil Payment Slips'
 
+# Optional: hardcode folder IDs owned by a real Google user (shared with the service account).
+# Service accounts have no storage quota, so they MUST upload into user-owned folders.
+# Set these in Railway env vars after sharing the folders with the service account email.
+ID_FOLDER_ID_ENV = 'GOOGLE_DRIVE_ID_FOLDER_ID'
+PAYMENT_FOLDER_ID_ENV = 'GOOGLE_DRIVE_PAYMENT_FOLDER_ID'
+
 
 def _parse_credentials(creds_json: str) -> dict | None:
     """Parse GOOGLE_CREDENTIALS JSON with fallback for Railway shell-interpolation edge case.
@@ -122,7 +128,17 @@ def _set_public_readable(svc, file_id: str):
         log.warning('[Drive] Could not set public permission on %s: %s', file_id, exc)
 
 
-def _upload_to_folder(file_path: str, filename: str, folder_name: str):
+def _resolve_folder_id(svc, folder_name: str, env_var: str) -> str:
+    """Return folder ID from env var (user-owned, has quota) or fall back to name lookup."""
+    hardcoded = os.environ.get(env_var, '').strip()
+    if hardcoded:
+        log.info('[Drive] Using env-var folder_id=%s for "%s"', hardcoded, folder_name)
+        return hardcoded
+    log.warning('[Drive] %s not set — falling back to name-based lookup (may hit quota error)', env_var)
+    return _get_or_create_folder(svc, folder_name)
+
+
+def _upload_to_folder(file_path: str, filename: str, folder_name: str, folder_id_env: str):
     """Upload a file to a named Drive folder. Returns (file_id, web_view_link) or (None, None)."""
     log.info('[Drive] Upload requested: file=%s folder="%s"', filename, folder_name)
     svc = _service()
@@ -135,7 +151,7 @@ def _upload_to_folder(file_path: str, filename: str, folder_name: str):
         ext = filename.rsplit('.', 1)[-1].lower()
         mime = {'pdf': 'application/pdf', 'png': 'image/png',
                 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg'}.get(ext, 'application/octet-stream')
-        folder_id = _get_or_create_folder(svc, folder_name)
+        folder_id = _resolve_folder_id(svc, folder_name, folder_id_env)
         meta = {'name': filename, 'parents': [folder_id]}
         log.info('[Drive] Uploading %s (mime=%s) to folder_id=%s', filename, mime, folder_id)
         media = MediaFileUpload(file_path, mimetype=mime)
@@ -143,7 +159,6 @@ def _upload_to_folder(file_path: str, filename: str, folder_name: str):
         file_id = f.get('id')
         web_link = f.get('webViewLink')
         log.info('[Drive] Upload success: file_id=%s link=%s', file_id, web_link)
-        # Make file viewable by anyone with the link
         _set_public_readable(svc, file_id)
         return file_id, web_link
     except Exception as exc:
@@ -153,9 +168,9 @@ def _upload_to_folder(file_path: str, filename: str, folder_name: str):
 
 def upload_id_card(file_path: str, filename: str):
     """Upload an ID card to 'Sheeza Manzil Guest IDs'. Returns (file_id, web_view_link) or (None, None)."""
-    return _upload_to_folder(file_path, filename, ID_FOLDER)
+    return _upload_to_folder(file_path, filename, ID_FOLDER, ID_FOLDER_ID_ENV)
 
 
 def upload_payment_slip(file_path: str, filename: str):
     """Upload a payment slip to 'Sheeza Manzil Payment Slips'. Returns (file_id, web_view_link) or (None, None)."""
-    return _upload_to_folder(file_path, filename, PAYMENT_FOLDER)
+    return _upload_to_folder(file_path, filename, PAYMENT_FOLDER, PAYMENT_FOLDER_ID_ENV)

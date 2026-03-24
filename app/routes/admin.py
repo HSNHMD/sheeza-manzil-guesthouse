@@ -12,6 +12,8 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 CREDS_ENV = 'GOOGLE_CREDENTIALS'
 ID_FOLDER = 'Sheeza Manzil Guest IDs'
 PAYMENT_FOLDER = 'Sheeza Manzil Payment Slips'
+ID_FOLDER_ID_ENV = 'GOOGLE_DRIVE_ID_FOLDER_ID'
+PAYMENT_FOLDER_ID_ENV = 'GOOGLE_DRIVE_PAYMENT_FOLDER_ID'
 
 
 @admin_bp.route('/test-gdrive')
@@ -96,9 +98,15 @@ def test_gdrive():
         except Exception as exc:
             result[key] = {'status': 'ERROR', 'error': str(exc), 'traceback': traceback.format_exc()}
 
+    # ── Step 4b: Check folder ID env vars ─────────────────────────────────────
+    id_folder_id_var = os.environ.get(ID_FOLDER_ID_ENV, '').strip()
+    payment_folder_id_var = os.environ.get(PAYMENT_FOLDER_ID_ENV, '').strip()
+    result['env_id_folder_id'] = id_folder_id_var or 'NOT SET — required! See setup instructions.'
+    result['env_payment_folder_id'] = payment_folder_id_var or 'NOT SET — required! See setup instructions.'
+
     # ── Step 5: Test actual file upload to ID folder ───────────────────────────
-    # Write a tiny temp file and upload it — this is the real end-to-end test
-    upload_folder_id = folder_ids.get(ID_FOLDER)
+    # Prefer the user-owned folder ID (has quota); fall back to discovered folder
+    upload_folder_id = id_folder_id_var or folder_ids.get(ID_FOLDER)
     if upload_folder_id:
         tmp_path = None
         uploaded_file_id = None
