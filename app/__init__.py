@@ -28,6 +28,7 @@ def create_app(config_class=Config):
     from .routes.calendar import calendar_bp
     from .routes.guests import guests_bp
     from .routes.public import public_bp
+    from .routes.accounting import accounting_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -37,6 +38,7 @@ def create_app(config_class=Config):
     app.register_blueprint(calendar_bp)
     app.register_blueprint(guests_bp)
     app.register_blueprint(public_bp)
+    app.register_blueprint(accounting_bp)
 
     with app.app_context():
         import os

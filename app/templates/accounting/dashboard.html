@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% block title %}Accounting Dashboard — Sheeza Manzil{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="p-4 sm:p-6 max-w-6xl mx-auto">
+
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-xl font-bold text-gray-800">Accounting Dashboard</h1>
+    <span class="text-xs text-gray-400">All figures in MVR</span>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 mb-1">This Month Revenue</p>
+      <p class="text-2xl font-bold text-gray-800">{{ "{:,.0f}".format(current_month_revenue) }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 mb-1">Year-to-Date Revenue</p>
+      <p class="text-2xl font-bold text-blue-700">{{ "{:,.0f}".format(ytd_revenue) }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 mb-1">Outstanding (Unpaid)</p>
+      <p class="text-2xl font-bold text-amber-600">{{ "{:,.0f}".format(outstanding_total) }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4">
+      <p class="text-xs text-gray-500 mb-1">Unpaid Invoices</p>
+      <p class="text-2xl font-bold text-red-600">{{ outstanding|length }}</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+
+    <!-- Revenue Bar Chart -->
+    <div class="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="font-semibold text-gray-700 mb-4">Monthly Revenue (Last 12 Months)</h2>
+      <canvas id="revenueChart" height="200"></canvas>
+    </div>
+
+    <!-- Occupancy -->
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="font-semibold text-gray-700 mb-4">Occupancy Rate</h2>
+      <div class="space-y-3">
+        {% for o in occupancy_data %}
+        <div>
+          <div class="flex justify-between text-xs text-gray-600 mb-1">
+            <span>{{ o.label }}</span>
+            <span class="font-medium">{{ o.rate }}%</span>
+          </div>
+          <div class="w-full bg-gray-100 rounded-full h-2">
+            <div class="h-2 rounded-full {% if o.rate >= 70 %}bg-green-500{% elif o.rate >= 40 %}bg-amber-400{% else %}bg-red-400{% endif %}"
+                 style="width: {{ [o.rate, 100]|min }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Revenue Forecast -->
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="font-semibold text-gray-700 mb-4">Revenue Forecast (Next 3 Months)</h2>
+      <p class="text-xs text-gray-400 mb-3">Based on confirmed bookings only</p>
+      {% if forecast %}
+      <div class="space-y-3">
+        {% for f in forecast %}
+        <div class="flex items-center justify-between py-2 border-b border-gray-50">
+          <span class="text-sm text-gray-600">{{ f.label }}</span>
+          <span class="font-semibold text-gray-800">MVR {{ "{:,.0f}".format(f.amount) }}</span>
+        </div>
+        {% endfor %}
+        <div class="flex items-center justify-between pt-1">
+          <span class="text-sm font-semibold text-gray-700">Total Forecast</span>
+          <span class="font-bold text-blue-700">MVR {{ "{:,.0f}".format(forecast|sum(attribute='amount')) }}</span>
+        </div>
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400">No confirmed future bookings.</p>
+      {% endif %}
+    </div>
+
+    <!-- Outstanding Invoices -->
+    <div class="bg-white rounded-xl border border-gray-200 p-5">
+      <h2 class="font-semibold text-gray-700 mb-4">Outstanding Invoices</h2>
+      {% if outstanding %}
+      <div class="space-y-2 max-h-64 overflow-y-auto">
+        {% for inv in outstanding %}
+        <a href="{{ url_for('invoices.detail', invoice_id=inv.id) }}"
+           class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 border border-gray-100">
+          <div>
+            <p class="text-sm font-medium text-gray-700">{{ inv.invoice_number }}</p>
+            <p class="text-xs text-gray-400">{{ inv.booking.booking_ref }} · {{ inv.payment_status }}</p>
+          </div>
+          <span class="text-sm font-semibold text-red-600">MVR {{ "{:,.0f}".format(inv.balance_due) }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      <div class="mt-3 pt-3 border-t border-gray-100 flex justify-between">
+        <span class="text-sm font-semibold text-gray-700">Total Outstanding</span>
+        <span class="font-bold text-red-600">MVR {{ "{:,.0f}".format(outstanding_total) }}</span>
+      </div>
+      {% else %}
+      <p class="text-sm text-green-600 font-medium">All invoices paid. No outstanding balance.</p>
+      {% endif %}
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  const ctx = document.getElementById('revenueChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: {{ months_labels | tojson }},
+      datasets: [{
+        label: 'Revenue (MVR)',
+        data: {{ months_revenue | tojson }},
+        backgroundColor: 'rgba(59, 130, 246, 0.7)',
+        borderColor: 'rgba(37, 99, 235, 1)',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => 'MVR ' + ctx.parsed.y.toLocaleString()
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: v => 'MVR ' + v.toLocaleString()
+          }
+        }
+      }
+    }
+  });
+</script>
+{% endblock %}

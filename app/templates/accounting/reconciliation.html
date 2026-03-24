@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}Bank Reconciliation — Sheeza Manzil{% endblock %}
+
+{% block content %}
+<div class="p-4 sm:p-6 max-w-5xl mx-auto">
+
+  <h1 class="text-xl font-bold text-gray-800 mb-6">Bank Statement Reconciliation</h1>
+
+  <!-- Upload Form -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+    <h2 class="font-semibold text-gray-700 mb-2">Upload Bank Statement</h2>
+    <p class="text-xs text-gray-400 mb-4">
+      CSV format required. Expected columns: <code class="bg-gray-100 px-1 rounded">date</code>,
+      <code class="bg-gray-100 px-1 rounded">description</code>,
+      <code class="bg-gray-100 px-1 rounded">amount</code>.
+      Accepted date formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY.
+      Uploading a new file replaces previous results.
+    </p>
+    <form method="POST" action="{{ url_for('accounting.upload_reconciliation') }}" enctype="multipart/form-data"
+          class="flex flex-wrap items-end gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">CSV File *</label>
+        <input type="file" name="statement" accept=".csv" required
+               class="text-sm text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+      </div>
+      <button type="submit"
+              class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
+        Upload &amp; Reconcile
+      </button>
+    </form>
+  </div>
+
+  {% if transactions %}
+  <!-- Summary -->
+  <div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-bold text-gray-800">{{ transactions|length }}</p>
+      <p class="text-xs text-gray-500 mt-1">Total Transactions</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-bold text-green-600">{{ matched }}</p>
+      <p class="text-xs text-gray-500 mt-1">Matched</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+      <p class="text-2xl font-bold text-red-600">{{ unmatched }}</p>
+      <p class="text-xs text-gray-500 mt-1">Unmatched</p>
+    </div>
+  </div>
+
+  <!-- Transactions Table -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-50 border-b border-gray-200">
+          <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Description</th>
+          <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Amount</th>
+          <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Match</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for t in transactions %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ t.statement_date.strftime('%d %b %Y') }}</td>
+          <td class="px-4 py-3 text-gray-600 max-w-xs truncate">{{ t.description or '—' }}</td>
+          <td class="px-4 py-3 text-right font-medium
+                     {% if t.amount >= 0 %}text-green-700{% else %}text-red-600{% endif %}">
+            MVR {{ "{:,.2f}".format(t.amount) }}
+          </td>
+          <td class="px-4 py-3 text-center">
+            {% if t.match_type == 'invoice' %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">Invoice</span>
+            {% elif t.match_type == 'expense' %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Expense</span>
+            {% else %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Unmatched</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-gray-500 text-xs">{{ t.match_ref or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">
+    <p>No bank statement uploaded yet. Upload a CSV file to start reconciliation.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

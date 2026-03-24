@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}Tax Summary — Sheeza Manzil{% endblock %}
+
+{% block content %}
+<div class="p-4 sm:p-6 max-w-2xl mx-auto">
+
+  <h1 class="text-xl font-bold text-gray-800 mb-6">Tax Summary</h1>
+
+  <!-- Month Navigation -->
+  <div class="flex items-center justify-between mb-6 bg-white rounded-xl border border-gray-200 px-4 py-3">
+    <a href="{{ url_for('accounting.tax', year=prev_year, month=prev_month) }}"
+       class="text-sm text-blue-600 hover:underline">&larr; Prev</a>
+    <span class="font-semibold text-gray-800">{{ month_label }}</span>
+    <a href="{{ url_for('accounting.tax', year=next_year, month=next_month) }}"
+       class="text-sm text-blue-600 hover:underline">Next &rarr;</a>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Tax Calculation</h2>
+
+      <div class="space-y-4">
+        <div class="flex items-center justify-between py-2 border-b border-gray-50">
+          <span class="text-sm text-gray-600">Total Revenue Collected</span>
+          <span class="font-semibold text-gray-800">MVR {{ "{:,.2f}".format(total_collected) }}</span>
+        </div>
+        <div class="flex items-center justify-between py-2 border-b border-gray-50">
+          <span class="text-sm text-gray-600">Applicable Tax Rate</span>
+          <span class="font-semibold text-gray-800">{{ "%.1f"|format(tax_rate * 100) }}%</span>
+        </div>
+        <div class="flex items-center justify-between py-3 bg-gray-50 rounded-lg px-3">
+          <span class="text-sm font-bold text-gray-700">Tax Payable</span>
+          <span class="text-xl font-bold {% if tax_payable > 0 %}text-red-600{% else %}text-gray-800{% endif %}">
+            MVR {{ "{:,.2f}".format(tax_payable) }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    {% if tax_rate == 0 %}
+    <div class="px-5 py-4 bg-blue-50">
+      <p class="text-xs text-blue-600">
+        Tax rate is currently set to 0%. Update <code>TAX_RATE</code> in
+        <code>app/routes/accounting.py</code> when tax applies.
+      </p>
+    </div>
+    {% endif %}
+
+  </div>
+
+</div>
+{% endblock %}

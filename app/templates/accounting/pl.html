@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block title %}Profit & Loss — Sheeza Manzil{% endblock %}
+
+{% block content %}
+<div class="p-4 sm:p-6 max-w-3xl mx-auto">
+
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-xl font-bold text-gray-800">Profit & Loss</h1>
+    <a href="{{ url_for('accounting.export_pdf', year=year, month=month) }}"
+       class="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700">
+      Export PDF
+    </a>
+  </div>
+
+  <!-- Month Navigation -->
+  <div class="flex items-center justify-between mb-6 bg-white rounded-xl border border-gray-200 px-4 py-3">
+    <a href="{{ url_for('accounting.pl', year=prev_year, month=prev_month) }}"
+       class="text-sm text-blue-600 hover:underline">&larr; Prev</a>
+    <span class="font-semibold text-gray-800">{{ month_label }}</span>
+    <a href="{{ url_for('accounting.pl', year=next_year, month=next_month) }}"
+       class="text-sm text-blue-600 hover:underline">Next &rarr;</a>
+  </div>
+
+  <!-- P&L Table -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+
+    <!-- Revenue -->
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Revenue</h2>
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-gray-700">Room Revenue (Paid Invoices)</span>
+        <span class="font-semibold text-green-700">MVR {{ "{:,.2f}".format(revenue) }}</span>
+      </div>
+    </div>
+
+    <!-- Expenses by Category -->
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Expenses</h2>
+      {% if expenses_by_cat %}
+      <div class="space-y-2">
+        {% for cat in categories %}
+        {% if cat in expenses_by_cat %}
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-gray-600">{{ cat }}</span>
+          <span class="text-sm text-red-600">MVR {{ "{:,.2f}".format(expenses_by_cat[cat]) }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400">No expenses recorded for this period.</p>
+      {% endif %}
+    </div>
+
+    <!-- Totals -->
+    <div class="px-5 py-4 border-b border-gray-100 bg-gray-50">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-semibold text-gray-700">Total Revenue</span>
+        <span class="font-semibold text-green-700">MVR {{ "{:,.2f}".format(revenue) }}</span>
+      </div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-semibold text-gray-700">Total Expenses</span>
+        <span class="font-semibold text-red-600">MVR {{ "{:,.2f}".format(total_expenses) }}</span>
+      </div>
+    </div>
+
+    <!-- Net P&L -->
+    <div class="px-5 py-5">
+      <div class="flex items-center justify-between">
+        <span class="text-base font-bold text-gray-800">
+          {% if net_profit >= 0 %}Net Profit{% else %}Net Loss{% endif %}
+        </span>
+        <span class="text-xl font-bold {% if net_profit >= 0 %}text-green-700{% else %}text-red-600{% endif %}">
+          MVR {{ "{:,.2f}".format(net_profit|abs) }}
+        </span>
+      </div>
+      {% if net_profit < 0 %}
+      <p class="text-xs text-red-400 mt-1">Expenses exceed revenue for this period.</p>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <div class="mt-4 text-center">
+    <a href="{{ url_for('accounting.expenses') }}"
+       class="text-xs text-blue-600 hover:underline">Manage Expenses &rarr;</a>
+  </div>
+
+</div>
+{% endblock %}

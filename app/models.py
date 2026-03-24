@@ -154,6 +154,44 @@ class Invoice(db.Model):
         return f'<Invoice {self.invoice_number}>'
 
 
+EXPENSE_CATEGORIES = [
+    'Utilities', 'Staff Salaries', 'Cleaning Supplies', 'Maintenance',
+    'Food & Beverages', 'Marketing', 'Platform Fees', 'Bank Charges',
+    'Taxes', 'Petty Cash', 'Other',
+]
+
+
+class Expense(db.Model):
+    __tablename__ = 'expenses'
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    category = db.Column(db.String(50), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    description = db.Column(db.Text)
+    receipt_filename = db.Column(db.String(255))
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f'<Expense {self.category} {self.amount}>'
+
+
+class BankTransaction(db.Model):
+    __tablename__ = 'bank_transactions'
+    id = db.Column(db.Integer, primary_key=True)
+    statement_date = db.Column(db.Date, nullable=False)
+    description = db.Column(db.Text)
+    amount = db.Column(db.Float, nullable=False)
+    match_type = db.Column(db.String(20), default='unmatched')  # invoice, expense, unmatched
+    match_ref = db.Column(db.String(50))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<BankTransaction {self.statement_date} {self.amount}>'
+
+
 class HousekeepingLog(db.Model):
     __tablename__ = 'housekeeping_logs'
     id = db.Column(db.Integer, primary_key=True)
