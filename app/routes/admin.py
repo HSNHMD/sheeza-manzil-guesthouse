@@ -1,5 +1,7 @@
+import io
 import json
 import os
+import tempfile
 import traceback
 
 from flask import Blueprint, jsonify
@@ -17,7 +19,7 @@ PAYMENT_FOLDER = 'Sheeza Manzil Payment Slips'
 def test_gdrive():
     result = {}
 
-    # Step 1: Check env var presence and JSON parsing
+    # ── Step 1: env var + JSON parse ──────────────────────────────────────────
     creds_json = os.environ.get(CREDS_ENV)
     result['env_var_set'] = bool(creds_json)
     result['env_var_length'] = len(creds_json) if creds_json else 0
@@ -27,7 +29,7 @@ def test_gdrive():
         return jsonify(result), 200
 
     try:
-        info = json.loads(creds_json)
+        info = json.loads(creds_json.strip())
         result['json_parse'] = 'OK'
         result['credential_type'] = info.get('type')
         result['project_id'] = info.get('project_id')
@@ -39,17 +41,18 @@ def test_gdrive():
         result['json_error'] = str(exc)
         return jsonify(result), 200
 
-    # Step 2: Build Drive service
+    # ── Step 2: Build Drive service with WRITE scope (same as production) ─────
     try:
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
 
         creds = service_account.Credentials.from_service_account_info(
             info,
-            scopes=['https://www.googleapis.com/auth/drive.readonly']
+            scopes=['https://www.googleapis.com/auth/drive']
         )
         svc = build('drive', 'v3', credentials=creds)
         result['drive_connection'] = 'OK'
+        result['drive_scope'] = 'drive (read+write — same as production)'
     except ImportError as exc:
         result['drive_connection'] = 'FAILED'
         result['drive_error'] = f'Import error: {exc}'
@@ -60,7 +63,7 @@ def test_gdrive():
         result['drive_traceback'] = traceback.format_exc()
         return jsonify(result), 200
 
-    # Step 3: List files in root to confirm connection works
+    # ── Step 3: List root files ────────────────────────────────────────────────
     try:
         resp = svc.files().list(
             q="'root' in parents and trashed=false",
@@ -76,7 +79,8 @@ def test_gdrive():
         result['root_listing_error'] = str(exc)
         result['root_listing_traceback'] = traceback.format_exc()
 
-    # Step 4: Find both target folders
+    # ── Step 4: Find both target folders ──────────────────────────────────────
+    folder_ids = {}
     for folder_name, key in [(ID_FOLDER, 'id_folder'), (PAYMENT_FOLDER, 'payment_folder')]:
         try:
             resp = svc.files().list(
@@ -85,10 +89,62 @@ def test_gdrive():
             ).execute()
             folders = resp.get('files', [])
             if folders:
+                folder_ids[folder_name] = folders[0]['id']
                 result[key] = {'status': 'FOUND', 'id': folders[0]['id']}
             else:
-                result[key] = {'status': 'NOT FOUND', 'note': 'Folder does not exist yet — will be created on first upload'}
+                result[key] = {'status': 'NOT FOUND', 'note': 'Will be created on first real upload'}
         except Exception as exc:
             result[key] = {'status': 'ERROR', 'error': str(exc), 'traceback': traceback.format_exc()}
+
+    # ── Step 5: Test actual file upload to ID folder ───────────────────────────
+    # Write a tiny temp file and upload it — this is the real end-to-end test
+    upload_folder_id = folder_ids.get(ID_FOLDER)
+    if upload_folder_id:
+        tmp_path = None
+        uploaded_file_id = None
+        try:
+            from googleapiclient.http import MediaFileUpload
+
+            # Create a small temp text file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp:
+                tmp.write('Drive connectivity test — safe to delete.')
+                tmp_path = tmp.name
+
+            meta = {'name': 'TEST-connectivity-check.txt', 'parents': [upload_folder_id]}
+            media = MediaFileUpload(tmp_path, mimetype='text/plain')
+            f = svc.files().create(body=meta, media_body=media, fields='id,webViewLink').execute()
+            uploaded_file_id = f.get('id')
+            web_link = f.get('webViewLink')
+            result['test_upload'] = 'OK'
+            result['test_file_id'] = uploaded_file_id
+            result['test_web_view_link'] = web_link
+
+            # Test setting public permission (same as production does after upload)
+            try:
+                svc.permissions().create(
+                    fileId=uploaded_file_id,
+                    body={'role': 'reader', 'type': 'anyone'},
+                    fields='id'
+                ).execute()
+                result['test_permission'] = 'OK — file is publicly viewable via link'
+            except Exception as exc:
+                result['test_permission'] = f'FAILED: {exc}'
+
+        except Exception as exc:
+            result['test_upload'] = 'FAILED'
+            result['test_upload_error'] = str(exc)
+            result['test_upload_traceback'] = traceback.format_exc()
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            # Clean up the test file from Drive
+            if uploaded_file_id:
+                try:
+                    svc.files().delete(fileId=uploaded_file_id).execute()
+                    result['test_cleanup'] = 'Test file deleted from Drive'
+                except Exception:
+                    result['test_cleanup'] = f'Note: test file {uploaded_file_id} left in Drive — delete manually'
+    else:
+        result['test_upload'] = 'SKIPPED — ID folder not found'
 
     return jsonify(result), 200
