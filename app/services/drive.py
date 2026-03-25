@@ -57,8 +57,19 @@ def _get_service():
         from googleapiclient.discovery import build
         info = json.loads(creds_json)
         creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
-        _service = build('drive', 'v3', credentials=creds, cache_discovery=False)
-        logger.info('Google Drive: initialised, root folder = %s', _ROOT_FOLDER_ID)
+        svc = build('drive', 'v3', credentials=creds, cache_discovery=False)
+        logger.info('Google Drive: service account = %s', info.get('client_email', 'unknown'))
+        # Verify the service account can actually access the root folder.
+        try:
+            svc.files().get(fileId=_ROOT_FOLDER_ID, supportsAllDrives=True, fields='id,name').execute()
+            logger.info('Google Drive: root folder accessible, ID = %s', _ROOT_FOLDER_ID)
+        except Exception as e:
+            logger.error(
+                'Google Drive: cannot access root folder %s — '
+                'open that folder in Google Drive, click Share, and add the service account email above as an Editor. Error: %s',
+                _ROOT_FOLDER_ID, e,
+            )
+        _service = svc
         return _service
     except Exception:
         logger.warning('Google Drive: failed to initialise service', exc_info=True)
