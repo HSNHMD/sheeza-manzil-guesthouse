@@ -18,14 +18,22 @@ def _allowed(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED
 
 
-def _save_file(file, prefix):
-    """Save uploaded file; return stored filename."""
+def _save_file(file, prefix, folder_type):
+    """Save uploaded file locally and to Google Drive.
+
+    Returns (filename, drive_id).  drive_id is None when Drive is not
+    configured or the upload fails — the app falls back to local serving.
+    """
+    from ..services.drive import upload_file as drive_upload
     ext = file.filename.rsplit('.', 1)[1].lower()
     name = f'{prefix}_{uuid.uuid4().hex[:10]}.{ext}'
     upload_dir = os.path.join(current_app.root_path, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
-    file.save(os.path.join(upload_dir, name))
-    return name
+    file_bytes = file.read()
+    with open(os.path.join(upload_dir, name), 'wb') as fh:
+        fh.write(file_bytes)
+    drive_id = drive_upload(file_bytes, name, folder_type)
+    return name, drive_id
 
 
 @public_bp.route('/')
@@ -103,13 +111,14 @@ def submit():
     last_name  = request.form.get('last_name', '').strip()
     prefix     = secure_filename(f'{first_name}_{last_name}')
 
-    id_card_filename = _save_file(id_file, f'id_{prefix}')
+    id_card_filename, id_card_drive_id = _save_file(id_file, f'id_{prefix}', 'id_card')
 
     # Payment slip (optional)
     slip_file = request.files.get('payment_slip')
     payment_slip_filename = None
+    payment_slip_drive_id = None
     if slip_file and slip_file.filename and _allowed(slip_file.filename):
-        payment_slip_filename = _save_file(slip_file, f'slip_{prefix}')
+        payment_slip_filename, payment_slip_drive_id = _save_file(slip_file, f'slip_{prefix}', 'payment_slip')
 
     status = 'pending_verification' if payment_slip_filename else 'unconfirmed'
     nights = (check_out - check_in).days
@@ -134,7 +143,9 @@ def submit():
         total_amount=nights * room.price_per_night,
         status=status,
         id_card_filename=id_card_filename,
+        id_card_drive_id=id_card_drive_id,
         payment_slip_filename=payment_slip_filename,
+        payment_slip_drive_id=payment_slip_drive_id,
     )
     db.session.add(booking)
     db.session.flush()

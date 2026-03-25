@@ -36,12 +36,17 @@ def _allowed_receipt(filename):
 
 
 def _save_receipt(file):
+    """Save receipt locally and to Google Drive. Returns (filename, drive_id)."""
+    from ..services.drive import upload_file as drive_upload
     ext = file.filename.rsplit('.', 1)[1].lower()
     name = f'receipt_{uuid.uuid4().hex[:10]}.{ext}'
     upload_dir = os.path.join(current_app.root_path, 'uploads')
     os.makedirs(upload_dir, exist_ok=True)
-    file.save(os.path.join(upload_dir, name))
-    return name
+    file_bytes = file.read()
+    with open(os.path.join(upload_dir, name), 'wb') as fh:
+        fh.write(file_bytes)
+    drive_id = drive_upload(file_bytes, name, 'receipt')
+    return name, drive_id
 
 
 def _month_revenue(year, month):
@@ -197,9 +202,10 @@ def add_expense():
         return redirect(url_for('accounting.expenses'))
 
     receipt_filename = None
+    receipt_drive_id = None
     receipt_file = request.files.get('receipt')
     if receipt_file and receipt_file.filename and _allowed_receipt(receipt_file.filename):
-        receipt_filename = _save_receipt(receipt_file)
+        receipt_filename, receipt_drive_id = _save_receipt(receipt_file)
 
     expense = Expense(
         date=exp_date,
@@ -207,6 +213,7 @@ def add_expense():
         amount=amount,
         description=request.form.get('description', '').strip() or None,
         receipt_filename=receipt_filename,
+        receipt_drive_id=receipt_drive_id,
         created_by=current_user.id,
     )
     db.session.add(expense)
@@ -256,6 +263,14 @@ def scan_receipt_view():
 @login_required
 @admin_required
 def download_receipt(filename):
+    from ..services.drive import view_url as drive_view_url
+
+    # Prefer Drive redirect when a drive_id is stored for this filename.
+    expense = Expense.query.filter_by(receipt_filename=filename).first()
+    if expense and expense.receipt_drive_id:
+        return redirect(drive_view_url(expense.receipt_drive_id))
+
+    # Fall back to local file.
     upload_dir = os.path.join(current_app.root_path, 'uploads')
     full_path = os.path.join(upload_dir, filename)
     if not os.path.isfile(full_path):

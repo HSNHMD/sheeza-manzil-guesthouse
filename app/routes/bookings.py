@@ -323,7 +323,26 @@ def confirm(booking_id):
 @login_required
 def download_upload(filename):
     from flask import send_from_directory, current_app
+    from ..services.drive import view_url as drive_view_url
     import os
+
+    # Prefer Drive redirect when a drive_id is stored for this filename.
+    booking = Booking.query.filter(
+        db.or_(
+            Booking.id_card_filename == filename,
+            Booking.payment_slip_filename == filename,
+        )
+    ).first()
+    if booking:
+        drive_id = (
+            booking.id_card_drive_id
+            if booking.id_card_filename == filename
+            else booking.payment_slip_drive_id
+        )
+        if drive_id:
+            return redirect(drive_view_url(drive_id))
+
+    # Fall back to local file.
     upload_dir = os.path.join(current_app.root_path, 'uploads')
     full_path = os.path.join(upload_dir, filename)
     if not os.path.isfile(full_path):

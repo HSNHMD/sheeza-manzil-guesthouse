@@ -106,6 +106,8 @@ class Booking(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     id_card_filename      = db.Column(db.String(255))
     payment_slip_filename = db.Column(db.String(255))
+    id_card_drive_id      = db.Column(db.String(255))
+    payment_slip_drive_id = db.Column(db.String(255))
 
     invoice = db.relationship('Invoice', backref='booking', uselist=False)
     creator = db.relationship('User', foreign_keys=[created_by])
@@ -169,6 +171,7 @@ class Expense(db.Model):
     amount = db.Column(db.Float, nullable=False)
     description = db.Column(db.Text)
     receipt_filename = db.Column(db.String(255))
+    receipt_drive_id = db.Column(db.String(255))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
