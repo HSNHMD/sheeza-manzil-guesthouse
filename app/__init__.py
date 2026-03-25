@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from .models import db, User, Room
@@ -42,6 +42,10 @@ def create_app(config_class=Config):
     app.register_blueprint(guests_bp)
     app.register_blueprint(public_bp)
     app.register_blueprint(accounting_bp)
+
+    @app.route('/privacy')
+    def privacy():
+        return render_template('privacy.html')
 
     with app.app_context():
         import os
