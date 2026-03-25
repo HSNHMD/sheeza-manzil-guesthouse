@@ -1,11 +1,13 @@
 from flask import Flask
 from flask_login import LoginManager
+from flask_migrate import Migrate
 from .models import db, User, Room
 from config import Config
 
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
 login_manager.login_message_category = 'info'
+migrate = Migrate()
 
 
 @login_manager.user_loader
@@ -18,6 +20,7 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
 
     db.init_app(app)
+    migrate.init_app(app, db)
     login_manager.init_app(app)
 
     from .routes.auth import auth_bp
@@ -44,9 +47,11 @@ def create_app(config_class=Config):
         import os
         upload_dir = os.path.join(app.root_path, 'uploads')
         os.makedirs(upload_dir, exist_ok=True)
-        db.create_all()
-        _seed_admin(app)
-        _seed_rooms(app)
+        try:
+            _seed_admin(app)
+            _seed_rooms(app)
+        except Exception as e:
+            app.logger.warning('Seeding skipped (tables not ready): %s', e)
 
     return app
 
