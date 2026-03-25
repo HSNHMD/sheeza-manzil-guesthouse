@@ -1,32 +1,34 @@
-"""Google Drive upload service.
+"""Cloudflare R2 upload service.
 
-Uploads booking documents (ID cards, payment slips) and expense receipts to a
-shared Google Drive folder tree:
+Uploads booking documents (ID cards, payment slips) and expense receipts
+to Cloudflare R2 object storage, organised into subfolders by type:
 
-    SheezaManzil/
-        ID Cards/
-        Payment Slips/
-        Receipts/
+    <bucket>/
+        id-cards/
+        payment-slips/
+        receipts/
 
-Requires the GOOGLE_CREDENTIALS environment variable to contain the full JSON
-content of a Google service account key with Drive API access.  If the variable
-is absent the module silently no-ops so the app degrades gracefully to
-local-only storage.
+Requires these environment variables:
+    CLOUDFLARE_ACCOUNT_ID   — Cloudflare account ID
+    R2_ACCESS_KEY_ID        — R2 API token access key ID
+    R2_SECRET_ACCESS_KEY    — R2 API token secret access key
+    R2_BUCKET_NAME          — R2 bucket name
+    R2_PUBLIC_URL           — Public base URL for the bucket
+                              (e.g. https://pub-xxxx.r2.dev)
+
+If any variable is absent the module silently no-ops so the app degrades
+gracefully to local-only storage.
 """
 
-import io
-import json
 import logging
 import os
 
 logger = logging.getLogger(__name__)
 
-_SCOPES = ['https://www.googleapis.com/auth/drive']
-
-_SUBFOLDER_NAMES = {
-    'id_card': 'ID Cards',
-    'payment_slip': 'Payment Slips',
-    'receipt': 'Receipts',
+_SUBFOLDER = {
+    'id_card': 'id-cards',
+    'payment_slip': 'payment-slips',
+    'receipt': 'receipts',
 }
 
 _MIME = {
@@ -36,81 +38,32 @@ _MIME = {
     'pdf': 'application/pdf',
 }
 
-# Hardcoded SheezaManzil Google Drive folder ID.
-# Subfolders (ID Cards, Payment Slips, Receipts) are created inside this folder
-# on first use and their IDs are cached for the lifetime of the process.
-_ROOT_FOLDER_ID = '1vaB-caFIwJR7nZuXxubH_XMQjkuCpx_j'
-
-_service = None
-_folder_ids: dict = {}
+_client = None
 
 
-def _get_service():
-    global _service
-    if _service is not None:
-        return _service
-    creds_json = os.environ.get('GOOGLE_CREDENTIALS')
-    if not creds_json:
+def _get_client():
+    global _client
+    if _client is not None:
+        return _client
+    account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
+    access_key = os.environ.get('R2_ACCESS_KEY_ID')
+    secret_key = os.environ.get('R2_SECRET_ACCESS_KEY')
+    if not all([account_id, access_key, secret_key]):
         return None
     try:
-        from google.oauth2.service_account import Credentials
-        from googleapiclient.discovery import build
-        info = json.loads(creds_json)
-        creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
-        svc = build('drive', 'v3', credentials=creds, cache_discovery=False)
-        logger.info('Google Drive: service account = %s', info.get('client_email', 'unknown'))
-        # Verify the service account can actually access the root folder.
-        try:
-            svc.files().get(fileId=_ROOT_FOLDER_ID, supportsAllDrives=True, fields='id,name').execute()
-            logger.info('Google Drive: root folder accessible, ID = %s', _ROOT_FOLDER_ID)
-        except Exception as e:
-            logger.error(
-                'Google Drive: cannot access root folder %s — '
-                'open that folder in Google Drive, click Share, and add the service account email above as an Editor. Error: %s',
-                _ROOT_FOLDER_ID, e,
-            )
-        _service = svc
-        return _service
-    except Exception:
-        logger.warning('Google Drive: failed to initialise service', exc_info=True)
-        return None
-
-
-def _get_subfolder_id(service, folder_type):
-    if folder_type in _folder_ids:
-        return _folder_ids[folder_type]
-    name = _SUBFOLDER_NAMES[folder_type]
-    # Try to find an existing subfolder first.
-    sub_id = None
-    try:
-        q = (
-            f"name='{name}' and mimeType='application/vnd.google-apps.folder'"
-            f" and '{_ROOT_FOLDER_ID}' in parents and trashed=false"
+        import boto3
+        _client = boto3.client(
+            's3',
+            endpoint_url=f'https://{account_id}.r2.cloudflarestorage.com',
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name='auto',
         )
-        results = service.files().list(
-            q=q, fields='files(id)', spaces='drive',
-            includeItemsFromAllDrives=True, supportsAllDrives=True,
-        ).execute()
-        files = results.get('files', [])
-        if files:
-            sub_id = files[0]['id']
+        logger.info('R2: client initialised for account %s', account_id)
+        return _client
     except Exception:
-        logger.warning('Google Drive: could not search for subfolder %s, will create it', name, exc_info=True)
-    # Create the subfolder if it wasn't found (or if the search failed).
-    if not sub_id:
-        result = service.files().create(
-            body={
-                'name': name,
-                'mimeType': 'application/vnd.google-apps.folder',
-                'parents': [_ROOT_FOLDER_ID],
-            },
-            fields='id',
-            supportsAllDrives=True,
-        ).execute()
-        sub_id = result['id']
-        logger.info('Google Drive: created subfolder %s = %s', name, sub_id)
-    _folder_ids[folder_type] = sub_id
-    return sub_id
+        logger.warning('R2: failed to initialise client', exc_info=True)
+        return None
 
 
 def mime_for_filename(filename):
@@ -119,35 +72,34 @@ def mime_for_filename(filename):
 
 
 def upload_file(file_bytes: bytes, filename: str, folder_type: str) -> str | None:
-    """Upload *file_bytes* to the appropriate Drive subfolder.
+    """Upload *file_bytes* to the appropriate R2 subfolder.
 
-    Returns the Drive file ID on success, or None if Drive is not configured /
+    Returns the object key on success, or None if R2 is not configured /
     the upload fails (caller falls back to local-only storage).
     """
-    service = _get_service()
-    if service is None:
+    client = _get_client()
+    if client is None:
         return None
+    bucket = os.environ.get('R2_BUCKET_NAME')
+    if not bucket:
+        logger.warning('R2: R2_BUCKET_NAME not set')
+        return None
+    subfolder = _SUBFOLDER.get(folder_type, folder_type)
+    key = f'{subfolder}/{filename}'
     try:
-        from googleapiclient.http import MediaIoBaseUpload
-        folder_id = _get_subfolder_id(service, folder_type)
-        mime = mime_for_filename(filename)
-        metadata = {'name': filename, 'parents': [folder_id]}
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime, resumable=False)
-        uploaded = service.files().create(
-            body=metadata, media_body=media, fields='id', supportsAllDrives=True
-        ).execute()
-        drive_id = uploaded.get('id')
-        # Make the file viewable by anyone with the link.
-        service.permissions().create(
-            fileId=drive_id,
-            body={'type': 'anyone', 'role': 'reader'},
-            supportsAllDrives=True,
-        ).execute()
-        return drive_id
+        client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=file_bytes,
+            ContentType=mime_for_filename(filename),
+        )
+        logger.info('R2: uploaded %s', key)
+        return key
     except Exception:
-        logger.warning('Google Drive: upload failed for %s', filename, exc_info=True)
+        logger.warning('R2: upload failed for %s', filename, exc_info=True)
         return None
 
 
-def view_url(drive_id: str) -> str:
-    return f'https://drive.google.com/file/d/{drive_id}/view'
+def view_url(key: str) -> str:
+    public_url = os.environ.get('R2_PUBLIC_URL', '').rstrip('/')
+    return f'{public_url}/{key}'
