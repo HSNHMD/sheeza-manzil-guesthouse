@@ -39,7 +39,7 @@ _MIME = {
 # Hardcoded SheezaManzil Google Drive folder ID.
 # Subfolders (ID Cards, Payment Slips, Receipts) are created inside this folder
 # on first use and their IDs are cached for the lifetime of the process.
-_ROOT_FOLDER_ID = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs'
+_ROOT_FOLDER_ID = '1vaB-caFIwJR7nZuXxubH_XMQjkuCpx_j'
 
 _service = None
 _folder_ids: dict = {}
