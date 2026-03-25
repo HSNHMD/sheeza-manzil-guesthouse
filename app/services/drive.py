@@ -65,14 +65,22 @@ def _find_or_create_folder(service, name, parent_id=None):
     q = f"name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     if parent_id:
         q += f" and '{parent_id}' in parents"
-    results = service.files().list(q=q, fields='files(id)', spaces='drive').execute()
+    results = service.files().list(
+        q=q,
+        fields='files(id)',
+        spaces='drive',
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True,
+    ).execute()
     files = results.get('files', [])
     if files:
         return files[0]['id']
     metadata = {'name': name, 'mimeType': 'application/vnd.google-apps.folder'}
     if parent_id:
         metadata['parents'] = [parent_id]
-    folder = service.files().create(body=metadata, fields='id').execute()
+    folder = service.files().create(
+        body=metadata, fields='id', supportsAllDrives=True
+    ).execute()
     return folder['id']
 
 
@@ -106,7 +114,7 @@ def upload_file(file_bytes: bytes, filename: str, folder_type: str) -> str | Non
         metadata = {'name': filename, 'parents': [folder_id]}
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime, resumable=False)
         uploaded = service.files().create(
-            body=metadata, media_body=media, fields='id'
+            body=metadata, media_body=media, fields='id', supportsAllDrives=True
         ).execute()
         drive_id = uploaded.get('id')
         # Make the file viewable by anyone with the link.
