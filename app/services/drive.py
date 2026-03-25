@@ -1,20 +1,21 @@
 """Cloudflare R2 upload service.
 
 Uploads booking documents (ID cards, payment slips) and expense receipts
-to Cloudflare R2 object storage, organised into subfolders by type:
+to a private Cloudflare R2 bucket, organised into subfolders by type:
 
     <bucket>/
         id-cards/
         payment-slips/
         receipts/
 
+File links are pre-signed URLs that expire after 1 hour, so only staff
+logged into the app can generate them — files are never publicly accessible.
+
 Requires these environment variables:
     CLOUDFLARE_ACCOUNT_ID   — Cloudflare account ID
     R2_ACCESS_KEY_ID        — R2 API token access key ID
     R2_SECRET_ACCESS_KEY    — R2 API token secret access key
     R2_BUCKET_NAME          — R2 bucket name
-    R2_PUBLIC_URL           — Public base URL for the bucket
-                              (e.g. https://pub-xxxx.r2.dev)
 
 If any variable is absent the module silently no-ops so the app degrades
 gracefully to local-only storage.
@@ -37,6 +38,8 @@ _MIME = {
     'png': 'image/png',
     'pdf': 'application/pdf',
 }
+
+_PRESIGN_EXPIRY = 3600  # seconds (1 hour)
 
 _client = None
 
@@ -101,5 +104,18 @@ def upload_file(file_bytes: bytes, filename: str, folder_type: str) -> str | Non
 
 
 def view_url(key: str) -> str:
-    public_url = os.environ.get('R2_PUBLIC_URL', '').rstrip('/')
-    return f'{public_url}/{key}'
+    """Return a pre-signed URL for *key* that expires in 1 hour."""
+    client = _get_client()
+    bucket = os.environ.get('R2_BUCKET_NAME', '')
+    if not client or not bucket:
+        return ''
+    try:
+        url = client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': key},
+            ExpiresIn=_PRESIGN_EXPIRY,
+        )
+        return url
+    except Exception:
+        logger.warning('R2: failed to generate pre-signed URL for %s', key, exc_info=True)
+        return ''
