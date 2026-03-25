@@ -68,20 +68,25 @@ def _get_service():
 def _get_subfolder_id(service, folder_type):
     if folder_type in _folder_ids:
         return _folder_ids[folder_type]
-    # Find existing subfolder inside the hardcoded root.
     name = _SUBFOLDER_NAMES[folder_type]
-    q = (
-        f"name='{name}' and mimeType='application/vnd.google-apps.folder'"
-        f" and '{_ROOT_FOLDER_ID}' in parents and trashed=false"
-    )
-    results = service.files().list(
-        q=q, fields='files(id)', spaces='drive',
-        includeItemsFromAllDrives=True, supportsAllDrives=True,
-    ).execute()
-    files = results.get('files', [])
-    if files:
-        sub_id = files[0]['id']
-    else:
+    # Try to find an existing subfolder first.
+    sub_id = None
+    try:
+        q = (
+            f"name='{name}' and mimeType='application/vnd.google-apps.folder'"
+            f" and '{_ROOT_FOLDER_ID}' in parents and trashed=false"
+        )
+        results = service.files().list(
+            q=q, fields='files(id)', spaces='drive',
+            includeItemsFromAllDrives=True, supportsAllDrives=True,
+        ).execute()
+        files = results.get('files', [])
+        if files:
+            sub_id = files[0]['id']
+    except Exception:
+        logger.warning('Google Drive: could not search for subfolder %s, will create it', name, exc_info=True)
+    # Create the subfolder if it wasn't found (or if the search failed).
+    if not sub_id:
         result = service.files().create(
             body={
                 'name': name,
@@ -125,6 +130,7 @@ def upload_file(file_bytes: bytes, filename: str, folder_type: str) -> str | Non
         service.permissions().create(
             fileId=drive_id,
             body={'type': 'anyone', 'role': 'reader'},
+            supportsAllDrives=True,
         ).execute()
         return drive_id
     except Exception:
