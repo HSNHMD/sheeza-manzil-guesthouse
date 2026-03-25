@@ -36,32 +36,15 @@ _MIME = {
     'pdf': 'application/pdf',
 }
 
-# Module-level cache: one Drive service object + resolved folder IDs.
+# Module-level cache: one Drive service object, the resolved SheezaManzil root
+# folder ID, and resolved subfolder IDs.
 _service = None
+_root_folder_id: str | None = None  # SheezaManzil — resolved once at init
 _folder_ids: dict = {}
 
 
-def _get_service():
-    global _service
-    if _service is not None:
-        return _service
-    creds_json = os.environ.get('GOOGLE_CREDENTIALS')
-    if not creds_json:
-        return None
-    try:
-        from google.oauth2.service_account import Credentials
-        from googleapiclient.discovery import build
-        info = json.loads(creds_json)
-        creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
-        _service = build('drive', 'v3', credentials=creds, cache_discovery=False)
-        return _service
-    except Exception:
-        logger.warning('Google Drive: failed to initialise service', exc_info=True)
-        return None
-
-
-def _find_or_create_folder(service, name, parent_id=None):
-    """Return the Drive folder ID for *name*, creating it if necessary."""
+def _find_folder(service, name, parent_id=None):
+    """Return the Drive folder ID for *name*, or None if not found."""
     q = f"name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     if parent_id:
         q += f" and '{parent_id}' in parents"
@@ -73,22 +56,55 @@ def _find_or_create_folder(service, name, parent_id=None):
         supportsAllDrives=True,
     ).execute()
     files = results.get('files', [])
-    if files:
-        return files[0]['id']
-    metadata = {'name': name, 'mimeType': 'application/vnd.google-apps.folder'}
-    if parent_id:
-        metadata['parents'] = [parent_id]
-    folder = service.files().create(
-        body=metadata, fields='id', supportsAllDrives=True
-    ).execute()
-    return folder['id']
+    return files[0]['id'] if files else None
+
+
+def _get_service():
+    global _service, _root_folder_id
+    if _service is not None:
+        return _service
+    creds_json = os.environ.get('GOOGLE_CREDENTIALS')
+    if not creds_json:
+        return None
+    try:
+        from google.oauth2.service_account import Credentials
+        from googleapiclient.discovery import build
+        info = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
+        svc = build('drive', 'v3', credentials=creds, cache_discovery=False)
+        # Resolve the SheezaManzil folder ID immediately so we can verify it
+        # and guarantee uploads never go to the service account's root Drive.
+        fid = _find_folder(svc, 'SheezaManzil')
+        if fid:
+            logger.info('Google Drive: SheezaManzil folder ID = %s', fid)
+        else:
+            logger.warning('Google Drive: SheezaManzil folder not found — uploads will fail')
+        _root_folder_id = fid
+        _service = svc
+        return _service
+    except Exception:
+        logger.warning('Google Drive: failed to initialise service', exc_info=True)
+        return None
 
 
 def _get_subfolder_id(service, folder_type):
     if folder_type in _folder_ids:
         return _folder_ids[folder_type]
-    root_id = _find_or_create_folder(service, 'SheezaManzil')
-    sub_id = _find_or_create_folder(service, _SUBFOLDER_NAMES[folder_type], root_id)
+    if not _root_folder_id:
+        raise RuntimeError('Google Drive: SheezaManzil root folder ID not resolved')
+    sub_id = _find_folder(service, _SUBFOLDER_NAMES[folder_type], _root_folder_id)
+    if not sub_id:
+        # Subfolder missing — create it inside the known root.
+        metadata = {
+            'name': _SUBFOLDER_NAMES[folder_type],
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [_root_folder_id],
+        }
+        result = service.files().create(
+            body=metadata, fields='id', supportsAllDrives=True
+        ).execute()
+        sub_id = result['id']
+        logger.info('Google Drive: created subfolder %s = %s', _SUBFOLDER_NAMES[folder_type], sub_id)
     _folder_ids[folder_type] = sub_id
     return sub_id
 
