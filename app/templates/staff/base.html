@@ -3,48 +3,141 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Staff Portal — Sheeza Manzil{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  {% block head_extra %}{% endblock %}
+  <title>{% block title %}Staff Portal{% endblock %} — Sheeza Manzil</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+
+    .staff-header {
+      background: #1a2e4a;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon { font-size: 22px; line-height: 1; }
+
+    .header-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    #clock {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+    }
+
+    .header-logout {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.65);
+      text-decoration: none;
+      padding: 5px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .header-logout:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+
+    .staff-content {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .flash-container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 12px 16px 0;
+    }
+
+    .flash {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    .flash-success { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+    .flash-error   { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+    .flash-info    { background: #e3f2fd; color: #0d47a1; border: 1px solid #90caf9; }
+  </style>
 </head>
-<body class="bg-slate-50 min-h-screen flex flex-col">
+<body>
 
-<header class="bg-white border-b border-slate-200 sticky top-0 z-30">
-  <div class="flex items-center justify-between px-4 h-12 max-w-4xl mx-auto">
-    <span class="font-semibold text-slate-700 text-base">🏨 Sheeza Manzil — Staff</span>
-    {% if current_user.is_authenticated %}
-    <div class="flex items-center gap-3">
-      <span class="text-xs text-slate-500">{{ current_user.username }}</span>
-      <a href="{{ url_for('staff.logout') }}"
-         class="text-xs px-3 py-1.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
-        Log out
-      </a>
+  <header class="staff-header">
+    <div class="header-brand">
+      <span class="header-icon">🛏</span>
+      <span class="header-title">Staff Room Control</span>
     </div>
-    {% endif %}
-  </div>
-</header>
+    <div class="header-right">
+      <div id="clock"></div>
+      <a href="{{ url_for('staff.logout') }}" class="header-logout">Logout</a>
+    </div>
+  </header>
 
-<main class="flex-1 max-w-4xl mx-auto w-full px-4 py-5">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-      <div class="mb-4 space-y-2">
+      <div class="flash-container">
         {% for category, message in messages %}
-          <div class="px-4 py-3 rounded-lg text-sm
-            {% if category == 'error' %}bg-red-50 text-red-800 border border-red-200
-            {% elif category == 'success' %}bg-green-50 text-green-800 border border-green-200
-            {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
-            {{ message }}
-          </div>
+          <div class="flash flash-{{ category }}">{{ message }}</div>
         {% endfor %}
       </div>
     {% endif %}
   {% endwith %}
-  {% block content %}{% endblock %}
-</main>
 
-<footer class="py-3 text-center text-xs text-slate-400 border-t border-slate-200">
-  &copy; Hussain Hamid. All rights reserved.
-</footer>
+  <main class="staff-content">
+    {% block content %}{% endblock %}
+  </main>
 
+  <script>
+    function updateClock() {
+      const now = new Date();
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const dayName = days[now.getDay()];
+      const date = now.getDate();
+      const month = months[now.getMonth()];
+      let h = now.getHours();
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      document.getElementById('clock').textContent =
+        `${dayName} ${date} ${month} · ${h}:${m} ${ampm}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+
+  {% block extra_js %}{% endblock %}
 </body>
 </html>

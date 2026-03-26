@@ -1,0 +1,621 @@
+{% extends 'staff/base.html' %}
+
+{% block title %}Room {{ room.number }} — Staff{% endblock %}
+
+{% block content %}
+<style>
+  .room-detail-wrap {
+    padding: 16px;
+  }
+
+  /* ── Back link ── */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a2e4a;
+    text-decoration: none;
+    margin-bottom: 16px;
+    padding: 6px 0;
+    opacity: 0.8;
+  }
+  .back-link:hover { opacity: 1; }
+  .back-link::before { content: '←'; font-size: 16px; }
+
+  /* ── Info card ── */
+  .info-card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1.5px solid #e0e6f0;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .info-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #8a98b4;
+    margin-bottom: 12px;
+  }
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  .info-item {}
+  .info-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #aab2c4;
+    margin-bottom: 2px;
+  }
+  .info-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a2e4a;
+  }
+
+  /* Status indicator */
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 3px 9px;
+    border-radius: 20px;
+  }
+  .chip-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .chip-occupied  { background: rgba(91,141,239,0.15); color: #0d3880; }
+  .chip-clean     { background: rgba(76,175,80,0.15);  color: #1b6e1b; }
+  .chip-dirty     { background: rgba(229,115,115,0.15);color: #7f1010; }
+  .chip-cleaning  { background: rgba(229,115,115,0.15);color: #7f1010; }
+  .chip-maintenance { background: rgba(158,158,158,0.2); color: #444; }
+  .chip-available { background: rgba(76,175,80,0.15);  color: #1b6e1b; }
+
+  /* ── Section headings ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #8a98b4;
+    margin: 0 0 10px;
+  }
+
+  /* ── Booking info card ── */
+  .booking-card {
+    background: #d6e8ff;
+    border: 1.5px solid #5b8def;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .booking-guest {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0d2a5e;
+    letter-spacing: -0.01em;
+  }
+  .booking-ref {
+    font-size: 11px;
+    color: #5b8def;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .booking-dates {
+    font-size: 12px;
+    color: #1a3a7a;
+    margin-top: 8px;
+    display: flex;
+    gap: 16px;
+  }
+  .booking-date-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #5b8def;
+  }
+  .payment-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-top: 8px;
+  }
+  .badge-paid    { background: rgba(76,175,80,0.2);   color: #1b6e1b; }
+  .badge-unpaid  { background: rgba(229,115,115,0.2); color: #7f1010; }
+  .badge-partial { background: rgba(255,152,0,0.2);   color: #7a4300; }
+
+  /* ── Action buttons ── */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 13px;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    text-align: center;
+    transition: opacity 0.12s;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { opacity: 0.75; }
+
+  .btn-checkout {
+    background: #1a2e4a;
+    color: #fff;
+    margin-bottom: 14px;
+  }
+  .btn-maintenance {
+    background: #c62828;
+    color: #fff;
+    margin-top: 8px;
+  }
+  .btn-secondary {
+    background: #f0f2f5;
+    color: #1a2e4a;
+    border: 1.5px solid #dce3ed;
+    margin-bottom: 10px;
+  }
+
+  /* ── TAKE IN form ── */
+  .take-in-section { margin-bottom: 14px; }
+  .take-in-toggle {
+    display: block;
+    width: 100%;
+    padding: 13px;
+    background: #1a2e4a;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    text-align: center;
+    -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.12s;
+  }
+  .take-in-toggle:active { opacity: 0.75; }
+
+  .take-in-form {
+    display: none;
+    background: #fff;
+    border: 1.5px solid #dce3ed;
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .take-in-form.open { display: block; }
+
+  .form-group { margin-bottom: 12px; }
+  .form-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8a98b4;
+    margin-bottom: 5px;
+  }
+  .form-input,
+  .form-select {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid #dce3ed;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    color: #1a1a1a;
+    background: #fafbfd;
+    box-sizing: border-box;
+    transition: border-color 0.12s;
+    -webkit-appearance: none;
+  }
+  .form-input:focus,
+  .form-select:focus {
+    outline: none;
+    border-color: #5b8def;
+    background: #fff;
+  }
+  .btn-submit {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: #1a2e4a;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: opacity 0.12s;
+  }
+  .btn-submit:active { opacity: 0.75; }
+
+  /* ── Housekeeping buttons ── */
+  .hk-section { margin-bottom: 14px; }
+  .hk-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+  .hk-btn {
+    padding: 10px 6px;
+    border: 2px solid #dce3ed;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    color: #8a98b4;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.12s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .hk-btn:active { opacity: 0.7; }
+  .hk-btn.active-clean {
+    background: #d4f5d4;
+    border-color: #4caf50;
+    color: #1b6e1b;
+  }
+  .hk-btn.active-in_progress {
+    background: #fff3e0;
+    border-color: #ff9800;
+    color: #7a4300;
+  }
+  .hk-btn.active-dirty {
+    background: #ffd6d6;
+    border-color: #e57373;
+    color: #7f1010;
+  }
+  .hk-feedback {
+    font-size: 11px;
+    color: #4caf50;
+    margin-top: 6px;
+    min-height: 16px;
+    font-weight: 600;
+  }
+
+  /* ── Notes ── */
+  .notes-section { margin-bottom: 14px; }
+  .notes-textarea {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid #dce3ed;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #1a1a1a;
+    background: #fafbfd;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 72px;
+    transition: border-color 0.12s;
+  }
+  .notes-textarea:focus {
+    outline: none;
+    border-color: #5b8def;
+    background: #fff;
+  }
+  .btn-save-note {
+    display: block;
+    width: 100%;
+    padding: 11px;
+    background: #f0f2f5;
+    color: #1a2e4a;
+    border: 1.5px solid #dce3ed;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.12s;
+  }
+  .btn-save-note:hover { background: #e3e8f0; }
+  .notes-feedback {
+    font-size: 11px;
+    color: #4caf50;
+    margin-top: 6px;
+    min-height: 16px;
+    font-weight: 600;
+  }
+
+  /* ── Divider ── */
+  .section-divider {
+    height: 1px;
+    background: #eef0f4;
+    margin: 18px 0;
+  }
+</style>
+
+<div class="room-detail-wrap">
+
+  <a href="{{ url_for('staff.dashboard') }}" class="back-link">Dashboard</a>
+
+  {# ── Room Info Card ── #}
+  <div class="info-card">
+    <div class="info-card-title">Room Info</div>
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Room</div>
+        <div class="info-value">{{ room.number }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Floor</div>
+        <div class="info-value">{{ room.floor if room.floor else '—' }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Type</div>
+        <div class="info-value">{{ room.room_type }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Capacity</div>
+        <div class="info-value">{{ room.capacity }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Status</div>
+        <div class="info-value">
+          {% if room.status == 'occupied' %}
+            <span class="status-chip chip-occupied">🔑 Occupied</span>
+          {% elif room.status == 'maintenance' %}
+            <span class="status-chip chip-maintenance">🔧 Maint.</span>
+          {% elif room.status == 'cleaning' %}
+            <span class="status-chip chip-cleaning"><span class="chip-dot" style="background:#e57373;"></span>Cleaning</span>
+          {% else %}
+            <span class="status-chip chip-available"><span class="chip-dot" style="background:#4caf50;"></span>Available</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Housekeeping</div>
+        <div class="info-value">
+          {% if room.housekeeping_status == 'clean' %}
+            <span class="status-chip chip-clean"><span class="chip-dot" style="background:#4caf50;"></span>Clean</span>
+          {% elif room.housekeeping_status == 'in_progress' %}
+            <span class="status-chip chip-dirty"><span class="chip-dot" style="background:#ff9800;"></span>In Progress</span>
+          {% else %}
+            <span class="status-chip chip-dirty"><span class="chip-dot" style="background:#e53935;"></span>Dirty</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Booking Info (if occupied) ── #}
+  {% if booking and room.status == 'occupied' %}
+  <div class="booking-card">
+    <div class="booking-guest">{{ booking.guest.full_name }}</div>
+    <div class="booking-ref">{{ booking.booking_ref }}</div>
+    <div class="booking-dates">
+      <div>
+        <div class="booking-date-label">Check-in</div>
+        <div>{{ booking.check_in_date.strftime('%d %b %Y') }}</div>
+      </div>
+      <div>
+        <div class="booking-date-label">Check-out</div>
+        <div>{{ booking.check_out_date.strftime('%d %b %Y') }}</div>
+      </div>
+    </div>
+    {% if booking.invoice %}
+      {% set ps = booking.invoice.payment_status %}
+      <span class="payment-badge {% if ps == 'paid' %}badge-paid{% elif ps == 'partial' %}badge-partial{% else %}badge-unpaid{% endif %}">
+        {{ ps | upper }}
+      </span>
+    {% endif %}
+  </div>
+
+  <button class="btn btn-checkout" id="checkoutBtn" onclick="doCheckout()">
+    CHECK OUT GUEST
+  </button>
+  {% endif %}
+
+  {# ── TAKE IN (walk-in check-in) — only when not occupied ── #}
+  {% if room.status != 'occupied' %}
+  <div class="take-in-section">
+    <button class="take-in-toggle" id="takeInToggle" onclick="toggleTakeIn()">
+      TAKE IN →
+    </button>
+    <div class="take-in-form" id="takeInForm">
+      <p class="section-label" style="margin-bottom:14px;">Walk-in Check-in</p>
+      <form method="POST" action="{{ url_for('staff.do_checkin', room_id=room.id) }}">
+        <div class="form-group">
+          <label class="form-label" for="guest_name">Guest Name</label>
+          <input class="form-input" type="text" id="guest_name" name="guest_name"
+                 placeholder="First Last" required autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="check_in_date">Check-in Date</label>
+          <input class="form-input" type="date" id="check_in_date" name="check_in_date"
+                 value="{{ today.strftime('%Y-%m-%d') }}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="check_out_date">Check-out Date</label>
+          <input class="form-input" type="date" id="check_out_date" name="check_out_date" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="payment_status">Payment Status</label>
+          <select class="form-select" id="payment_status" name="payment_status">
+            <option value="unpaid">Unpaid</option>
+            <option value="paid">Paid</option>
+            <option value="partial">Partial</option>
+          </select>
+        </div>
+        <button type="submit" class="btn-submit">CONFIRM CHECK-IN</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="section-divider"></div>
+
+  {# ── Housekeeping ── #}
+  <div class="hk-section">
+    <p class="section-label">Housekeeping</p>
+    <div class="hk-buttons">
+      <button class="hk-btn {% if room.housekeeping_status == 'clean' %}active-clean{% endif %}"
+              id="hk-clean" onclick="setHK('clean')">Clean</button>
+      <button class="hk-btn {% if room.housekeeping_status == 'in_progress' %}active-in_progress{% endif %}"
+              id="hk-in_progress" onclick="setHK('in_progress')">In Progress</button>
+      <button class="hk-btn {% if room.housekeeping_status == 'dirty' %}active-dirty{% endif %}"
+              id="hk-dirty" onclick="setHK('dirty')">Dirty</button>
+    </div>
+    <div class="hk-feedback" id="hkFeedback"></div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  {# ── Room Notes ── #}
+  <div class="notes-section">
+    <p class="section-label">Room Notes</p>
+    <textarea class="notes-textarea" id="roomNotes" rows="3"
+              placeholder="Add notes about this room…">{{ room.notes or '' }}</textarea>
+    <button class="btn-save-note" onclick="saveNote()">Save Note</button>
+    <div class="notes-feedback" id="notesFeedback"></div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  {# ── Maintenance ── #}
+  <button class="btn btn-maintenance" onclick="doMaintenance()">
+    🔧 REPORT MAINTENANCE
+  </button>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const ROOM_ID = {{ room.id }};
+
+  /* ── TAKE IN toggle ── */
+  function toggleTakeIn() {
+    const form = document.getElementById('takeInForm');
+    const btn  = document.getElementById('takeInToggle');
+    const open = form.classList.toggle('open');
+    btn.textContent = open ? 'CANCEL ✕' : 'TAKE IN →';
+    // default checkout date to tomorrow
+    if (open && !document.getElementById('check_out_date').value) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      document.getElementById('check_out_date').value =
+        tomorrow.toISOString().slice(0, 10);
+    }
+  }
+
+  /* ── Checkout ── */
+  async function doCheckout() {
+    if (!confirm('Check out this guest and mark room for cleaning?')) return;
+    const btn = document.getElementById('checkoutBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing…';
+    try {
+      const res = await fetch('/staff/checkout/' + ROOM_ID, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        window.location.href = '/staff/dashboard';
+      } else {
+        alert(data.error || 'Checkout failed.');
+        btn.disabled = false;
+        btn.textContent = 'CHECK OUT GUEST';
+      }
+    } catch(e) {
+      alert('Network error. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'CHECK OUT GUEST';
+    }
+  }
+
+  /* ── Housekeeping ── */
+  async function setHK(status) {
+    const feedback = document.getElementById('hkFeedback');
+    feedback.textContent = '';
+    try {
+      const body = new FormData();
+      body.append('status', status);
+      const res  = await fetch('/staff/housekeeping/' + ROOM_ID, { method: 'POST', body });
+      const data = await res.json();
+      if (data.success) {
+        // Update active state on buttons
+        ['clean', 'in_progress', 'dirty'].forEach(s => {
+          const el = document.getElementById('hk-' + s);
+          el.className = 'hk-btn' + (s === status ? ' active-' + s : '');
+        });
+        feedback.textContent = 'Updated ✓';
+        setTimeout(() => { feedback.textContent = ''; }, 2000);
+      } else {
+        feedback.style.color = '#e53935';
+        feedback.textContent = data.error || 'Update failed.';
+      }
+    } catch(e) {
+      feedback.style.color = '#e53935';
+      feedback.textContent = 'Network error.';
+    }
+  }
+
+  /* ── Save Note ── */
+  async function saveNote() {
+    const note = document.getElementById('roomNotes').value;
+    const feedback = document.getElementById('notesFeedback');
+    feedback.textContent = '';
+    try {
+      const body = new FormData();
+      body.append('note', note);
+      const res  = await fetch('/staff/note/' + ROOM_ID, { method: 'POST', body });
+      const data = await res.json();
+      if (data.success) {
+        feedback.style.color = '#4caf50';
+        feedback.textContent = 'Note saved ✓';
+        setTimeout(() => { feedback.textContent = ''; }, 2000);
+      } else {
+        feedback.style.color = '#e53935';
+        feedback.textContent = 'Save failed.';
+      }
+    } catch(e) {
+      feedback.style.color = '#e53935';
+      feedback.textContent = 'Network error.';
+    }
+  }
+
+  /* ── Report Maintenance ── */
+  async function doMaintenance() {
+    if (!confirm('Mark this room as under maintenance? This will make it unavailable.')) return;
+    try {
+      const res  = await fetch('/staff/maintenance/' + ROOM_ID, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        window.location.href = '/staff/dashboard';
+      } else {
+        alert(data.error || 'Failed to report maintenance.');
+      }
+    } catch(e) {
+      alert('Network error. Please try again.');
+    }
+  }
+</script>
+{% endblock %}

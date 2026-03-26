@@ -1,37 +1,125 @@
 {% extends 'staff/base.html' %}
 
-{% block title %}Staff Login — Sheeza Manzil{% endblock %}
+{% block title %}Staff Login{% endblock %}
 
 {% block content %}
-<div class="min-h-[60vh] flex items-center justify-center">
-  <div class="w-full max-w-sm">
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
-      <div class="mb-6 text-center">
-        <div class="text-3xl mb-2">🏨</div>
-        <h1 class="text-xl font-bold text-slate-800">Staff Portal</h1>
-        <p class="text-sm text-slate-500 mt-1">Sheeza Manzil Guesthouse</p>
-      </div>
+<style>
+  .login-wrap {
+    padding: 40px 16px 24px;
+    display: flex;
+    justify-content: center;
+  }
+  .login-card {
+    width: 100%;
+    max-width: 360px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 36px 32px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    border: 1px solid #e8ecf2;
+  }
+  .login-header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .login-icon {
+    font-size: 36px;
+    line-height: 1;
+    margin-bottom: 10px;
+  }
+  .login-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #1a2e4a;
+    letter-spacing: -0.01em;
+    margin: 0 0 4px;
+  }
+  .login-subtitle {
+    font-size: 12px;
+    color: #8a98b4;
+    font-weight: 500;
+    margin: 0;
+  }
+  .form-group {
+    margin-bottom: 14px;
+  }
+  .form-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8a98b4;
+    margin-bottom: 5px;
+  }
+  .form-input {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    color: #1a1a1a;
+    background: #fafbfd;
+    box-sizing: border-box;
+    transition: border-color 0.12s;
+  }
+  .form-input:focus {
+    outline: none;
+    border-color: #1a2e4a;
+    background: #fff;
+  }
+  .btn-signin {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: #1a2e4a;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    margin-top: 20px;
+    transition: opacity 0.12s;
+  }
+  .btn-signin:hover { opacity: 0.88; }
+  .btn-signin:active { opacity: 0.75; }
+</style>
 
-      <form method="POST" class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Username</label>
-          <input type="text" name="username" required autofocus
-                 class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm
-                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Password</label>
-          <input type="password" name="password" required
-                 class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm
-                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-        </div>
-        <button type="submit"
-                class="w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg
-                       hover:bg-blue-700 transition-colors">
-          Sign in
-        </button>
-      </form>
+<div class="login-wrap">
+  <div class="login-card">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}" style="margin-bottom:16px;">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="login-header">
+      <div class="login-icon">🏨</div>
+      <h1 class="login-title">Staff Portal</h1>
+      <p class="login-subtitle">Sheeza Manzil Guesthouse</p>
     </div>
+
+    <form method="POST">
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input class="form-input" type="text" id="username" name="username"
+               required autofocus autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-input" type="password" id="password" name="password"
+               required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn-signin">SIGN IN</button>
+    </form>
+
   </div>
 </div>
 {% endblock %}

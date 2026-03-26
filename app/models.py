@@ -43,6 +43,7 @@ class Room(db.Model):
     housekeeping_status = db.Column(db.String(20), default='clean')  # clean, dirty, in_progress
     description = db.Column(db.Text)
     amenities = db.Column(db.String(500))
+    notes = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
