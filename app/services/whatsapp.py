@@ -241,18 +241,11 @@ def send_booking_acknowledgment(booking) -> bool:
 def send_staff_new_booking_notification(booking) -> bool:
     """
     Template: staff_new_booking
-    Params: booking_ref, guest_name, guest_phone, room_number, check_in, check_out, total_mvr, status
+    Params: booking_ref, guest_name, guest_phone, room_number, check_in, check_out, total_mvr
+    Status is hardcoded in the template — not a parameter.
     Sent to STAFF_PHONE on portal submission.
     Fails silently if template not yet approved.
     """
-    _STATUS_LABELS = {
-        'unconfirmed': 'Unconfirmed',
-        'pending_verification': 'Pending Verification',
-        'confirmed': 'Confirmed',
-        'checked_in': 'Checked In',
-        'checked_out': 'Checked Out',
-        'cancelled': 'Cancelled',
-    }
     params = [
         booking.booking_ref,
         booking.guest.full_name,
@@ -261,9 +254,8 @@ def send_staff_new_booking_notification(booking) -> bool:
         booking.check_in_date.strftime('%d %B %Y'),
         booking.check_out_date.strftime('%d %B %Y'),
         f"{booking.total_amount:.0f}",
-        _STATUS_LABELS.get(booking.status, booking.status.replace('_', ' ').title()),
     ]
-    return _send_template(STAFF_PHONE, 'staff_new_booking', params, pending_approval=True)['success']
+    return _send_template(STAFF_PHONE, 'staff_new_booking', params, pending_approval=False)['success']
 
 
 def send_checkin_reminder(booking) -> bool:
