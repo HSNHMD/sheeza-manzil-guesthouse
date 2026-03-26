@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # ── Config ─────────────────────────────────────────────────────────────────────
 # Read at call time (not module load time) so Railway env vars are always current.
 _API_BASE = 'https://graph.facebook.com/v18.0'
-_LANG     = 'en_US'
+_LANG     = 'en'
 
 STAFF_PHONE = '9607375797'
 
