@@ -9,13 +9,17 @@ auth_bp = Blueprint('auth', __name__)
 @auth_bp.route('/')
 @login_required
 def index():
+    if not current_user.is_admin:
+        return redirect(url_for('staff.dashboard'))
     return redirect(url_for('rooms.index'))
 
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('auth.index'))
+        if not current_user.is_admin:
+            return redirect(url_for('staff.dashboard'))
+        return redirect(url_for('rooms.index'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -26,7 +30,9 @@ def login():
         if user and user.is_active and user.check_password(password):
             login_user(user, remember=remember)
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('auth.index'))
+            if not next_page:
+                next_page = url_for('staff.dashboard') if not user.is_admin else url_for('rooms.index')
+            return redirect(next_page)
         flash('Invalid username or password.', 'error')
 
     return render_template('auth/login.html')
@@ -39,9 +45,9 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
-@auth_bp.route('/staff', methods=['GET', 'POST'])
+@auth_bp.route('/admin/users', methods=['GET', 'POST'])
 @login_required
-def staff():
+def admin_users():
     if not current_user.is_admin:
         flash('Admin access required.', 'error')
         return redirect(url_for('auth.index'))
@@ -66,7 +72,7 @@ def staff():
                 db.session.add(user)
                 db.session.commit()
                 flash(f'Staff member {username} created.', 'success')
-                return redirect(url_for('auth.staff'))
+                return redirect(url_for('auth.admin_users'))
 
         elif action == 'toggle':
             user_id = request.form.get('user_id')
@@ -75,7 +81,7 @@ def staff():
                 user.is_active = not user.is_active
                 db.session.commit()
                 flash(f'User {user.username} {"activated" if user.is_active else "deactivated"}.', 'success')
-            return redirect(url_for('auth.staff'))
+            return redirect(url_for('auth.admin_users'))
 
     return render_template('auth/staff.html', users=users)
 
