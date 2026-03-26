@@ -1,8 +1,17 @@
+import logging
+import sys
 from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from .models import db, User, Room
 from config import Config
+
+# Ensure Python loggers write to stdout so Railway captures them
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s %(name)s %(levelname)s %(message)s',
+)
 
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
