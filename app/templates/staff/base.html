@@ -136,17 +136,15 @@
   (function() {
     var DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var elDate = document.getElementById('clockDate');
+    var elTime = document.getElementById('clockTime');
     function tick() {
-      var n = new Date();
-      var day = DAYS[n.getDay()];
-      var mon = MONTHS[n.getMonth()];
-      var h   = n.getHours();
-      var ap  = h >= 12 ? 'PM' : 'AM';
+      var n  = new Date();
+      var h  = n.getHours();
+      var ap = h >= 12 ? 'PM' : 'AM';
       h = h % 12 || 12;
-      var mi  = ('0' + n.getMinutes()).slice(-2);
-      var se  = ('0' + n.getSeconds()).slice(-2);
-      document.getElementById('clockDate').textContent = day + ' · ' + n.getDate() + ' ' + mon;
-      document.getElementById('clockTime').textContent = h + ':' + mi + ':' + se + ' ' + ap;
+      elDate.textContent = DAYS[n.getDay()] + ' · ' + n.getDate() + ' ' + MONTHS[n.getMonth()];
+      elTime.textContent = h + ':' + ('0' + n.getMinutes()).slice(-2) + ':' + ('0' + n.getSeconds()).slice(-2) + ' ' + ap;
     }
     tick();
     setInterval(tick, 1000);

@@ -19,14 +19,14 @@
     padding: 32px 24px;
     width: 100%;
     max-width: 360px;
-    box-shadow: 0 4px 28px rgba(26,46,74,0.12);
+    box-shadow: 0 4px 28px rgba(26,46,74,0.12); /* navy with alpha — no var() for rgba() */
   }
 
   .login-title {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 28px;
     font-weight: 800;
-    color: #1a2e4a;
+    color: var(--navy);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     line-height: 1;
@@ -79,8 +79,8 @@
     display: block;
     width: 100%;
     padding: 14px;
-    background: #1a2e4a;
-    color: #fff;
+    background: var(--navy);
+    color: var(--white);
     border: none;
     border-radius: 10px;
     font-family: 'Barlow Condensed', sans-serif;
@@ -93,8 +93,8 @@
     transition: background 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
-  .btn-login:hover   { background: #243d5e; }
-  .btn-login:active  { background: #111f33; }
+  .btn-login:hover   { background: var(--navy-mid); }
+  .btn-login:active  { background: var(--navy-dark); }
 </style>
 {% endblock %}
 

@@ -225,13 +225,11 @@
   }
   .btn-submit:active { opacity: 0.75; }
 
-  /* ── HK feedback ── */
-  .hk-feedback {
+  .feedback-msg {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #4caf50;
     margin-top: 6px;
     min-height: 16px;
   }
@@ -276,15 +274,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   .btn-save-note:hover { background: #e3e8f0; }
-  .notes-feedback {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 12px;
-    font-weight: 700;
-    color: #4caf50;
-    margin-top: 6px;
-    min-height: 16px;
-    letter-spacing: 0.04em;
-  }
+  /* .notes-feedback uses shared .feedback-msg */
 
   /* ── Report Maintenance ── */
   .btn-maintenance {
@@ -306,6 +296,10 @@
     margin-bottom: 8px;
   }
   .btn-maintenance:active { opacity: 0.78; }
+
+  .hk-clean       { color: #1b5e20; }
+  .hk-in-progress { color: #7a4300; }
+  .hk-dirty       { color: #7f0000; }
 
   /* ── Booking info strip ── */
   .booking-strip {
@@ -393,11 +387,11 @@
       <div class="info-label">HK Status</div>
       <div class="info-value">
         {% if room.housekeeping_status == 'clean' %}
-          <span style="color:#1b5e20;">✓ Clean</span>
+          <span class="hk-clean">✓ Clean</span>
         {% elif room.housekeeping_status == 'in_progress' %}
-          <span style="color:#7a4300;">↻ In Progress</span>
+          <span class="hk-in-progress">↻ In Progress</span>
         {% else %}
-          <span style="color:#7f0000;">✕ Dirty</span>
+          <span class="hk-dirty">✕ Dirty</span>
         {% endif %}
       </div>
     </div>
@@ -462,7 +456,7 @@
 
 </div>
 
-<div class="hk-feedback" id="hkFeedback"></div>
+<div class="feedback-msg" id="hkFeedback"></div>
 
 {# ── Walk-in Check-in form (hidden, toggled by CHECK-IN button) ── #}
 {% if room.status != 'occupied' %}
@@ -503,7 +497,7 @@
 <textarea class="notes-textarea" id="roomNotes" rows="3"
           placeholder="Tap to add a note...">{{ room.notes or '' }}</textarea>
 <button class="btn-save-note" onclick="saveNote()">✓ Save Note</button>
-<div class="notes-feedback" id="notesFeedback"></div>
+<div class="feedback-msg" id="notesFeedback"></div>
 
 <div class="section-div"></div>
 
@@ -516,33 +510,35 @@
 
 {% block extra_js %}
 <script>
-  const ROOM_ID = {{ room.id }};
+  const ROOM_ID   = {{ room.id }};
+  const elHKFeed  = document.getElementById('hkFeedback');
+  const elNoteFed = document.getElementById('notesFeedback');
+  let   hkTimer   = null;
+  let   noteTimer = null;
 
-  /* ── TAKE IN toggle ── */
   function toggleTakeIn() {
-    const form = document.getElementById('takeInForm');
-    const btn  = document.getElementById('checkInBtn');
+    const form    = document.getElementById('takeInForm');
+    const btn     = document.getElementById('checkInBtn');
+    const coField = document.getElementById('check_out_date');
     if (!form) return;
     const open = form.classList.toggle('open');
     btn.innerHTML = open
       ? '<span class="action-icon">✕</span>Cancel'
       : '<span class="action-icon">👤</span>Check-In';
-    if (open && !document.getElementById('check_out_date').value) {
+    if (open && coField && !coField.value) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      document.getElementById('check_out_date').value =
-        tomorrow.toISOString().slice(0, 10);
+      coField.value = tomorrow.toISOString().slice(0, 10);
     }
   }
 
-  /* ── Checkout ── */
   async function doCheckout() {
     if (!confirm('Check out this guest and mark room for cleaning?')) return;
     const btn = document.getElementById('checkoutBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="action-icon">⏳</span>Processing…';
     try {
-      const res = await fetch('/staff/checkout/' + ROOM_ID, { method: 'POST' });
+      const res  = await fetch('/staff/checkout/' + ROOM_ID, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         window.location.href = '/staff/dashboard';
@@ -552,60 +548,60 @@
         btn.innerHTML = '<span class="action-icon">🚪</span>Check Out';
       }
     } catch(e) {
+      console.error('Checkout error:', e);
       alert('Network error. Please try again.');
       btn.disabled = false;
       btn.innerHTML = '<span class="action-icon">🚪</span>Check Out';
     }
   }
 
-  /* ── Housekeeping ── */
   async function setHK(status) {
-    const feedback = document.getElementById('hkFeedback');
-    feedback.textContent = '';
+    elHKFeed.textContent = '';
+    clearTimeout(hkTimer);
     try {
       const body = new FormData();
       body.append('status', status);
       const res  = await fetch('/staff/housekeeping/' + ROOM_ID, { method: 'POST', body });
       const data = await res.json();
       if (data.success) {
-        feedback.style.color = '#4caf50';
-        feedback.textContent = 'Housekeeping updated ✓';
-        setTimeout(() => { feedback.textContent = ''; }, 2500);
+        elHKFeed.style.color = '#4caf50';
+        elHKFeed.textContent = 'Housekeeping updated ✓';
+        hkTimer = setTimeout(() => { elHKFeed.textContent = ''; }, 2500);
       } else {
-        feedback.style.color = '#ef5350';
-        feedback.textContent = data.error || 'Update failed.';
+        elHKFeed.style.color = '#ef5350';
+        elHKFeed.textContent = data.error || 'Update failed.';
       }
     } catch(e) {
-      feedback.style.color = '#ef5350';
-      feedback.textContent = 'Network error.';
+      console.error('HK update error:', e);
+      elHKFeed.style.color = '#ef5350';
+      elHKFeed.textContent = 'Network error.';
     }
   }
 
-  /* ── Save Note ── */
   async function saveNote() {
-    const note     = document.getElementById('roomNotes').value;
-    const feedback = document.getElementById('notesFeedback');
-    feedback.textContent = '';
+    const note = document.getElementById('roomNotes').value;
+    elNoteFed.textContent = '';
+    clearTimeout(noteTimer);
     try {
       const body = new FormData();
       body.append('note', note);
       const res  = await fetch('/staff/note/' + ROOM_ID, { method: 'POST', body });
       const data = await res.json();
       if (data.success) {
-        feedback.style.color = '#4caf50';
-        feedback.textContent = 'Note saved ✓';
-        setTimeout(() => { feedback.textContent = ''; }, 2500);
+        elNoteFed.style.color = '#4caf50';
+        elNoteFed.textContent = 'Note saved ✓';
+        noteTimer = setTimeout(() => { elNoteFed.textContent = ''; }, 2500);
       } else {
-        feedback.style.color = '#ef5350';
-        feedback.textContent = 'Save failed.';
+        elNoteFed.style.color = '#ef5350';
+        elNoteFed.textContent = 'Save failed.';
       }
     } catch(e) {
-      feedback.style.color = '#ef5350';
-      feedback.textContent = 'Network error.';
+      console.error('Note save error:', e);
+      elNoteFed.style.color = '#ef5350';
+      elNoteFed.textContent = 'Network error.';
     }
   }
 
-  /* ── Report Maintenance ── */
   async function doMaintenance() {
     if (!confirm('Mark this room as under maintenance? This will make it unavailable.')) return;
     try {
@@ -617,6 +613,7 @@
         alert(data.error || 'Failed to report maintenance.');
       }
     } catch(e) {
+      console.error('Maintenance error:', e);
       alert('Network error. Please try again.');
     }
   }
