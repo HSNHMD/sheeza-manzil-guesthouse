@@ -106,13 +106,29 @@
 
 <header class="staff-header">
   <div class="header-brand">
-    <!-- Bed SVG icon -->
-    <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <rect x="1" y="12" width="26" height="9" rx="2.5" fill="white"/>
-      <rect x="1" y="2" width="3.5" height="19" rx="1.5" fill="white"/>
-      <rect x="23.5" y="2" width="3.5" height="19" rx="1.5" fill="white"/>
-      <rect x="5.5" y="7" width="7.5" height="6" rx="2" fill="rgba(255,255,255,0.38)"/>
-      <rect x="15" y="7" width="7.5" height="6" rx="2" fill="rgba(255,255,255,0.38)"/>
+    <!-- Bed SVG icon — 3D isometric -->
+    <svg width="30" height="24" viewBox="0 0 32 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <filter id="hb-shadow" x="-10%" y="-10%" width="130%" height="140%">
+          <feDropShadow dx="0" dy="1.5" stdDeviation="1" flood-color="#000" flood-opacity="0.28"/>
+        </filter>
+      </defs>
+      <!-- Left post: front face + depth side -->
+      <rect x="1" y="1.5" width="4" height="22.5" rx="1.5" fill="white"/>
+      <polygon points="5,1.5 8.5,0 8.5,22 5,24" fill="rgba(255,255,255,0.4)"/>
+      <!-- Right post: front face + depth side -->
+      <rect x="22" y="1.5" width="4" height="22.5" rx="1.5" fill="white"/>
+      <polygon points="26,1.5 29.5,0 29.5,22 26,24" fill="rgba(255,255,255,0.4)"/>
+      <!-- Mattress top face (isometric) -->
+      <polygon points="5,13 26,13 29.5,10.5 8.5,10.5" fill="rgba(255,255,255,0.78)"/>
+      <!-- Mattress front face -->
+      <rect x="5" y="13" width="21" height="9" rx="2" fill="white" filter="url(#hb-shadow)"/>
+      <!-- Mattress right depth face -->
+      <polygon points="26,13 29.5,10.5 29.5,19.5 26,22" fill="rgba(255,255,255,0.46)"/>
+      <!-- Pillow 1 on top face -->
+      <polygon points="8,12.5 14.5,12.5 16,10.5 9.5,10.5" fill="white" opacity="0.93"/>
+      <!-- Pillow 2 on top face -->
+      <polygon points="17.5,12.5 24,12.5 25.5,10.5 19,10.5" fill="white" opacity="0.93"/>
     </svg>
     <span class="header-title">Staff Room Control</span>
   </div>
