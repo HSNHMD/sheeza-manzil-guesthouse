@@ -1,255 +1,423 @@
 {% extends 'staff/base.html' %}
 
-{% block title %}Staff Dashboard{% endblock %}
+{% block title %}Dashboard — Staff Portal{% endblock %}
 
 {% block content %}
-<style>
-  .rooms-header {
-    padding: 16px 16px 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .rooms-date {
-    font-size: 13px;
-    color: #555;
-    font-weight: 500;
-  }
-  .summary-pills {
-    display: flex;
-    gap: 6px;
-    padding: 0 16px 12px;
-    flex-wrap: wrap;
-  }
-  .pill {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 20px;
-    letter-spacing: 0.02em;
-  }
-  .pill-blue  { background: #d6e8ff; color: #0d3880; }
-  .pill-red   { background: #ffd6d6; color: #7f1010; }
-  .pill-green { background: #d4f5d4; color: #1b6e1b; }
 
-  /* ── Room Grid ── */
-  .rooms-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    padding: 0 16px 16px;
-  }
-
-  .room-card {
-    display: block;
-    text-decoration: none;
-    border-radius: 14px;
-    border: 2px solid;
-    padding: 14px 12px 12px;
-    cursor: pointer;
-    position: relative;
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .room-card:active { transform: scale(0.97); }
-
-  .card-room-number {
-    font-size: 28px;
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: -0.02em;
-  }
-  .card-room-type {
-    font-size: 11px;
-    font-weight: 500;
-    margin-top: 2px;
-    opacity: 0.65;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .card-guest-name {
-    font-size: 12px;
-    font-weight: 600;
-    margin-top: 10px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .card-checkout {
-    font-size: 11px;
-    opacity: 0.65;
-    margin-top: 1px;
-  }
-  .card-spacer { margin-top: 10px; }
-
-  /* Status badge */
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-top: 10px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    padding: 3px 8px;
-    border-radius: 20px;
-  }
-  .badge-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  /* Legend */
-  .legend {
-    display: flex;
-    gap: 14px;
-    padding: 12px 16px 20px;
-    flex-wrap: wrap;
-  }
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    color: #555;
-    font-weight: 500;
-  }
-  .legend-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 4px;
-    flex-shrink: 0;
-  }
-</style>
-
-{# ── Summary counts ── #}
+{# ── Summary counts ─────────────────────────────────────────────────── #}
 {% set occupied_count = namespace(n=0) %}
 {% set arriving_count = namespace(n=0) %}
 {% set clean_count    = namespace(n=0) %}
 {% for item in room_data %}
   {% if item.room.status == 'occupied' %}{% set occupied_count.n = occupied_count.n + 1 %}{% endif %}
   {% if item.booking and item.booking.status == 'confirmed' %}{% set arriving_count.n = arriving_count.n + 1 %}{% endif %}
-  {% if item.room.housekeeping_status == 'clean' and item.room.status != 'occupied' %}{% set clean_count.n = clean_count.n + 1 %}{% endif %}
+  {% if item.room.housekeeping_status == 'clean' %}{% set clean_count.n = clean_count.n + 1 %}{% endif %}
 {% endfor %}
 
-<div class="rooms-header">
-  <span class="rooms-date">{{ today.strftime('%d %b %Y') }}</span>
+<div class="flex items-center gap-2 mb-4 flex-wrap">
+  <h1 class="font-bold text-slate-800 text-base mr-2">Rooms — {{ today.strftime('%d %b %Y') }}</h1>
+  <span class="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold text-xs">{{ occupied_count.n }} occupied</span>
+  <span class="px-2.5 py-1 rounded-full bg-sky-100 text-sky-700 font-semibold text-xs">{{ arriving_count.n }} arriving</span>
+  <span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs">{{ clean_count.n }} clean</span>
 </div>
 
-<div class="summary-pills">
-  <span class="pill pill-blue">{{ occupied_count.n }} occupied</span>
-  {% if arriving_count.n > 0 %}
-  <span class="pill pill-red">{{ arriving_count.n }} arriving</span>
-  {% endif %}
-  <span class="pill pill-green">{{ clean_count.n }} clean</span>
-</div>
-
-{# ── Room Grid ── #}
-<div class="rooms-grid">
+{# ── Room grid ───────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3" id="rooms-grid">
   {% for item in room_data %}
   {% set room    = item.room %}
   {% set booking = item.booking %}
 
-  {# Determine card colors #}
+  {# Card color key #}
   {% if room.status == 'occupied' %}
-    {% set card_bg = '#d6e8ff' %}
-    {% set card_border = '#5b8def' %}
-    {% set bed_color = '#1565c0' %}
-    {% set text_color = '#0d2a5e' %}
+    {% set _bg = 'bg-blue-600' %}
+    {% set _text = 'text-white' %}
+    {% set _ring = 'ring-blue-400' %}
   {% elif room.status == 'maintenance' %}
-    {% set card_bg = '#f5f5f5' %}
-    {% set card_border = '#9e9e9e' %}
-    {% set bed_color = '#757575' %}
-    {% set text_color = '#333333' %}
-  {% elif room.status == 'cleaning' or room.housekeeping_status in ['dirty', 'in_progress'] %}
-    {% set card_bg = '#ffd6d6' %}
-    {% set card_border = '#e57373' %}
-    {% set bed_color = '#c62828' %}
-    {% set text_color = '#5a0000' %}
+    {% set _bg = 'bg-rose-100' %}
+    {% set _text = 'text-rose-900' %}
+    {% set _ring = 'ring-rose-300' %}
+  {% elif room.status == 'cleaning' or room.housekeeping_status == 'in_progress' %}
+    {% set _bg = 'bg-amber-100' %}
+    {% set _text = 'text-amber-900' %}
+    {% set _ring = 'ring-amber-300' %}
+  {% elif room.housekeeping_status == 'dirty' %}
+    {% set _bg = 'bg-amber-50' %}
+    {% set _text = 'text-amber-900' %}
+    {% set _ring = 'ring-amber-200' %}
   {% else %}
-    {% set card_bg = '#d4f5d4' %}
-    {% set card_border = '#4caf50' %}
-    {% set bed_color = '#2e7d32' %}
-    {% set text_color = '#1b3a1b' %}
+    {% set _bg = 'bg-emerald-50' %}
+    {% set _text = 'text-emerald-900' %}
+    {% set _ring = 'ring-emerald-200' %}
   {% endif %}
 
-  <a href="/staff/room/{{ room.id }}"
-     class="room-card"
-     style="background:{{ card_bg }}; border-color:{{ card_border }}; color:{{ text_color }};">
+  <div id="card-{{ room.id }}"
+       data-room-id="{{ room.id }}"
+       data-room-number="{{ room.number }}"
+       data-room-type="{{ room.room_type | e }}"
+       data-room-status="{{ room.status }}"
+       data-hk-status="{{ room.housekeeping_status }}"
+       data-booking-ref="{{ booking.booking_ref if booking else '' }}"
+       data-guest-name="{{ booking.guest.full_name | e if booking else '' }}"
+       data-check-in="{{ booking.check_in_date.strftime('%d %b %Y') if booking else '' }}"
+       data-check-out="{{ booking.check_out_date.strftime('%d %b %Y') if booking else '' }}"
+       data-booking-status="{{ booking.status if booking else '' }}"
+       data-payment-status="{{ booking.invoice.payment_status if booking and booking.invoice else ('none' if booking else '') }}"
+       onclick="openModal({{ room.id }})"
+       class="relative rounded-xl border border-transparent ring-1 {{ _ring }} {{ _bg }} {{ _text }}
+              cursor-pointer select-none min-h-[7.5rem] p-3 flex flex-col
+              shadow-sm hover:shadow-md active:scale-95 transition-all duration-150">
 
-    {# Bed SVG icon #}
-    <svg width="46" height="28" viewBox="0 0 52 32" fill="{{ bed_color }}" style="margin-bottom:6px; opacity:0.85;">
-      <!-- headboard -->
-      <rect x="0" y="1" width="7" height="23" rx="2.5"/>
-      <!-- mattress body -->
-      <rect x="7" y="9" width="45" height="15" rx="3"/>
-      <!-- left leg -->
-      <rect x="9" y="24" width="5" height="7" rx="1.5"/>
-      <!-- right leg -->
-      <rect x="38" y="24" width="5" height="7" rx="1.5"/>
-    </svg>
+    {# Room number — dominant #}
+    <div class="font-mono font-black text-4xl leading-none tracking-tight">{{ room.number }}</div>
+    <div class="text-xs font-medium mt-0.5 opacity-70">{{ room.room_type }}</div>
 
-    <div class="card-room-number">{{ room.number }}</div>
-    <div class="card-room-type">{{ room.room_type }}</div>
-
-    {% if booking and room.status == 'occupied' %}
-      <div class="card-guest-name">{{ booking.guest.full_name }}</div>
-      <div class="card-checkout">Out {{ booking.check_out_date.strftime('%d %b') }}</div>
+    {# Guest info #}
+    {% if booking %}
+    <div class="mt-auto pt-2 text-xs leading-tight">
+      <div data-guest-line class="font-semibold truncate">{{ booking.guest.full_name }}</div>
+      <div data-out-line class="opacity-70">Out {{ booking.check_out_date.strftime('%d %b') }}</div>
+    </div>
     {% else %}
-      <div class="card-spacer"></div>
+    <div class="mt-auto"></div>
     {% endif %}
 
-    {# Status badge #}
-    {% if room.status == 'occupied' %}
-      <div class="status-badge" style="background:rgba(91,141,239,0.18); color:#0d3880;">
-        🔑 CHECKED IN
-      </div>
+    {# HK icon — top right #}
+    <div data-hk-icon class="absolute top-2 right-2 text-base leading-none">
+      {% if room.housekeeping_status == 'dirty' %}🧹
+      {% elif room.housekeeping_status == 'in_progress' %}🔄
+      {% elif room.status == 'maintenance' %}🔧
+      {% else %}✅{% endif %}
+    </div>
+
+    {# Status badge — bottom right #}
+    {% if room.status == 'cleaning' %}
+    <span data-status-badge class="absolute bottom-2 right-2 text-[10px] font-bold bg-amber-400/80 text-amber-900 px-1.5 py-0.5 rounded">CLEANING</span>
     {% elif room.status == 'maintenance' %}
-      <div class="status-badge" style="background:rgba(158,158,158,0.2); color:#444;">
-        🔧 MAINTENANCE
-      </div>
-    {% elif room.status == 'cleaning' %}
-      <div class="status-badge" style="background:rgba(229,115,115,0.2); color:#7f1010;">
-        <span class="badge-dot" style="background:#e57373;"></span>CLEANING
-      </div>
-    {% elif room.housekeeping_status == 'dirty' %}
-      <div class="status-badge" style="background:rgba(229,57,53,0.12); color:#7f1010;">
-        <span class="badge-dot" style="background:#e53935;"></span>DIRTY
-      </div>
-    {% elif room.housekeeping_status == 'in_progress' %}
-      <div class="status-badge" style="background:rgba(229,57,53,0.12); color:#7f1010;">
-        <span class="badge-dot" style="background:#ff9800;"></span>CLEANING
-      </div>
+    <span data-status-badge class="absolute bottom-2 right-2 text-[10px] font-bold bg-rose-300/80 text-rose-900 px-1.5 py-0.5 rounded">MAINT.</span>
     {% elif booking and booking.status == 'confirmed' %}
-      <div class="status-badge" style="background:rgba(21,101,192,0.12); color:#0d3880;">
-        📋 ARRIVING
-      </div>
-    {% else %}
-      <div class="status-badge" style="background:rgba(76,175,80,0.15); color:#1b6e1b;">
-        <span class="badge-dot" style="background:#4caf50;"></span>CLEAN
-      </div>
+    <span data-status-badge class="absolute bottom-2 right-2 text-[10px] font-bold bg-sky-200/90 text-sky-900 px-1.5 py-0.5 rounded">ARRIVING</span>
     {% endif %}
-
-  </a>
+  </div>
   {% endfor %}
 </div>
 
-{# ── Legend ── #}
-<div class="legend">
-  <div class="legend-item">
-    <div class="legend-dot" style="background:#4caf50;"></div> Clean
-  </div>
-  <div class="legend-item">
-    <div class="legend-dot" style="background:#e57373;"></div> Dirty / Cleaning
-  </div>
-  <div class="legend-item">
-    <div class="legend-dot" style="background:#5b8def;"></div> Occupied
-  </div>
-  <div class="legend-item">
-    <div class="legend-dot" style="background:#9e9e9e;"></div> Maintenance
+{# ── Color legend ────────────────────────────────────────────────────── #}
+<div class="mt-5 flex flex-wrap gap-3 text-xs text-slate-500">
+  <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-400 inline-block"></span>Available · clean</span>
+  <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-amber-400 inline-block"></span>Dirty / cleaning</span>
+  <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-500 inline-block"></span>Occupied</span>
+  <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-rose-300 inline-block"></span>Maintenance</span>
+</div>
+
+
+{# ══ Modal ═══════════════════════════════════════════════════════════════ #}
+<div id="room-modal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeModal()"></div>
+
+  {# Bottom sheet on mobile, centered on sm+ #}
+  <div class="absolute bottom-0 left-0 right-0 sm:inset-0 sm:flex sm:items-center sm:justify-center sm:p-4">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm shadow-2xl">
+
+      {# Modal header #}
+      <div class="px-5 pt-5 pb-4 border-b border-slate-100 flex items-start justify-between">
+        <div>
+          <div id="modal-room-number" class="font-mono font-black text-5xl text-slate-900 leading-none"></div>
+          <div id="modal-room-type" class="text-sm text-slate-500 mt-1 font-medium"></div>
+        </div>
+        <button onclick="closeModal()"
+                class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors mt-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      {# Modal body #}
+      <div class="px-5 py-4 space-y-4">
+
+        {# Error area #}
+        <div id="modal-error"
+             class="hidden px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"></div>
+
+        {# Booking info #}
+        <div>
+          <div id="modal-no-booking" class="text-sm text-slate-400 italic">No booking today</div>
+          <div id="modal-booking-info" class="hidden space-y-1.5">
+            <div class="flex gap-2 text-sm">
+              <span class="text-slate-400 w-20 shrink-0 text-xs pt-0.5">Guest</span>
+              <span id="modal-guest" class="font-semibold text-slate-800"></span>
+            </div>
+            <div class="flex gap-2 text-sm">
+              <span class="text-slate-400 w-20 shrink-0 text-xs pt-0.5">Ref</span>
+              <span id="modal-ref" class="font-mono text-slate-600 text-xs pt-0.5"></span>
+            </div>
+            <div class="flex gap-2 text-sm">
+              <span class="text-slate-400 w-20 shrink-0 text-xs pt-0.5">Check-in</span>
+              <span id="modal-checkin" class="text-slate-700 text-xs pt-0.5"></span>
+            </div>
+            <div class="flex gap-2 text-sm">
+              <span class="text-slate-400 w-20 shrink-0 text-xs pt-0.5">Check-out</span>
+              <span id="modal-checkout" class="text-slate-700 text-xs pt-0.5"></span>
+            </div>
+          </div>
+        </div>
+
+        {# Payment warning #}
+        <div id="modal-payment-warn"
+             class="hidden px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+          ⚠️ No payment recorded — admin must add payment before check-in.
+        </div>
+
+        {# Action buttons #}
+        <div class="flex gap-2">
+          <button id="btn-checkin" onclick="doCheckin(currentRoomId)"
+                  class="hidden flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800
+                         text-white text-sm font-bold rounded-xl transition-colors">
+            Check In ↓
+          </button>
+          <button id="btn-checkout" onclick="doCheckout(currentRoomId)"
+                  class="hidden flex-1 py-2.5 bg-slate-800 hover:bg-slate-900 active:bg-black
+                         text-white text-sm font-bold rounded-xl transition-colors">
+            Check Out ↑
+          </button>
+        </div>
+
+        {# Housekeeping controls #}
+        <div>
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Housekeeping</div>
+          <div class="flex gap-2">
+            <button id="hk-clean"
+                    onclick="doHousekeeping(currentRoomId,'clean')"
+                    class="flex-1 py-2 text-xs font-semibold rounded-xl border-2 transition-all
+                           border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+              ✅ Clean
+            </button>
+            <button id="hk-in_progress"
+                    onclick="doHousekeeping(currentRoomId,'in_progress')"
+                    class="flex-1 py-2 text-xs font-semibold rounded-xl border-2 transition-all
+                           border-amber-200 text-amber-700 hover:bg-amber-50">
+              🔄 Active
+            </button>
+            <button id="hk-dirty"
+                    onclick="doHousekeeping(currentRoomId,'dirty')"
+                    class="flex-1 py-2 text-xs font-semibold rounded-xl border-2 transition-all
+                           border-orange-200 text-orange-700 hover:bg-orange-50">
+              🧹 Dirty
+            </button>
+          </div>
+        </div>
+
+        {# Bottom padding for safe area on iOS #}
+        <div class="pb-2 sm:pb-0"></div>
+      </div>
+    </div>
   </div>
 </div>
 
+
+<script>
+let currentRoomId = null;
+
+// ── Card color system ────────────────────────────────────────────────────────
+
+const COLOR_CLASSES = {
+  occupied:          'bg-blue-600 text-white ring-1 ring-blue-400',
+  maintenance:       'bg-rose-100 text-rose-900 ring-1 ring-rose-300',
+  cleaning:          'bg-amber-100 text-amber-900 ring-1 ring-amber-300',
+  available_dirty:   'bg-amber-50 text-amber-900 ring-1 ring-amber-200',
+  available_clean:   'bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200',
+};
+
+const ALL_COLOR_CLASSES = Object.values(COLOR_CLASSES).join(' ').split(' ');
+
+function colorKeyFor(roomStatus, hkStatus) {
+  if (roomStatus === 'occupied')    return 'occupied';
+  if (roomStatus === 'maintenance') return 'maintenance';
+  if (roomStatus === 'cleaning' || hkStatus === 'in_progress') return 'cleaning';
+  if (hkStatus   === 'dirty')       return 'available_dirty';
+  return 'available_clean';
+}
+
+function applyCardColor(card, roomStatus, hkStatus) {
+  card.classList.remove(...ALL_COLOR_CLASSES);
+  const key = colorKeyFor(roomStatus, hkStatus);
+  (COLOR_CLASSES[key] || COLOR_CLASSES.available_clean).split(' ').forEach(c => card.classList.add(c));
+}
+
+// ── Card DOM update ──────────────────────────────────────────────────────────
+
+function updateCard(roomId, resp) {
+  const card = document.getElementById(`card-${roomId}`);
+  if (!card) return;
+
+  if (resp.room_status)          card.dataset.roomStatus = resp.room_status;
+  if (resp.housekeeping_status)  card.dataset.hkStatus   = resp.housekeeping_status;
+  if (resp.booking_status)       card.dataset.bookingStatus = resp.booking_status;
+  if (resp.guest_name)           card.dataset.guestName  = resp.guest_name;
+  if (resp.checkout_date)        card.dataset.checkOut   = resp.checkout_date;
+  if (resp.booking_ref)          card.dataset.bookingRef = resp.booking_ref;
+
+  const rs = card.dataset.roomStatus;
+  const hk = card.dataset.hkStatus;
+
+  applyCardColor(card, rs, hk);
+
+  // HK icon
+  const hkIcon = card.querySelector('[data-hk-icon]');
+  if (hkIcon) {
+    hkIcon.textContent = hk === 'dirty' ? '🧹' : hk === 'in_progress' ? '🔄' : rs === 'maintenance' ? '🔧' : '✅';
+  }
+
+  // Status badge
+  const badge = card.querySelector('[data-status-badge]');
+  if (badge) {
+    if (rs === 'cleaning') {
+      badge.textContent = 'CLEANING';
+      badge.className = 'absolute bottom-2 right-2 text-[10px] font-bold bg-amber-400/80 text-amber-900 px-1.5 py-0.5 rounded';
+      badge.style.display = '';
+    } else if (rs === 'occupied') {
+      badge.style.display = 'none';
+    }
+  }
+
+  // Guest info area
+  const guestLine = card.querySelector('[data-guest-line]');
+  const outLine   = card.querySelector('[data-out-line]');
+  if (resp.guest_name && guestLine)   guestLine.textContent = resp.guest_name;
+  if (resp.checkout_date && outLine)  outLine.textContent = 'Out ' + resp.checkout_date;
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────────
+
+function openModal(roomId) {
+  currentRoomId = roomId;
+  const card = document.getElementById(`card-${roomId}`);
+  const d = card.dataset;
+
+  document.getElementById('modal-room-number').textContent = d.roomNumber;
+  document.getElementById('modal-room-type').textContent   = d.roomType;
+  document.getElementById('modal-error').classList.add('hidden');
+
+  const hasBooking = !!d.bookingRef;
+  document.getElementById('modal-no-booking').classList.toggle('hidden', hasBooking);
+  document.getElementById('modal-booking-info').classList.toggle('hidden', !hasBooking);
+
+  if (hasBooking) {
+    document.getElementById('modal-guest').textContent    = d.guestName   || '—';
+    document.getElementById('modal-ref').textContent      = d.bookingRef  || '—';
+    document.getElementById('modal-checkin').textContent  = d.checkIn     || '—';
+    document.getElementById('modal-checkout').textContent = d.checkOut    || '—';
+  }
+
+  // Payment warning
+  document.getElementById('modal-payment-warn').classList.toggle(
+    'hidden', !(hasBooking && d.paymentStatus === 'unpaid')
+  );
+
+  // Action buttons
+  document.getElementById('btn-checkin').classList.toggle('hidden',
+    !(hasBooking && d.bookingStatus === 'confirmed'));
+  document.getElementById('btn-checkout').classList.toggle('hidden',
+    !(hasBooking && d.bookingStatus === 'checked_in'));
+
+  updateHkButtons(d.hkStatus);
+
+  document.getElementById('room-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('room-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+  currentRoomId = null;
+}
+
+function updateHkButtons(active) {
+  const configs = {
+    clean:       { active: 'bg-emerald-100 border-emerald-500 text-emerald-800' },
+    in_progress: { active: 'bg-amber-100 border-amber-500 text-amber-800' },
+    dirty:       { active: 'bg-orange-100 border-orange-500 text-orange-800' },
+  };
+  ['clean', 'in_progress', 'dirty'].forEach(s => {
+    const btn = document.getElementById(`hk-${s}`);
+    if (!btn) return;
+    // Remove all active classes
+    ['bg-emerald-100','bg-amber-100','bg-orange-100',
+     'border-emerald-500','border-amber-500','border-orange-500',
+     'text-emerald-800','text-amber-800','text-orange-800',
+     'scale-95'].forEach(c => btn.classList.remove(c));
+    if (s === active) {
+      (configs[s].active).split(' ').forEach(c => btn.classList.add(c));
+    }
+  });
+}
+
+// ── AJAX helpers ─────────────────────────────────────────────────────────────
+
+function showError(msg) {
+  const el = document.getElementById('modal-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+async function doCheckin(roomId) {
+  document.getElementById('modal-error').classList.add('hidden');
+  try {
+    const resp = await fetch(`/staff/room/${roomId}/checkin`, {
+      method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}
+    });
+    const data = await resp.json();
+    if (data.success) {
+      updateCard(roomId, data);
+      // Update modal: swap button states
+      document.getElementById('btn-checkin').classList.add('hidden');
+      document.getElementById('btn-checkout').classList.remove('hidden');
+      const card = document.getElementById(`card-${roomId}`);
+      card.dataset.bookingStatus = 'checked_in';
+    } else {
+      showError(data.error || 'Check-in failed.');
+    }
+  } catch { showError('Network error. Please try again.'); }
+}
+
+async function doCheckout(roomId) {
+  document.getElementById('modal-error').classList.add('hidden');
+  try {
+    const resp = await fetch(`/staff/room/${roomId}/checkout`, {
+      method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}
+    });
+    const data = await resp.json();
+    if (data.success) {
+      updateCard(roomId, data);
+      updateHkButtons('dirty');
+      closeModal();
+    } else {
+      showError(data.error || 'Check-out failed.');
+    }
+  } catch { showError('Network error. Please try again.'); }
+}
+
+async function doHousekeeping(roomId, status) {
+  document.getElementById('modal-error').classList.add('hidden');
+  try {
+    const body = new FormData();
+    body.append('status', status);
+    const resp = await fetch(`/staff/room/${roomId}/housekeeping`, {
+      method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}, body
+    });
+    const data = await resp.json();
+    if (data.success) {
+      updateCard(roomId, data);
+      updateHkButtons(data.housekeeping_status);
+      const card = document.getElementById(`card-${roomId}`);
+      card.dataset.hkStatus = data.housekeeping_status;
+      if (data.room_status) card.dataset.roomStatus = data.room_status;
+    } else {
+      showError(data.error || 'Update failed.');
+    }
+  } catch { showError('Network error. Please try again.'); }
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
 {% endblock %}
