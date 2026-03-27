@@ -2,52 +2,157 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>{% block title %}Staff Portal — Sheeza Manzil{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:      #1a2e4a;
+      --navy-dark: #111f33;
+      --navy-mid:  #243d5e;
+      --bg:        #f0f2f6;
+      --white:     #ffffff;
+    }
+
+    html { -webkit-text-size-adjust: 100%; }
+
+    body {
+      font-family: 'Barlow', -apple-system, sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      color: #1a1a2e;
+    }
+
+    /* ── Header ── */
+    .staff-header {
+      background: var(--navy);
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.28);
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-title {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--white);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .header-clock {
+      text-align: right;
+      user-select: none;
+    }
+    .clock-date {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .clock-time {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.88);
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Main wrapper ── */
+    .staff-main {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    /* ── Flash messages ── */
+    .flash-msg {
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .flash-success { background: #d4f5d4; color: #1b5e20; border-left: 4px solid #4caf50; }
+    .flash-error   { background: #ffd6d6; color: #7f0000; border-left: 4px solid #ef5350; }
+    .flash-info    { background: #d0e4ff; color: #003070; border-left: 4px solid #1976d2; }
+    .flash-warning { background: #fff3d4; color: #7a4300; border-left: 4px solid #ff9800; }
+  </style>
   {% block head_extra %}{% endblock %}
 </head>
-<body class="bg-slate-50 min-h-screen flex flex-col">
+<body>
 
-<header class="bg-white border-b border-slate-200 sticky top-0 z-30">
-  <div class="flex items-center justify-between px-4 h-14 max-w-4xl mx-auto">
-    <div class="flex items-center gap-2">
-      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Sheeza Manzil" class="h-11 w-auto">
-      <span class="font-serif font-bold text-lg tracking-wide" style="color:#7B3F00;">Sheeza Manzil</span>
-    </div>
-    {% if current_user.is_authenticated %}
-    <div class="flex items-center gap-3">
-      <span class="text-xs text-slate-500">{{ current_user.username }}</span>
-      <a href="{{ url_for('staff.logout') }}"
-         class="text-xs px-3 py-1.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
-        Log out
-      </a>
-    </div>
-    {% endif %}
+<header class="staff-header">
+  <div class="header-brand">
+    <!-- Bed SVG icon -->
+    <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="1" y="12" width="26" height="9" rx="2.5" fill="white"/>
+      <rect x="1" y="2" width="3.5" height="19" rx="1.5" fill="white"/>
+      <rect x="23.5" y="2" width="3.5" height="19" rx="1.5" fill="white"/>
+      <rect x="5.5" y="7" width="7.5" height="6" rx="2" fill="rgba(255,255,255,0.38)"/>
+      <rect x="15" y="7" width="7.5" height="6" rx="2" fill="rgba(255,255,255,0.38)"/>
+    </svg>
+    <span class="header-title">Staff Room Control</span>
+  </div>
+  <div class="header-clock">
+    <div class="clock-date" id="clockDate">—</div>
+    <div class="clock-time" id="clockTime">—</div>
   </div>
 </header>
 
-<main class="flex-1 max-w-4xl mx-auto w-full px-4 py-5">
+<div class="staff-main">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-      <div class="mb-4 space-y-2">
-        {% for category, message in messages %}
-          <div class="px-4 py-3 rounded-lg text-sm
-            {% if category == 'error' %}bg-red-50 text-red-800 border border-red-200
-            {% elif category == 'success' %}bg-green-50 text-green-800 border border-green-200
-            {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
-            {{ message }}
-          </div>
-        {% endfor %}
-      </div>
+      {% for category, message in messages %}
+        <div class="flash-msg flash-{{ category if category in ['success','error','info','warning'] else 'info' }}">{{ message }}</div>
+      {% endfor %}
     {% endif %}
   {% endwith %}
   {% block content %}{% endblock %}
-</main>
+</div>
 
-<footer class="py-3 text-center text-xs text-slate-400 border-t border-slate-200">
-  &copy; Hussain Hamid. All rights reserved.
-</footer>
+<script>
+  (function() {
+    var DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function tick() {
+      var n = new Date();
+      var day = DAYS[n.getDay()];
+      var mon = MONTHS[n.getMonth()];
+      var h   = n.getHours();
+      var ap  = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      var mi  = ('0' + n.getMinutes()).slice(-2);
+      var se  = ('0' + n.getSeconds()).slice(-2);
+      document.getElementById('clockDate').textContent = day + ' · ' + n.getDate() + ' ' + mon;
+      document.getElementById('clockTime').textContent = h + ':' + mi + ':' + se + ' ' + ap;
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+</script>
 
+{% block extra_js %}{% endblock %}
 </body>
 </html>
