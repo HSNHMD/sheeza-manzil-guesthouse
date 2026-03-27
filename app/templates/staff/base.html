@@ -11,7 +11,7 @@
 
 <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
   <div class="flex items-center justify-between px-4 h-12 max-w-4xl mx-auto">
-    <span class="font-semibold text-slate-700 text-base">🏨 Sheeza Manzil — Staff</span>
+    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Sheeza Manzil" class="h-8 w-auto">
     {% if current_user.is_authenticated %}
     <div class="flex items-center gap-3">
       <span class="text-xs text-slate-500">{{ current_user.username }}</span>
