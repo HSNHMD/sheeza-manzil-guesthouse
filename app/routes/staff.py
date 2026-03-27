@@ -66,7 +66,7 @@ def logout():
 @staff_bp.route('/dashboard')
 @login_required
 def dashboard():
-    rooms = Room.query.filter_by(is_active=True).order_by(Room.number).all()
+    rooms = Room.query.filter(Room.is_active.isnot(False)).order_by(Room.number).all()
     today = hotel_date()
 
     return render_template('staff/dashboard.html', rooms=rooms, today=today)

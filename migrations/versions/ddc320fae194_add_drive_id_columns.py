@@ -16,9 +16,16 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column('bookings', sa.Column('id_card_drive_id', sa.String(length=255), nullable=True))
-    op.add_column('bookings', sa.Column('payment_slip_drive_id', sa.String(length=255), nullable=True))
-    op.add_column('expenses', sa.Column('receipt_drive_id', sa.String(length=255), nullable=True))
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    booking_cols = [c['name'] for c in inspector.get_columns('bookings')]
+    expense_cols = [c['name'] for c in inspector.get_columns('expenses')]
+    if 'id_card_drive_id' not in booking_cols:
+        op.add_column('bookings', sa.Column('id_card_drive_id', sa.String(length=255), nullable=True))
+    if 'payment_slip_drive_id' not in booking_cols:
+        op.add_column('bookings', sa.Column('payment_slip_drive_id', sa.String(length=255), nullable=True))
+    if 'receipt_drive_id' not in expense_cols:
+        op.add_column('expenses', sa.Column('receipt_drive_id', sa.String(length=255), nullable=True))
 
 
 def downgrade():
