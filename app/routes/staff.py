@@ -69,18 +69,7 @@ def dashboard():
     rooms = Room.query.filter_by(is_active=True).order_by(Room.number).all()
     today = hotel_date()
 
-    room_data = []
-    for room in rooms:
-        booking = room.current_booking  # checked_in booking
-        if not booking:
-            booking = Booking.query.filter(
-                Booking.room_id == room.id,
-                Booking.status == 'confirmed',
-                Booking.check_in_date == today,
-            ).first()
-        room_data.append({'room': room, 'booking': booking})
-
-    return render_template('staff/dashboard.html', room_data=room_data, today=today)
+    return render_template('staff/dashboard.html', rooms=rooms, today=today)
 
 
 # ── Room Detail ───────────────────────────────────────────────────────────────
