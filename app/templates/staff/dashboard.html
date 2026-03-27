@@ -69,10 +69,6 @@
   .card-occupied    .card-room-num { color: #003070; }
   .card-maintenance .card-room-num { color: #424242; }
 
-  .card-bed {
-    margin: 2px 0 10px;
-  }
-
   /* Guest name line (occupied) */
   .card-guest {
     font-family: 'Barlow Condensed', sans-serif;
@@ -186,33 +182,6 @@
        class="room-card {{ card_cls }}">
 
       <div class="card-room-num">Room {{ room.number }}</div>
-
-      <!-- Bed icon colored by status — 3D isometric -->
-      <div class="card-bed">
-        <svg width="38" height="28" viewBox="0 0 46 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <filter id="cb-shadow-{{ loop.index }}" x="-8%" y="-8%" width="125%" height="135%">
-              <feDropShadow dx="0" dy="2" stdDeviation="1.2" flood-color="{{ bed_col }}" flood-opacity="0.35"/>
-            </filter>
-          </defs>
-          <!-- Left post: front + depth side -->
-          <rect x="1" y="2" width="5.5" height="32" rx="2" fill="{{ bed_col }}"/>
-          <polygon points="6.5,2 11,0.5 11,32 6.5,34" fill="{{ bed_col }}" opacity="0.42"/>
-          <!-- Right post: front + depth side -->
-          <rect x="33" y="2" width="5.5" height="32" rx="2" fill="{{ bed_col }}"/>
-          <polygon points="38.5,2 43,0.5 43,32 38.5,34" fill="{{ bed_col }}" opacity="0.42"/>
-          <!-- Mattress top face (isometric) -->
-          <polygon points="6.5,18 38.5,18 43,15 11,15" fill="{{ bed_col }}" opacity="0.78"/>
-          <!-- Mattress front face -->
-          <rect x="6.5" y="18" width="32" height="14" rx="2.5" fill="{{ bed_col }}" filter="url(#cb-shadow-{{ loop.index }})"/>
-          <!-- Mattress right depth face -->
-          <polygon points="38.5,18 43,15 43,28 38.5,32" fill="{{ bed_col }}" opacity="0.48"/>
-          <!-- Pillow 1 -->
-          <polygon points="11.5,17.5 21,17.5 23,14.5 13.5,14.5" fill="{{ bed_col }}" opacity="0.92"/>
-          <!-- Pillow 2 -->
-          <polygon points="25.5,17.5 35,17.5 37,14.5 27.5,14.5" fill="{{ bed_col }}" opacity="0.92"/>
-        </svg>
-      </div>
 
       {% if room.status == 'occupied' and room.current_booking %}
         <div class="card-guest">{{ room.current_booking.guest.full_name }}</div>
