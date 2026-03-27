@@ -11,9 +11,10 @@
     justify-content: space-between;
   }
   .rooms-date {
-    font-size: 13px;
-    color: #555;
+    font-size: 12px;
+    color: #8b949e;
     font-weight: 500;
+    letter-spacing: 0.02em;
   }
   .summary-pills {
     display: flex;
@@ -23,14 +24,15 @@
   }
   .pill {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     padding: 4px 10px;
     border-radius: 20px;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
+    border: 1px solid;
   }
-  .pill-blue  { background: #d6e8ff; color: #0d3880; }
-  .pill-red   { background: #ffd6d6; color: #7f1010; }
-  .pill-green { background: #d4f5d4; color: #1b6e1b; }
+  .pill-blue  { background: rgba(245,158,11,0.1);  color: #f59e0b; border-color: rgba(245,158,11,0.3); }
+  .pill-red   { background: rgba(239,68,68,0.1);   color: #ef4444; border-color: rgba(239,68,68,0.3); }
+  .pill-green { background: rgba(16,185,129,0.1);  color: #10b981; border-color: rgba(16,185,129,0.3); }
 
   /* ── Room Grid ── */
   .rooms-grid {
@@ -43,12 +45,12 @@
   .room-card {
     display: block;
     text-decoration: none;
-    border-radius: 14px;
-    border: 2px solid;
+    border-radius: 12px;
+    border: 1.5px solid;
     padding: 14px 12px 12px;
     cursor: pointer;
     position: relative;
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    transition: transform 0.12s ease, opacity 0.12s ease;
     -webkit-tap-highlight-color: transparent;
   }
   .room-card:active { transform: scale(0.97); }
@@ -63,7 +65,7 @@
     font-size: 11px;
     font-weight: 500;
     margin-top: 2px;
-    opacity: 0.65;
+    color: #8b949e;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -71,13 +73,14 @@
     font-size: 12px;
     font-weight: 600;
     margin-top: 10px;
+    color: #e6edf3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .card-checkout {
     font-size: 11px;
-    opacity: 0.65;
+    color: #8b949e;
     margin-top: 1px;
   }
   .card-spacer { margin-top: 10px; }
@@ -90,13 +93,14 @@
     margin-top: 10px;
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     padding: 3px 8px;
     border-radius: 20px;
+    border: 1px solid;
   }
   .badge-dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     flex-shrink: 0;
   }
@@ -105,21 +109,23 @@
   .legend {
     display: flex;
     gap: 14px;
-    padding: 12px 16px 20px;
+    padding: 10px 16px 20px;
     flex-wrap: wrap;
+    border-top: 1px solid #21262d;
+    margin: 0 16px;
   }
   .legend-item {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 11px;
-    color: #555;
+    color: #8b949e;
     font-weight: 500;
   }
   .legend-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
     flex-shrink: 0;
   }
 </style>
@@ -154,33 +160,33 @@
 
   {# Determine card colors #}
   {% if room.status == 'occupied' %}
-    {% set card_bg = '#d6e8ff' %}
-    {% set card_border = '#5b8def' %}
-    {% set bed_color = '#1565c0' %}
-    {% set text_color = '#0d2a5e' %}
+    {% set card_bg = '#161b22' %}
+    {% set card_border = '#f59e0b' %}
+    {% set bed_color = '#d97706' %}
+    {% set num_color = '#f59e0b' %}
   {% elif room.status == 'maintenance' %}
-    {% set card_bg = '#f5f5f5' %}
-    {% set card_border = '#9e9e9e' %}
-    {% set bed_color = '#757575' %}
-    {% set text_color = '#333333' %}
+    {% set card_bg = '#161b22' %}
+    {% set card_border = '#6b7280' %}
+    {% set bed_color = '#6b7280' %}
+    {% set num_color = '#9ca3af' %}
   {% elif room.status == 'cleaning' or room.housekeeping_status in ['dirty', 'in_progress'] %}
-    {% set card_bg = '#ffd6d6' %}
-    {% set card_border = '#e57373' %}
-    {% set bed_color = '#c62828' %}
-    {% set text_color = '#5a0000' %}
+    {% set card_bg = '#161b22' %}
+    {% set card_border = '#ef4444' %}
+    {% set bed_color = '#dc2626' %}
+    {% set num_color = '#ef4444' %}
   {% else %}
-    {% set card_bg = '#d4f5d4' %}
-    {% set card_border = '#4caf50' %}
-    {% set bed_color = '#2e7d32' %}
-    {% set text_color = '#1b3a1b' %}
+    {% set card_bg = '#161b22' %}
+    {% set card_border = '#10b981' %}
+    {% set bed_color = '#059669' %}
+    {% set num_color = '#10b981' %}
   {% endif %}
 
   <a href="/staff/room/{{ room.id }}"
      class="room-card"
-     style="background:{{ card_bg }}; border-color:{{ card_border }}; color:{{ text_color }};">
+     style="background:{{ card_bg }}; border-color:{{ card_border }};">
 
     {# Bed SVG icon #}
-    <svg width="46" height="28" viewBox="0 0 52 32" fill="{{ bed_color }}" style="margin-bottom:6px; opacity:0.85;">
+    <svg width="42" height="26" viewBox="0 0 52 32" fill="{{ bed_color }}" style="margin-bottom:8px; opacity:0.7;">
       <!-- headboard -->
       <rect x="0" y="1" width="7" height="23" rx="2.5"/>
       <!-- mattress body -->
@@ -191,7 +197,7 @@
       <rect x="38" y="24" width="5" height="7" rx="1.5"/>
     </svg>
 
-    <div class="card-room-number">{{ room.number }}</div>
+    <div class="card-room-number" style="color:{{ num_color }};">{{ room.number }}</div>
     <div class="card-room-type">{{ room.room_type }}</div>
 
     {% if booking and room.status == 'occupied' %}
@@ -203,32 +209,32 @@
 
     {# Status badge #}
     {% if room.status == 'occupied' %}
-      <div class="status-badge" style="background:rgba(91,141,239,0.18); color:#0d3880;">
-        🔑 CHECKED IN
+      <div class="status-badge" style="background:rgba(245,158,11,0.1); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
+        🔑 IN
       </div>
     {% elif room.status == 'maintenance' %}
-      <div class="status-badge" style="background:rgba(158,158,158,0.2); color:#444;">
-        🔧 MAINTENANCE
+      <div class="status-badge" style="background:rgba(107,114,128,0.1); color:#9ca3af; border-color:rgba(107,114,128,0.3);">
+        🔧 MAINT
       </div>
     {% elif room.status == 'cleaning' %}
-      <div class="status-badge" style="background:rgba(229,115,115,0.2); color:#7f1010;">
-        <span class="badge-dot" style="background:#e57373;"></span>CLEANING
+      <div class="status-badge" style="background:rgba(239,68,68,0.1); color:#ef4444; border-color:rgba(239,68,68,0.3);">
+        <span class="badge-dot" style="background:#ef4444;"></span>CLEANING
       </div>
     {% elif room.housekeeping_status == 'dirty' %}
-      <div class="status-badge" style="background:rgba(229,57,53,0.12); color:#7f1010;">
-        <span class="badge-dot" style="background:#e53935;"></span>DIRTY
+      <div class="status-badge" style="background:rgba(239,68,68,0.1); color:#ef4444; border-color:rgba(239,68,68,0.3);">
+        <span class="badge-dot" style="background:#ef4444;"></span>DIRTY
       </div>
     {% elif room.housekeeping_status == 'in_progress' %}
-      <div class="status-badge" style="background:rgba(229,57,53,0.12); color:#7f1010;">
-        <span class="badge-dot" style="background:#ff9800;"></span>CLEANING
+      <div class="status-badge" style="background:rgba(245,158,11,0.1); color:#f59e0b; border-color:rgba(245,158,11,0.3);">
+        <span class="badge-dot" style="background:#f59e0b;"></span>IN PROG
       </div>
     {% elif booking and booking.status == 'confirmed' %}
-      <div class="status-badge" style="background:rgba(21,101,192,0.12); color:#0d3880;">
+      <div class="status-badge" style="background:rgba(88,166,255,0.1); color:#58a6ff; border-color:rgba(88,166,255,0.3);">
         📋 ARRIVING
       </div>
     {% else %}
-      <div class="status-badge" style="background:rgba(76,175,80,0.15); color:#1b6e1b;">
-        <span class="badge-dot" style="background:#4caf50;"></span>CLEAN
+      <div class="status-badge" style="background:rgba(16,185,129,0.1); color:#10b981; border-color:rgba(16,185,129,0.3);">
+        <span class="badge-dot" style="background:#10b981;"></span>CLEAN
       </div>
     {% endif %}
 
@@ -239,16 +245,16 @@
 {# ── Legend ── #}
 <div class="legend">
   <div class="legend-item">
-    <div class="legend-dot" style="background:#4caf50;"></div> Clean
+    <div class="legend-dot" style="background:#10b981;"></div> Clean
   </div>
   <div class="legend-item">
-    <div class="legend-dot" style="background:#e57373;"></div> Dirty / Cleaning
+    <div class="legend-dot" style="background:#ef4444;"></div> Dirty / Cleaning
   </div>
   <div class="legend-item">
-    <div class="legend-dot" style="background:#5b8def;"></div> Occupied
+    <div class="legend-dot" style="background:#f59e0b;"></div> Occupied
   </div>
   <div class="legend-item">
-    <div class="legend-dot" style="background:#9e9e9e;"></div> Maintenance
+    <div class="legend-dot" style="background:#6b7280;"></div> Maintenance
   </div>
 </div>
 

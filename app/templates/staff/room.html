@@ -15,36 +15,35 @@
     gap: 6px;
     font-size: 13px;
     font-weight: 600;
-    color: #1a2e4a;
+    color: #8b949e;
     text-decoration: none;
     margin-bottom: 16px;
     padding: 6px 0;
-    opacity: 0.8;
+    transition: color 0.12s;
   }
-  .back-link:hover { opacity: 1; }
-  .back-link::before { content: '←'; font-size: 16px; }
+  .back-link:hover { color: #e6edf3; }
+  .back-link::before { content: '←'; font-size: 14px; }
 
   /* ── Info card ── */
   .info-card {
-    background: #fff;
-    border-radius: 14px;
-    border: 1.5px solid #e0e6f0;
+    background: #161b22;
+    border-radius: 12px;
+    border: 1px solid #30363d;
     padding: 16px;
-    margin-bottom: 14px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    margin-bottom: 12px;
   }
   .info-card-title {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #8a98b4;
+    letter-spacing: 0.1em;
+    color: #484f58;
     margin-bottom: 12px;
   }
   .info-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px 14px;
+    gap: 12px 14px;
   }
   .info-item {}
   .info-label {
@@ -52,16 +51,16 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #aab2c4;
+    color: #484f58;
     margin-bottom: 2px;
   }
   .info-value {
     font-size: 14px;
     font-weight: 600;
-    color: #1a2e4a;
+    color: #e6edf3;
   }
 
-  /* Status indicator */
+  /* Status chip */
   .status-chip {
     display: inline-flex;
     align-items: center;
@@ -69,54 +68,56 @@
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.05em;
-    padding: 3px 9px;
+    padding: 3px 8px;
     border-radius: 20px;
+    border: 1px solid;
   }
   .chip-dot {
-    width: 6px; height: 6px;
+    width: 5px; height: 5px;
     border-radius: 50%;
     flex-shrink: 0;
   }
-  .chip-occupied  { background: rgba(91,141,239,0.15); color: #0d3880; }
-  .chip-clean     { background: rgba(76,175,80,0.15);  color: #1b6e1b; }
-  .chip-dirty     { background: rgba(229,115,115,0.15);color: #7f1010; }
-  .chip-cleaning  { background: rgba(229,115,115,0.15);color: #7f1010; }
-  .chip-maintenance { background: rgba(158,158,158,0.2); color: #444; }
-  .chip-available { background: rgba(76,175,80,0.15);  color: #1b6e1b; }
+  .chip-occupied    { background: rgba(245,158,11,0.1);  color: #f59e0b; border-color: rgba(245,158,11,0.3); }
+  .chip-clean       { background: rgba(16,185,129,0.1);  color: #10b981; border-color: rgba(16,185,129,0.3); }
+  .chip-dirty       { background: rgba(239,68,68,0.1);   color: #ef4444; border-color: rgba(239,68,68,0.3); }
+  .chip-cleaning    { background: rgba(239,68,68,0.1);   color: #ef4444; border-color: rgba(239,68,68,0.3); }
+  .chip-maintenance { background: rgba(107,114,128,0.1); color: #9ca3af; border-color: rgba(107,114,128,0.3); }
+  .chip-available   { background: rgba(16,185,129,0.1);  color: #10b981; border-color: rgba(16,185,129,0.3); }
 
   /* ── Section headings ── */
   .section-label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #8a98b4;
+    letter-spacing: 0.1em;
+    color: #484f58;
     margin: 0 0 10px;
   }
 
   /* ── Booking info card ── */
   .booking-card {
-    background: #d6e8ff;
-    border: 1.5px solid #5b8def;
-    border-radius: 14px;
+    background: rgba(245,158,11,0.07);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 12px;
     padding: 14px 16px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
   .booking-guest {
     font-size: 18px;
     font-weight: 800;
-    color: #0d2a5e;
+    color: #e6edf3;
     letter-spacing: -0.01em;
   }
   .booking-ref {
     font-size: 11px;
-    color: #5b8def;
+    color: #f59e0b;
     font-weight: 600;
     margin-top: 2px;
+    opacity: 0.7;
   }
   .booking-dates {
     font-size: 12px;
-    color: #1a3a7a;
+    color: #8b949e;
     margin-top: 8px;
     display: flex;
     gap: 16px;
@@ -126,7 +127,8 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #5b8def;
+    color: #f59e0b;
+    opacity: 0.7;
   }
   .payment-badge {
     display: inline-block;
@@ -136,10 +138,11 @@
     padding: 2px 8px;
     border-radius: 20px;
     margin-top: 8px;
+    border: 1px solid;
   }
-  .badge-paid    { background: rgba(76,175,80,0.2);   color: #1b6e1b; }
-  .badge-unpaid  { background: rgba(229,115,115,0.2); color: #7f1010; }
-  .badge-partial { background: rgba(255,152,0,0.2);   color: #7a4300; }
+  .badge-paid    { background: rgba(16,185,129,0.1); color: #10b981; border-color: rgba(16,185,129,0.3); }
+  .badge-unpaid  { background: rgba(239,68,68,0.1);  color: #ef4444; border-color: rgba(239,68,68,0.3); }
+  .badge-partial { background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.3); }
 
   /* ── Action buttons ── */
   .btn {
@@ -150,41 +153,42 @@
     border-radius: 10px;
     font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
     cursor: pointer;
     text-align: center;
     transition: opacity 0.12s;
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
+    font-family: inherit;
   }
   .btn:active { opacity: 0.75; }
 
   .btn-checkout {
-    background: #1a2e4a;
-    color: #fff;
-    margin-bottom: 14px;
+    background: #f59e0b;
+    color: #0d1117;
+    margin-bottom: 12px;
   }
   .btn-maintenance {
-    background: #c62828;
+    background: #ef4444;
     color: #fff;
     margin-top: 8px;
   }
   .btn-secondary {
-    background: #f0f2f5;
-    color: #1a2e4a;
-    border: 1.5px solid #dce3ed;
+    background: #161b22;
+    color: #e6edf3;
+    border: 1px solid #30363d !important;
     margin-bottom: 10px;
   }
 
   /* ── TAKE IN form ── */
-  .take-in-section { margin-bottom: 14px; }
+  .take-in-section { margin-bottom: 12px; }
   .take-in-toggle {
     display: block;
     width: 100%;
     padding: 13px;
-    background: #1a2e4a;
-    color: #fff;
-    border: none;
+    background: #161b22;
+    color: #e6edf3;
+    border: 1px solid #30363d;
     border-radius: 10px;
     font-size: 13px;
     font-weight: 700;
@@ -192,29 +196,30 @@
     cursor: pointer;
     text-align: center;
     -webkit-tap-highlight-color: transparent;
-    transition: opacity 0.12s;
+    transition: border-color 0.12s;
+    font-family: inherit;
   }
+  .take-in-toggle:hover { border-color: #8b949e; }
   .take-in-toggle:active { opacity: 0.75; }
 
   .take-in-form {
     display: none;
-    background: #fff;
-    border: 1.5px solid #dce3ed;
-    border-radius: 14px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
     padding: 16px;
     margin-top: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }
   .take-in-form.open { display: block; }
 
   .form-group { margin-bottom: 12px; }
   .form-label {
     display: block;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #8a98b4;
+    letter-spacing: 0.08em;
+    color: #484f58;
     margin-bottom: 5px;
   }
   .form-input,
@@ -222,41 +227,43 @@
     display: block;
     width: 100%;
     padding: 10px 12px;
-    border: 1.5px solid #dce3ed;
+    border: 1px solid #30363d;
     border-radius: 8px;
     font-size: 14px;
     font-family: inherit;
-    color: #1a1a1a;
-    background: #fafbfd;
+    color: #e6edf3;
+    background: #0d1117;
     box-sizing: border-box;
     transition: border-color 0.12s;
     -webkit-appearance: none;
+    color-scheme: dark;
   }
   .form-input:focus,
   .form-select:focus {
     outline: none;
-    border-color: #5b8def;
-    background: #fff;
+    border-color: #58a6ff;
   }
+  .form-input::placeholder { color: #484f58; }
   .btn-submit {
     display: block;
     width: 100%;
     padding: 12px;
-    background: #1a2e4a;
-    color: #fff;
+    background: #10b981;
+    color: #0d1117;
     border: none;
     border-radius: 8px;
     font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
     cursor: pointer;
     margin-top: 4px;
     transition: opacity 0.12s;
+    font-family: inherit;
   }
   .btn-submit:active { opacity: 0.75; }
 
   /* ── Housekeeping buttons ── */
-  .hk-section { margin-bottom: 14px; }
+  .hk-section { margin-bottom: 12px; }
   .hk-buttons {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -264,83 +271,86 @@
   }
   .hk-btn {
     padding: 10px 6px;
-    border: 2px solid #dce3ed;
+    border: 1px solid #30363d;
     border-radius: 10px;
-    background: #fff;
+    background: #161b22;
     font-size: 11px;
     font-weight: 700;
-    color: #8a98b4;
+    color: #8b949e;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     cursor: pointer;
     text-align: center;
     transition: all 0.12s;
     -webkit-tap-highlight-color: transparent;
+    font-family: inherit;
   }
   .hk-btn:active { opacity: 0.7; }
   .hk-btn.active-clean {
-    background: #d4f5d4;
-    border-color: #4caf50;
-    color: #1b6e1b;
+    background: rgba(16,185,129,0.1);
+    border-color: #10b981;
+    color: #10b981;
   }
   .hk-btn.active-in_progress {
-    background: #fff3e0;
-    border-color: #ff9800;
-    color: #7a4300;
+    background: rgba(245,158,11,0.1);
+    border-color: #f59e0b;
+    color: #f59e0b;
   }
   .hk-btn.active-dirty {
-    background: #ffd6d6;
-    border-color: #e57373;
-    color: #7f1010;
+    background: rgba(239,68,68,0.1);
+    border-color: #ef4444;
+    color: #ef4444;
   }
   .hk-feedback {
     font-size: 11px;
-    color: #4caf50;
+    color: #10b981;
     margin-top: 6px;
     min-height: 16px;
     font-weight: 600;
   }
 
   /* ── Notes ── */
-  .notes-section { margin-bottom: 14px; }
+  .notes-section { margin-bottom: 12px; }
   .notes-textarea {
     display: block;
     width: 100%;
     padding: 10px 12px;
-    border: 1.5px solid #dce3ed;
+    border: 1px solid #30363d;
     border-radius: 8px;
     font-size: 13px;
     font-family: inherit;
-    color: #1a1a1a;
-    background: #fafbfd;
+    color: #e6edf3;
+    background: #0d1117;
     box-sizing: border-box;
     resize: vertical;
     min-height: 72px;
     transition: border-color 0.12s;
+    color-scheme: dark;
   }
   .notes-textarea:focus {
     outline: none;
-    border-color: #5b8def;
-    background: #fff;
+    border-color: #58a6ff;
   }
+  .notes-textarea::placeholder { color: #484f58; }
   .btn-save-note {
     display: block;
     width: 100%;
     padding: 11px;
-    background: #f0f2f5;
-    color: #1a2e4a;
-    border: 1.5px solid #dce3ed;
+    background: #161b22;
+    color: #e6edf3;
+    border: 1px solid #30363d;
     border-radius: 8px;
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
     margin-top: 8px;
-    transition: background 0.12s;
+    transition: border-color 0.12s;
+    font-family: inherit;
   }
-  .btn-save-note:hover { background: #e3e8f0; }
+  .btn-save-note:hover { border-color: #8b949e; }
   .notes-feedback {
     font-size: 11px;
-    color: #4caf50;
+    color: #10b981;
     margin-top: 6px;
     min-height: 16px;
     font-weight: 600;
@@ -349,8 +359,8 @@
   /* ── Divider ── */
   .section-divider {
     height: 1px;
-    background: #eef0f4;
-    margin: 18px 0;
+    background: #21262d;
+    margin: 16px 0;
   }
 </style>
 
@@ -386,9 +396,9 @@
           {% elif room.status == 'maintenance' %}
             <span class="status-chip chip-maintenance">🔧 Maint.</span>
           {% elif room.status == 'cleaning' %}
-            <span class="status-chip chip-cleaning"><span class="chip-dot" style="background:#e57373;"></span>Cleaning</span>
+            <span class="status-chip chip-cleaning"><span class="chip-dot" style="background:#ef4444;"></span>Cleaning</span>
           {% else %}
-            <span class="status-chip chip-available"><span class="chip-dot" style="background:#4caf50;"></span>Available</span>
+            <span class="status-chip chip-available"><span class="chip-dot" style="background:#10b981;"></span>Available</span>
           {% endif %}
         </div>
       </div>
@@ -396,11 +406,11 @@
         <div class="info-label">Housekeeping</div>
         <div class="info-value">
           {% if room.housekeeping_status == 'clean' %}
-            <span class="status-chip chip-clean"><span class="chip-dot" style="background:#4caf50;"></span>Clean</span>
+            <span class="status-chip chip-clean"><span class="chip-dot" style="background:#10b981;"></span>Clean</span>
           {% elif room.housekeeping_status == 'in_progress' %}
-            <span class="status-chip chip-dirty"><span class="chip-dot" style="background:#ff9800;"></span>In Progress</span>
+            <span class="status-chip chip-occupied"><span class="chip-dot" style="background:#f59e0b;"></span>In Progress</span>
           {% else %}
-            <span class="status-chip chip-dirty"><span class="chip-dot" style="background:#e53935;"></span>Dirty</span>
+            <span class="status-chip chip-dirty"><span class="chip-dot" style="background:#ef4444;"></span>Dirty</span>
           {% endif %}
         </div>
       </div>
@@ -569,11 +579,11 @@
         feedback.textContent = 'Updated ✓';
         setTimeout(() => { feedback.textContent = ''; }, 2000);
       } else {
-        feedback.style.color = '#e53935';
+        feedback.style.color = '#ef4444';
         feedback.textContent = data.error || 'Update failed.';
       }
     } catch(e) {
-      feedback.style.color = '#e53935';
+      feedback.style.color = '#ef4444';
       feedback.textContent = 'Network error.';
     }
   }
@@ -589,15 +599,15 @@
       const res  = await fetch('/staff/note/' + ROOM_ID, { method: 'POST', body });
       const data = await res.json();
       if (data.success) {
-        feedback.style.color = '#4caf50';
+        feedback.style.color = '#10b981';
         feedback.textContent = 'Note saved ✓';
         setTimeout(() => { feedback.textContent = ''; }, 2000);
       } else {
-        feedback.style.color = '#e53935';
+        feedback.style.color = '#ef4444';
         feedback.textContent = 'Save failed.';
       }
     } catch(e) {
-      feedback.style.color = '#e53935';
+      feedback.style.color = '#ef4444';
       feedback.textContent = 'Network error.';
     }
   }

@@ -4,20 +4,46 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Staff Portal{% endblock %} — Sheeza Manzil</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #1c2128;
+      --border: #30363d;
+      --border-subtle: #21262d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --text-dim: #484f58;
+      --amber: #f59e0b;
+      --amber-bg: rgba(245,158,11,0.1);
+      --amber-border: rgba(245,158,11,0.3);
+      --emerald: #10b981;
+      --emerald-bg: rgba(16,185,129,0.1);
+      --emerald-border: rgba(16,185,129,0.3);
+      --red: #ef4444;
+      --red-bg: rgba(239,68,68,0.1);
+      --red-border: rgba(239,68,68,0.3);
+      --blue: #58a6ff;
+      --blue-bg: rgba(88,166,255,0.1);
+      --blue-border: rgba(88,166,255,0.3);
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: #f0f2f5;
-      color: #1a1a1a;
+      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
     }
 
     .staff-header {
-      background: #1a2e4a;
-      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
-      padding: 14px 20px;
+      background: #010409;
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 11px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -32,13 +58,13 @@
       gap: 10px;
     }
 
-    .header-icon { font-size: 22px; line-height: 1; }
+    .header-icon { font-size: 18px; line-height: 1; }
 
     .header-title {
-      font-size: 17px;
+      font-size: 12px;
       font-weight: 700;
-      color: #ffffff;
-      letter-spacing: 0.05em;
+      color: var(--text);
+      letter-spacing: 0.14em;
       text-transform: uppercase;
     }
 
@@ -50,23 +76,24 @@
 
     #clock {
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.7);
+      color: var(--text-muted);
       font-variant-numeric: tabular-nums;
       letter-spacing: 0.02em;
     }
 
     .header-logout {
       font-size: 11px;
-      color: rgba(255, 255, 255, 0.65);
+      font-weight: 500;
+      color: var(--text-muted);
       text-decoration: none;
-      padding: 5px 10px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 4px 10px;
+      border: 1px solid var(--border);
       border-radius: 6px;
-      transition: background 0.15s, color 0.15s;
+      transition: border-color 0.15s, color 0.15s;
     }
     .header-logout:hover {
-      background: rgba(255, 255, 255, 0.12);
-      color: #ffffff;
+      border-color: var(--text-muted);
+      color: var(--text);
     }
 
     .staff-content {
@@ -86,10 +113,11 @@
       font-size: 13px;
       margin-bottom: 8px;
       font-weight: 500;
+      border: 1px solid;
     }
-    .flash-success { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
-    .flash-error   { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
-    .flash-info    { background: #e3f2fd; color: #0d47a1; border: 1px solid #90caf9; }
+    .flash-success { background: var(--emerald-bg); color: #6ee7b7; border-color: var(--emerald-border); }
+    .flash-error   { background: var(--red-bg);     color: #fca5a5; border-color: var(--red-border); }
+    .flash-info    { background: var(--blue-bg);    color: #93c5fd; border-color: var(--blue-border); }
   </style>
 </head>
 <body>
