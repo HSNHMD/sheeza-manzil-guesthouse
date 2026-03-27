@@ -36,28 +36,30 @@
   .room-card {
     display: block;
     text-decoration: none;
-    border-radius: 14px;
-    padding: 14px 12px 12px;
-    border: 2px solid transparent;
+    border-radius: 16px;
+    padding: 14px 12px 13px;
+    border: 2.5px solid transparent;
     transition: transform 0.1s, box-shadow 0.1s;
     -webkit-tap-highlight-color: transparent;
     cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
   }
   .room-card:active {
-    transform: scale(0.96);
+    transform: scale(0.95);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
   }
 
   /* Status color themes */
-  .card-clean       { background: #e8f8e8; border-color: #4caf50; }
-  .card-dirty       { background: #fff0f0; border-color: #ef5350; }
-  .card-occupied    { background: #e8f0ff; border-color: #1976d2; }
-  .card-maintenance { background: #f2f2f2; border-color: #9e9e9e; }
+  .card-clean       { background: linear-gradient(160deg, #f0fbf0 0%, #e2f7e2 100%); border-color: #4caf50; }
+  .card-dirty       { background: linear-gradient(160deg, #fff4f4 0%, #ffe5e5 100%); border-color: #ef5350; }
+  .card-occupied    { background: linear-gradient(160deg, #eef4ff 0%, #deeaff 100%); border-color: #1976d2; }
+  .card-maintenance { background: linear-gradient(160deg, #f5f5f5 0%, #ebebeb 100%); border-color: #9e9e9e; }
 
   .card-room-num {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 800;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     line-height: 1;
     margin-bottom: 8px;
@@ -73,33 +75,35 @@
 
   /* Guest name line (occupied) */
   .card-guest {
-    font-size: 11px;
-    font-weight: 600;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
     color: #1a3a7a;
-    margin-bottom: 7px;
+    margin-bottom: 8px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    letter-spacing: 0.02em;
   }
 
   /* Status badge */
   .card-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.07em;
+    font-weight: 800;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    padding: 3px 8px;
+    padding: 4px 10px;
     border-radius: 20px;
-    line-height: 1.4;
+    line-height: 1.3;
   }
-  .badge-clean       { background: #d4f5d4; color: #1b5e20; }
-  .badge-dirty       { background: #ffd6d6; color: #7f0000; }
-  .badge-occupied    { background: #d0e4ff; color: #003070; }
-  .badge-maintenance { background: #e0e0e0; color: #424242; }
+  .badge-clean       { background: #c8f0c8; color: #1b5e20; }
+  .badge-dirty       { background: #ffc8c8; color: #7f0000; }
+  .badge-occupied    { background: #c4deff; color: #003070; }
+  .badge-maintenance { background: #dcdcdc; color: #424242; }
 
   /* ── Legend ── */
   .legend {

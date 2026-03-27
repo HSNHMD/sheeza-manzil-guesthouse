@@ -8,57 +8,89 @@
   .back-link {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #1a2e4a;
+    color: rgba(255,255,255,0.7);
     text-decoration: none;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 5px 12px 5px 9px;
     margin-bottom: 14px;
-    opacity: 0.65;
-    transition: opacity 0.12s;
+    display: inline-flex;
+    transition: background 0.12s, color 0.12s;
     -webkit-tap-highlight-color: transparent;
   }
-  .back-link:hover { opacity: 1; }
-  .back-link::before { content: '←'; font-size: 14px; }
+  .back-link:active { background: rgba(255,255,255,0.2); color: #fff; }
+  .back-link::before { content: '←'; font-size: 13px; }
 
   /* ── Room number heading ── */
   .room-heading {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 30px;
+    font-size: 32px;
     font-weight: 800;
-    color: #1a2e4a;
+    color: #fff;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     line-height: 1;
+    margin-bottom: 4px;
+  }
+  .room-sub {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     margin-bottom: 16px;
+  }
+
+  /* ── Page header band (extends the nav header) ── */
+  .page-hero {
+    background: var(--navy);
+    margin: -16px -16px 16px;
+    padding: 14px 16px 20px;
   }
 
   /* ── Info card ── */
   .info-card {
     background: #fff;
-    border-radius: 14px;
-    border: 1.5px solid #e0e6f0;
-    padding: 16px;
+    border-radius: 16px;
+    border: 2px solid #e8edf5;
+    padding: 0;
     margin-bottom: 14px;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
   }
   .info-card-title {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     color: #8a98b4;
-    margin-bottom: 12px;
+    padding: 10px 14px 6px;
+    border-bottom: 1px solid #eef1f6;
   }
-  .info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px 16px;
+  .info-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-bottom: 1px solid #f0f3f8;
   }
+  .info-row:last-child { border-bottom: none; }
+  .info-row-icon {
+    font-size: 16px;
+    width: 26px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .info-row-body { flex: 1; min-width: 0; }
   .info-label {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 10px;
@@ -66,14 +98,17 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: #aab2c4;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
   }
   .info-value {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 15px;
     font-weight: 700;
     color: #1a2e4a;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ── Section label ── */
@@ -82,7 +117,7 @@
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     color: #8a98b4;
     margin: 0 0 10px;
   }
@@ -91,7 +126,7 @@
   .section-div {
     height: 1px;
     background: #eef0f4;
-    margin: 18px 0;
+    margin: 16px 0;
   }
 
   /* ── Quick Actions 2×2 grid ── */
@@ -99,98 +134,100 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
 
   .action-btn {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 16px 8px;
-    border-radius: 12px;
+    gap: 10px;
+    padding: 14px 14px;
+    border-radius: 14px;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     line-height: 1;
-    /* 3D: top highlight edge */
     border-top: 1px solid rgba(255,255,255,0.65);
     border-left: 1px solid rgba(255,255,255,0.35);
     border-right: 1px solid rgba(0,0,0,0.06);
     border-bottom: none;
-    /* raised platform: translateY compensated by box-shadow bottom */
     transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.1s;
+    text-align: left;
   }
-  .action-btn:active {
-    transform: translateY(4px);
-  }
+  .action-btn:active { transform: translateY(4px); }
   .action-btn:disabled {
-    opacity: 0.28;
+    opacity: 0.3;
     cursor: not-allowed;
     transform: none !important;
     box-shadow: none !important;
-    filter: grayscale(0.3);
+    filter: grayscale(0.4);
+  }
+  .action-btn-icon {
+    font-size: 22px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .action-btn-text { flex: 1; min-width: 0; }
+  .action-btn-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 1.2;
+  }
+  .action-btn-sub {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    opacity: 0.65;
+    margin-top: 2px;
+    text-transform: none;
   }
 
   /* CHECK-IN — green */
   .btn-act-checkin {
-    background: linear-gradient(175deg, #d8f6d8 0%, #aadcaa 100%);
+    background: linear-gradient(165deg, #d4f5d4 0%, #9dd89d 100%);
     color: #1b5e20;
-    box-shadow: 0 5px 0 #2e7d32, 0 7px 14px rgba(46,125,50,0.22);
+    box-shadow: 0 5px 0 #2e7d32, 0 7px 16px rgba(46,125,50,0.24);
   }
-  .btn-act-checkin:active {
-    box-shadow: 0 1px 0 #2e7d32, 0 2px 6px rgba(46,125,50,0.15);
-  }
+  .btn-act-checkin:active { box-shadow: 0 1px 0 #2e7d32, 0 2px 6px rgba(46,125,50,0.15); }
 
-  /* CHECK OUT — navy/blue */
+  /* CHECK OUT — blue */
   .btn-act-checkout {
-    background: linear-gradient(175deg, #ddeeff 0%, #b0ccf5 100%);
+    background: linear-gradient(165deg, #daeeff 0%, #a8ccf8 100%);
     color: #003070;
-    box-shadow: 0 5px 0 #0d47a1, 0 7px 14px rgba(13,71,161,0.22);
+    box-shadow: 0 5px 0 #0d47a1, 0 7px 16px rgba(13,71,161,0.24);
   }
-  .btn-act-checkout:active {
-    box-shadow: 0 1px 0 #0d47a1, 0 2px 6px rgba(13,71,161,0.15);
-  }
+  .btn-act-checkout:active { box-shadow: 0 1px 0 #0d47a1, 0 2px 6px rgba(13,71,161,0.15); }
 
   /* MARK DIRTY — amber */
   .btn-act-dirty {
-    background: linear-gradient(175deg, #fff3cc 0%, #ffc84a 100%);
+    background: linear-gradient(165deg, #fff2c8 0%, #ffc840 100%);
     color: #7a4300;
-    box-shadow: 0 5px 0 #e65100, 0 7px 14px rgba(230,81,0,0.22);
+    box-shadow: 0 5px 0 #d84000, 0 7px 16px rgba(216,64,0,0.24);
   }
-  .btn-act-dirty:active {
-    box-shadow: 0 1px 0 #e65100, 0 2px 6px rgba(230,81,0,0.15);
-  }
+  .btn-act-dirty:active { box-shadow: 0 1px 0 #d84000, 0 2px 6px rgba(216,64,0,0.15); }
 
   /* MARK CLEAN — sky */
   .btn-act-clean {
-    background: linear-gradient(175deg, #e0f7ff 0%, #90d8f0 100%);
+    background: linear-gradient(165deg, #daf5ff 0%, #84d4f0 100%);
     color: #014361;
-    box-shadow: 0 5px 0 #01579b, 0 7px 14px rgba(1,87,155,0.22);
+    box-shadow: 0 5px 0 #0077aa, 0 7px 16px rgba(0,119,170,0.24);
   }
-  .btn-act-clean:active {
-    box-shadow: 0 1px 0 #01579b, 0 2px 6px rgba(1,87,155,0.15);
-  }
-
-  .action-icon {
-    font-size: 18px;
-    line-height: 1;
-  }
+  .btn-act-clean:active { box-shadow: 0 1px 0 #0077aa, 0 2px 6px rgba(0,119,170,0.15); }
 
   /* ── TAKE IN form ── */
   .take-in-form {
     display: none;
     background: #fff;
-    border: 1.5px solid #dce3ed;
-    border-radius: 14px;
+    border: 2px solid #dce3ed;
+    border-radius: 16px;
     padding: 16px;
     margin-bottom: 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
   }
   .take-in-form.open { display: block; }
 
@@ -210,8 +247,8 @@
     display: block;
     width: 100%;
     padding: 10px 12px;
-    border: 1.5px solid #dce3ed;
-    border-radius: 8px;
+    border: 2px solid #dce3ed;
+    border-radius: 10px;
     font-size: 14px;
     font-family: 'Barlow', sans-serif;
     color: #1a1a1a;
@@ -229,10 +266,10 @@
   .btn-submit {
     display: block;
     width: 100%;
-    padding: 12px;
-    background: linear-gradient(175deg, #243d5e 0%, #1a2e4a 100%);
+    padding: 13px;
+    background: linear-gradient(165deg, #243d5e 0%, #1a2e4a 100%);
     color: #fff;
-    border-radius: 8px;
+    border-radius: 12px;
     border-top: 1px solid rgba(255,255,255,0.18);
     border-left: 1px solid rgba(255,255,255,0.1);
     border-right: 1px solid rgba(0,0,0,0.1);
@@ -240,11 +277,11 @@
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 14px;
     font-weight: 800;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     cursor: pointer;
     margin-top: 4px;
-    box-shadow: 0 5px 0 #0a1827, 0 7px 14px rgba(0,0,0,0.22);
+    box-shadow: 0 5px 0 #0a1827, 0 7px 16px rgba(0,0,0,0.24);
     transition: transform 0.08s ease, box-shadow 0.08s ease;
     -webkit-tap-highlight-color: transparent;
   }
@@ -263,12 +300,24 @@
   }
 
   /* ── Notes ── */
+  .notes-section-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #8a98b4;
+    margin: 0 0 10px;
+  }
   .notes-textarea {
     display: block;
     width: 100%;
-    padding: 12px;
-    border: 1.5px solid #dce3ed;
-    border-radius: 10px;
+    padding: 12px 14px;
+    border: 2px solid #dce3ed;
+    border-radius: 12px;
     font-size: 13px;
     font-family: 'Barlow', sans-serif;
     color: #1a1a1a;
@@ -286,51 +335,59 @@
   .btn-save-note {
     display: block;
     width: 100%;
-    padding: 11px;
-    background: #f0f2f5;
+    padding: 12px;
+    background: linear-gradient(165deg, #f0f3f8 0%, #e3e8f0 100%);
     color: #1a2e4a;
     border: 1.5px solid #dce3ed;
-    border-radius: 8px;
+    border-top: 1px solid rgba(255,255,255,0.9);
+    border-radius: 10px;
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     cursor: pointer;
     margin-top: 8px;
-    transition: background 0.12s;
+    box-shadow: 0 3px 0 #c8d0dc;
+    transition: transform 0.08s, box-shadow 0.08s;
     -webkit-tap-highlight-color: transparent;
   }
-  .btn-save-note:hover { background: #e3e8f0; }
-  /* .notes-feedback uses shared .feedback-msg */
+  .btn-save-note:active {
+    transform: translateY(3px);
+    box-shadow: 0 0 0 #c8d0dc;
+  }
 
   /* ── Report Maintenance ── */
   .btn-maintenance {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
     width: 100%;
-    padding: 15px;
-    background: linear-gradient(175deg, #ef5350 0%, #c62828 100%);
+    padding: 16px;
+    background: linear-gradient(165deg, #ff6b6b 0%, #c62828 100%);
     color: #fff;
-    border-radius: 12px;
-    border-top: 1px solid rgba(255,255,255,0.22);
-    border-left: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+    border-top: 1px solid rgba(255,255,255,0.25);
+    border-left: 1px solid rgba(255,255,255,0.15);
     border-right: 1px solid rgba(0,0,0,0.08);
     border-bottom: none;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 800;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     cursor: pointer;
-    box-shadow: 0 5px 0 #8e0000, 0 7px 14px rgba(142,0,0,0.28);
+    box-shadow: 0 5px 0 #8e0000, 0 8px 18px rgba(142,0,0,0.32);
     transition: transform 0.08s ease, box-shadow 0.08s ease;
     -webkit-tap-highlight-color: transparent;
     margin-bottom: 8px;
   }
   .btn-maintenance:active {
-    transform: translateY(4px);
-    box-shadow: 0 1px 0 #8e0000, 0 2px 6px rgba(142,0,0,0.18);
+    transform: translateY(5px);
+    box-shadow: 0 0 0 #8e0000, 0 2px 6px rgba(142,0,0,0.18);
   }
+  .btn-maintenance-icon { font-size: 20px; }
 
   .hk-clean       { color: #1b5e20; }
   .hk-in-progress { color: #7a4300; }
@@ -338,19 +395,19 @@
 
   /* ── Booking info strip ── */
   .booking-strip {
-    background: #e8f0ff;
-    border: 1.5px solid #1976d2;
-    border-radius: 12px;
-    padding: 12px 14px;
+    background: linear-gradient(135deg, #e8f0ff 0%, #daeaff 100%);
+    border: 2px solid #1976d2;
+    border-radius: 14px;
+    padding: 14px 16px;
     margin-bottom: 14px;
   }
   .booking-guest-name {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 800;
     color: #003070;
     letter-spacing: 0.02em;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
   }
   .booking-ref {
     font-family: 'Barlow Condensed', sans-serif;
@@ -361,8 +418,8 @@
   }
   .booking-dates {
     display: flex;
-    gap: 20px;
-    margin-top: 10px;
+    gap: 24px;
+    margin-top: 12px;
   }
   .booking-date-label {
     font-family: 'Barlow Condensed', sans-serif;
@@ -371,11 +428,11 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: #1976d2;
-    margin-bottom: 1px;
+    margin-bottom: 2px;
   }
   .booking-date-val {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     color: #003070;
   }
@@ -386,9 +443,9 @@
     font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    padding: 2px 8px;
+    padding: 3px 10px;
     border-radius: 20px;
-    margin-top: 8px;
+    margin-top: 10px;
   }
   .badge-paid    { background: rgba(76,175,80,0.2);   color: #1b5e20; }
   .badge-unpaid  { background: rgba(229,115,115,0.2); color: #7f1010; }
@@ -398,28 +455,50 @@
 
 {% block content %}
 
-<a href="{{ url_for('staff.dashboard') }}" class="back-link">Back to Rooms</a>
-
-<h1 class="room-heading">Room {{ room.number }}</h1>
+{# ── Hero header band ── #}
+<div class="page-hero">
+  <a href="{{ url_for('staff.dashboard') }}" class="back-link">Back to Rooms</a>
+  <h1 class="room-heading">Room {{ room.number }}</h1>
+  <p class="room-sub">{{ room.room_type }} · Floor {{ room.floor if room.floor else '—' }} · {{ room.capacity }} guest{{ 's' if room.capacity != 1 else '' }}</p>
+</div>
 
 {# ── Room Info ── #}
 <div class="info-card">
   <div class="info-card-title">Room Info</div>
-  <div class="info-grid">
-    <div>
-      <div class="info-label">Type</div>
+  <div class="info-row">
+    <span class="info-row-icon">🛏</span>
+    <div class="info-row-body">
+      <div class="info-label">Room Type</div>
       <div class="info-value">{{ room.room_type }}</div>
     </div>
-    <div>
-      <div class="info-label">Floor</div>
-      <div class="info-value">{{ room.floor if room.floor else '—' }}</div>
+  </div>
+  {% if booking and room.status == 'occupied' %}
+  <div class="info-row">
+    <span class="info-row-icon">👤</span>
+    <div class="info-row-body">
+      <div class="info-label">Guest</div>
+      <div class="info-value">{{ booking.guest.full_name }}</div>
     </div>
-    <div>
-      <div class="info-label">Capacity</div>
-      <div class="info-value">{{ room.capacity }} guest{{ 's' if room.capacity != 1 else '' }}</div>
+  </div>
+  <div class="info-row">
+    <span class="info-row-icon">📅</span>
+    <div class="info-row-body">
+      <div class="info-label">Check-in</div>
+      <div class="info-value">{{ booking.check_in_date.strftime('%d %b %Y') }}</div>
     </div>
-    <div>
-      <div class="info-label">HK Status</div>
+  </div>
+  <div class="info-row">
+    <span class="info-row-icon">📆</span>
+    <div class="info-row-body">
+      <div class="info-label">Check-out</div>
+      <div class="info-value">{{ booking.check_out_date.strftime('%d %b %Y') }}</div>
+    </div>
+  </div>
+  {% endif %}
+  <div class="info-row">
+    <span class="info-row-icon">🧹</span>
+    <div class="info-row-body">
+      <div class="info-label">Housekeeping</div>
       <div class="info-value">
         {% if room.housekeeping_status == 'clean' %}
           <span class="hk-clean">✓ Clean</span>
@@ -433,28 +512,17 @@
   </div>
 </div>
 
-{# ── Booking info (if occupied) ── #}
+{# ── Booking payment badge (if occupied) ── #}
 {% if booking and room.status == 'occupied' %}
-<div class="booking-strip">
-  <div class="booking-guest-name">{{ booking.guest.full_name }}</div>
-  <div class="booking-ref">{{ booking.booking_ref }}</div>
-  <div class="booking-dates">
-    <div>
-      <div class="booking-date-label">Check-in</div>
-      <div class="booking-date-val">{{ booking.check_in_date.strftime('%d %b %Y') }}</div>
-    </div>
-    <div>
-      <div class="booking-date-label">Check-out</div>
-      <div class="booking-date-val">{{ booking.check_out_date.strftime('%d %b %Y') }}</div>
-    </div>
-  </div>
   {% if booking.invoice %}
     {% set ps = booking.invoice.payment_status %}
-    <span class="payment-badge {% if ps == 'paid' %}badge-paid{% elif ps == 'partial' %}badge-partial{% else %}badge-unpaid{% endif %}">
-      {{ ps | upper }}
-    </span>
+    <div style="margin-bottom:14px;">
+      <span class="payment-badge {% if ps == 'paid' %}badge-paid{% elif ps == 'partial' %}badge-partial{% else %}badge-unpaid{% endif %}">
+        💳 Payment: {{ ps | upper }}
+      </span>
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#8a98b4;margin-left:8px;letter-spacing:0.06em;">{{ booking.booking_ref }}</span>
+    </div>
   {% endif %}
-</div>
 {% endif %}
 
 {# ── Quick Actions ── #}
@@ -465,28 +533,40 @@
   <button class="action-btn btn-act-checkin"
           id="checkInBtn"
           {% if room.status == 'occupied' %}disabled{% else %}onclick="toggleTakeIn()"{% endif %}>
-    <span class="action-icon">👤</span>
-    Check-In
+    <span class="action-btn-icon">👤</span>
+    <span class="action-btn-text">
+      <span class="action-btn-label">Check-In</span>
+      <span class="action-btn-sub">(walk-in guest)</span>
+    </span>
   </button>
 
   {# CHECK OUT — only when occupied #}
   <button class="action-btn btn-act-checkout"
           id="checkoutBtn"
           {% if room.status != 'occupied' %}disabled{% else %}onclick="doCheckout()"{% endif %}>
-    <span class="action-icon">🚪</span>
-    Check Out
+    <span class="action-btn-icon">🚪</span>
+    <span class="action-btn-text">
+      <span class="action-btn-label">Check Out</span>
+      <span class="action-btn-sub">(end stay)</span>
+    </span>
   </button>
 
   {# MARK DIRTY — amber #}
   <button class="action-btn btn-act-dirty" onclick="setHK('dirty')">
-    <span class="action-icon">✕</span>
-    Mark Dirty
+    <span class="action-btn-icon">🧺</span>
+    <span class="action-btn-text">
+      <span class="action-btn-label">Mark Dirty</span>
+      <span class="action-btn-sub">(needs cleaning)</span>
+    </span>
   </button>
 
   {# MARK CLEAN — sky blue #}
   <button class="action-btn btn-act-clean" onclick="setHK('clean')">
-    <span class="action-icon">✓</span>
-    Mark Clean
+    <span class="action-btn-icon">✨</span>
+    <span class="action-btn-text">
+      <span class="action-btn-label">Mark Clean</span>
+      <span class="action-btn-sub">(ready for guest)</span>
+    </span>
   </button>
 
 </div>
@@ -528,7 +608,7 @@
 <div class="section-div"></div>
 
 {# ── Room Notes ── #}
-<p class="section-label">Room Notes</p>
+<p class="notes-section-label">✏️ Room Notes</p>
 <textarea class="notes-textarea" id="roomNotes" rows="3"
           placeholder="Tap to add a note...">{{ room.notes or '' }}</textarea>
 <button class="btn-save-note" onclick="saveNote()">✓ Save Note</button>
@@ -538,7 +618,8 @@
 
 {# ── Report Maintenance ── #}
 <button class="btn-maintenance" onclick="doMaintenance()">
-  ⚠ Report Maintenance
+  <span class="btn-maintenance-icon">⚠️</span>
+  Report Maintenance
 </button>
 
 {% endblock %}
@@ -558,8 +639,8 @@
     if (!form) return;
     const open = form.classList.toggle('open');
     btn.innerHTML = open
-      ? '<span class="action-icon">✕</span>Cancel'
-      : '<span class="action-icon">👤</span>Check-In';
+      ? '<span class="action-btn-icon">✕</span><span class="action-btn-text"><span class="action-btn-label">Cancel</span></span>'
+      : '<span class="action-btn-icon">👤</span><span class="action-btn-text"><span class="action-btn-label">Check-In</span><span class="action-btn-sub">(walk-in guest)</span></span>';
     if (open && coField && !coField.value) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -571,7 +652,7 @@
     if (!confirm('Check out this guest and mark room for cleaning?')) return;
     const btn = document.getElementById('checkoutBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="action-icon">⏳</span>Processing…';
+    btn.innerHTML = '<span class="action-btn-icon">⏳</span><span class="action-btn-text"><span class="action-btn-label">Processing…</span></span>';
     try {
       const res  = await fetch('/staff/checkout/' + ROOM_ID, { method: 'POST' });
       const data = await res.json();
@@ -580,13 +661,13 @@
       } else {
         alert(data.error || 'Checkout failed.');
         btn.disabled = false;
-        btn.innerHTML = '<span class="action-icon">🚪</span>Check Out';
+        btn.innerHTML = '<span class="action-btn-icon">🚪</span><span class="action-btn-text"><span class="action-btn-label">Check Out</span><span class="action-btn-sub">(end stay)</span></span>';
       }
     } catch(e) {
       console.error('Checkout error:', e);
       alert('Network error. Please try again.');
       btn.disabled = false;
-      btn.innerHTML = '<span class="action-icon">🚪</span>Check Out';
+      btn.innerHTML = '<span class="action-btn-icon">🚪</span><span class="action-btn-text"><span class="action-btn-label">Check Out</span><span class="action-btn-sub">(end stay)</span></span>';
     }
   }
 
