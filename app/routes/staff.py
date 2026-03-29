@@ -235,9 +235,12 @@ def save_note(room_id):
 @login_required
 def report_maintenance(room_id):
     room = Room.query.get_or_404(room_id)
-    room.status = 'maintenance'
+    if room.status == 'maintenance':
+        room.status = 'vacant'
+    else:
+        room.status = 'maintenance'
     db.session.commit()
-    return jsonify(success=True)
+    return jsonify(success=True, status=room.status)
 
 
 # ── Legacy AJAX room actions (kept for backwards compatibility) ────────────────

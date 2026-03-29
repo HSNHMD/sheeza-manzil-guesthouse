@@ -388,6 +388,14 @@
     box-shadow: 0 0 0 #8e0000, 0 2px 6px rgba(142,0,0,0.18);
   }
   .btn-maintenance-icon { font-size: 20px; }
+  .btn-maintenance-clear {
+    background: linear-gradient(165deg, #e8f5e9 0%, #a5d6a7 100%);
+    color: #1b5e20;
+    box-shadow: 0 5px 0 #2e7d32, 0 8px 18px rgba(46,125,50,0.28);
+  }
+  .btn-maintenance-clear:active {
+    box-shadow: 0 0 0 #2e7d32, 0 2px 6px rgba(46,125,50,0.15);
+  }
 
   .hk-clean       { color: #1b5e20; }
   .hk-in-progress { color: #7a4300; }
@@ -616,10 +624,11 @@
 
 <div class="section-div"></div>
 
-{# ── Report Maintenance ── #}
-<button class="btn-maintenance" onclick="doMaintenance()">
-  <span class="btn-maintenance-icon">⚠️</span>
-  Report Maintenance
+{# ── Maintenance toggle ── #}
+<button class="btn-maintenance {% if room.status == 'maintenance' %}btn-maintenance-clear{% endif %}"
+        id="maintenanceBtn" onclick="doMaintenance()">
+  <span class="btn-maintenance-icon">{% if room.status == 'maintenance' %}✅{% else %}⚠️{% endif %}</span>
+  {% if room.status == 'maintenance' %}Clear Maintenance{% else %}Report Maintenance{% endif %}
 </button>
 
 {% endblock %}
@@ -719,14 +728,25 @@
   }
 
   async function doMaintenance() {
-    if (!confirm('Mark this room as under maintenance? This will make it unavailable.')) return;
+    const btn = document.getElementById('maintenanceBtn');
+    const isCurrentlyMaintenance = btn.classList.contains('btn-maintenance-clear');
+    const msg = isCurrentlyMaintenance
+      ? 'Remove maintenance status and mark room as vacant?'
+      : 'Mark this room as under maintenance? This will make it unavailable.';
+    if (!confirm(msg)) return;
     try {
       const res  = await fetch('/staff/maintenance/' + ROOM_ID, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        window.location.href = '/staff/dashboard';
+        if (data.status === 'maintenance') {
+          btn.classList.add('btn-maintenance-clear');
+          btn.innerHTML = '<span class="btn-maintenance-icon">✅</span> Clear Maintenance';
+        } else {
+          btn.classList.remove('btn-maintenance-clear');
+          btn.innerHTML = '<span class="btn-maintenance-icon">⚠️</span> Report Maintenance';
+        }
       } else {
-        alert(data.error || 'Failed to report maintenance.');
+        alert(data.error || 'Failed to update maintenance status.');
       }
     } catch(e) {
       console.error('Maintenance error:', e);
