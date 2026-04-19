@@ -38,7 +38,7 @@
               {{ 'Active' if user.is_active else 'Inactive' }}
             </span>
           </td>
-          <td class="px-4 py3 text-right">
+          <td class="px-4 py-3 text-right">
             {% if user.id != current_user.id %}
             <div class="flex items-center justify-end gap-2">
               <form method="POST" class="inline">
@@ -63,7 +63,10 @@
               </form>
             </div>
             {% else %}
-            <span class="text-xs text-gray-400">You</span>
+            <a href="{{ url_for('auth.change_password') }}"
+               class="text-xs text-blue-600 hover:text-blue-800 underline">
+              Change My Password
+            </a>
             {% endif %}
           </td>
         </tr>
