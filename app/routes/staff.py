@@ -2,9 +2,6 @@
 Staff portal blueprint — minimal front-desk operations.
 
 Routes:
-    GET  /staff/login                   — staff login page
-    POST /staff/login                   — authenticate staff, redirect to dashboard
-    GET  /staff/logout                  — log out, redirect to staff login
     GET  /staff/dashboard               — 8-room occupancy overview (card grid)
     GET  /staff/room/<id>               — full-page room detail
     POST /staff/checkin/<id>            — walk-in form: create Guest+Booking+Invoice, check in
@@ -23,7 +20,7 @@ import time
 from datetime import datetime, date
 from flask import (Blueprint, render_template, redirect, url_for,
                    flash, request, jsonify)
-from flask_login import login_user, logout_user, login_required, current_user
+from flask_login import logout_user, login_required, current_user
 from ..models import db, User, Room, Booking, Guest, Invoice
 from ..utils import hotel_date
 from ..services.whatsapp import send_checkin_reminder, send_checkout_invoice_summary
@@ -33,32 +30,11 @@ staff_bp = Blueprint('staff', __name__, url_prefix='/staff')
 
 # ── Auth ────────────────────────────────────────────────────────────────────
 
-@staff_bp.route('/login', methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        if current_user.is_admin:
-            return redirect(url_for('rooms.index'))
-        return redirect(url_for('staff.dashboard'))
-
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
-        user = User.query.filter_by(username=username).first()
-        if user and user.is_active and user.check_password(password):
-            login_user(user)
-            if user.is_admin:
-                return redirect(url_for('rooms.index'))
-            return redirect(url_for('staff.dashboard'))
-        flash('Invalid username or password.', 'error')
-
-    return render_template('staff/login.html')
-
-
 @staff_bp.route('/logout')
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('staff.login'))
+    return redirect(url_for('auth.console_login'))
 
 
 # ── Dashboard ────────────────────────────────────────────────────────────────

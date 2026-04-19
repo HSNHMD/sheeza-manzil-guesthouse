@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 
 login_manager = LoginManager()
-login_manager.login_view = 'auth.login'
+login_manager.login_view = 'auth.console_login'
 login_manager.login_message_category = 'info'
 migrate = Migrate()
 
@@ -62,7 +62,7 @@ def create_app(config_class=Config):
         # Only intercept authenticated non-admin (staff) users
         if not current_user.is_authenticated or current_user.is_admin:
             return
-        allowed = ('/staff', '/login', '/logout', '/static', '/public', '/privacy')
+        allowed = ('/staff', '/console', '/appadmin', '/logout', '/static', '/public', '/privacy', '/account')
         if not any(request.path == p or request.path.startswith(p + '/') for p in allowed):
             return redirect('/staff/dashboard')
 

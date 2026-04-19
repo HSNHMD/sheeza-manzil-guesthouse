@@ -9,7 +9,7 @@ from ..routes.invoices import generate_invoice
 from ..routes.bookings import generate_booking_ref
 from ..utils import hotel_date
 
-public_bp = Blueprint('public', __name__, url_prefix='/book')
+public_bp = Blueprint('public', __name__, url_prefix='')
 
 ALLOWED = {'jpg', 'jpeg', 'png', 'pdf'}
 

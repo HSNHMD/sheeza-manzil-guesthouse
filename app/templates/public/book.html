@@ -226,7 +226,7 @@ function checkAvailability() {
   selectedRoom = null;
   roomIdInp.value = '';
 
-  fetch(`/book/availability?check_in=${ci}&check_out=${co}`)
+  fetch(`/availability?check_in=${ci}&check_out=${co}`)
     .then(r => r.json())
     .then(data => {
       loading.classList.add('hidden');

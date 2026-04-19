@@ -6,16 +6,10 @@ from ..models import db, User, Room
 auth_bp = Blueprint('auth', __name__)
 
 
-@auth_bp.route('/')
-@login_required
-def index():
-    if not current_user.is_admin:
-        return redirect(url_for('staff.dashboard'))
-    return redirect(url_for('rooms.index'))
+# ── Admin login (/appadmin) ──────────────────────────────────────────────────
 
-
-@auth_bp.route('/login', methods=['GET', 'POST'])
-def login():
+@auth_bp.route('/appadmin', methods=['GET', 'POST'])
+def admin_login():
     if current_user.is_authenticated:
         if not current_user.is_admin:
             return redirect(url_for('staff.dashboard'))
@@ -38,24 +32,52 @@ def login():
     return render_template('auth/login.html')
 
 
+# ── Staff login (/console) ───────────────────────────────────────────────────
+
+@auth_bp.route('/console', methods=['GET', 'POST'])
+def console_login():
+    if current_user.is_authenticated:
+        if current_user.is_admin:
+            return redirect(url_for('rooms.index'))
+        return redirect(url_for('staff.dashboard'))
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and user.is_active and user.check_password(password):
+            login_user(user)
+            if user.is_admin:
+                return redirect(url_for('rooms.index'))
+            return redirect(url_for('staff.dashboard'))
+        flash('Invalid username or password.', 'error')
+
+    return render_template('staff/login.html')
+
+
+# ── Shared logout ────────────────────────────────────────────────────────────
+
 @auth_bp.route('/logout')
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('auth.login'))
+    return redirect(url_for('auth.admin_login'))
 
+
+# ── User management (/admin/users) ───────────────────────────────────────────
 
 @auth_bp.route('/admin/users', methods=['GET', 'POST'])
 @login_required
 def admin_users():
     if not current_user.is_admin:
         flash('Admin access required.', 'error')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('auth.admin_login'))
 
     users = User.query.order_by(User.created_at.desc()).all()
 
     if request.method == 'POST':
         action = request.form.get('action')
+
         if action == 'create':
             username = request.form.get('username', '').strip()
             email = request.form.get('email', '').strip()
@@ -72,7 +94,7 @@ def admin_users():
                 db.session.add(user)
                 db.session.commit()
                 flash(f'Staff member {username} created.', 'success')
-                return redirect(url_for('auth.admin_users'))
+            return redirect(url_for('auth.admin_users'))
 
         elif action == 'toggle':
             user_id = request.form.get('user_id')
@@ -83,11 +105,60 @@ def admin_users():
                 flash(f'User {user.username} {"activated" if user.is_active else "deactivated"}.', 'success')
             return redirect(url_for('auth.admin_users'))
 
+        elif action == 'delete':
+            user_id = request.form.get('user_id')
+            user = User.query.get_or_404(user_id)
+            if user.id == current_user.id:
+                flash('You cannot delete your own account.', 'error')
+            else:
+                db.session.delete(user)
+                db.session.commit()
+                flash(f'User {user.username} deleted.', 'success')
+            return redirect(url_for('auth.admin_users'))
+
+        elif action == 'set_password':
+            user_id = request.form.get('user_id')
+            new_password = request.form.get('new_password', '')
+            user = User.query.get_or_404(user_id)
+            if len(new_password) < 6:
+                flash('Password must be at least 6 characters.', 'error')
+            else:
+                user.set_password(new_password)
+                db.session.commit()
+                flash(f'Password updated for {user.username}.', 'success')
+            return redirect(url_for('auth.admin_users'))
+
     return render_template('auth/staff.html', users=users)
 
 
+# ── Change own password (/account/change-password) ──────────────────────────
+
+@auth_bp.route('/account/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        current_pw = request.form.get('current_password', '')
+        new_pw = request.form.get('new_password', '')
+        confirm_pw = request.form.get('confirm_password', '')
+
+        if not current_user.check_password(current_pw):
+            flash('Current password is incorrect.', 'error')
+        elif len(new_pw) < 6:
+            flash('New password must be at least 6 characters.', 'error')
+        elif new_pw != confirm_pw:
+            flash('New passwords do not match.', 'error')
+        else:
+            current_user.set_password(new_pw)
+            db.session.commit()
+            flash('Password changed successfully.', 'success')
+            return redirect(url_for('staff.dashboard') if not current_user.is_admin else url_for('rooms.index'))
+
+    return render_template('auth/change_password.html')
+
+
+# ── Seed rooms (/admin/seed) ─────────────────────────────────────────────────
+
 SEED_ROOMS = [
-    # (number, name,          type,    floor, capacity, price)
     ('1', 'Deluxe Double', 'Deluxe',   0,     2,        600.0),
     ('2', 'Deluxe Double', 'Deluxe',   0,     2,        600.0),
     ('3', 'Deluxe Double', 'Deluxe',   0,     2,        600.0),
@@ -104,7 +175,7 @@ SEED_ROOMS = [
 def seed():
     if not current_user.is_admin:
         flash('Admin access required.', 'error')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('auth.admin_login'))
 
     existing = Room.query.count()
     seeded = []
@@ -135,12 +206,14 @@ def seed():
     return render_template('auth/seed.html', existing=existing, seed_rooms=SEED_ROOMS)
 
 
+# ── WhatsApp test (/admin/test-whatsapp) ─────────────────────────────────────
+
 @auth_bp.route('/admin/test-whatsapp')
 @login_required
 def test_whatsapp():
     if not current_user.is_admin:
         flash('Admin access required.', 'error')
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('auth.admin_login'))
 
     from ..services.whatsapp import _send, _send_template, _config_status, STAFF_PHONE
 
@@ -200,5 +273,5 @@ def test_whatsapp():
     html += f'<a href="?action=send_template&tpl=booking_received" style="{btn}">Test booking_received</a>'
     html += f'<a href="?action=send_template&tpl=staff_new_booking" style="{btn}">Test staff_new_booking</a>'
     html += '</div>'
-    html += f'<p><a href="{url_for("auth.index")}">← Back to dashboard</a></p></div>'
+    html += f'<p><a href="{url_for("rooms.index")}">← Back to dashboard</a></p></div>'
     return html

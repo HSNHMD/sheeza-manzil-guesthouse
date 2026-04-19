@@ -104,7 +104,7 @@
     <h1 class="login-title">Staff Login</h1>
     <p class="login-subtitle">Sheeza Manzil · Staff Portal</p>
 
-    <form method="POST" action="{{ url_for('staff.login') }}">
+    <form method="POST" action="{{ url_for('auth.console_login') }}">
       <div class="lform-group">
         <label class="lform-label" for="username">Username</label>
         <input class="lform-input" type="text" id="username" name="username"
