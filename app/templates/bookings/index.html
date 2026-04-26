@@ -84,26 +84,20 @@
               <p class="text-xs text-gray-400">{{ b.nights }} night{{ 's' if b.nights != 1 }}</p>
             </td>
             <td class="px-4 py-3">
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium
-                {% if b.status == 'unconfirmed' %}bg-red-100 text-red-700
-                {% elif b.status == 'pending_verification' %}bg-amber-100 text-amber-700
-                {% elif b.status == 'confirmed' %}bg-green-100 text-green-700
-                {% elif b.status == 'checked_in' %}bg-blue-100 text-blue-700
-                {% elif b.status == 'checked_out' %}bg-gray-100 text-gray-500
-                {% else %}bg-red-100 text-red-600{% endif %}">
-                {{ b.status.replace('_',' ').title() }}
+              {# Booking status badge — fused booking + payment + balance via helpers #}
+              {% set _payment_status = (b.invoice.payment_status if b.invoice else 'not_received') %}
+              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ status_badge(b.status, _payment_status, b.invoice) }}">
+                {{ status_label(b.status, _payment_status, b.invoice) }}
               </span>
-              {% if b.check_in_date == today and b.status in ('confirmed', 'pending_verification', 'unconfirmed') %}
+              {% if b.check_in_date == today and b.status in ('confirmed', 'pending_verification', 'unconfirmed', 'new_request', 'pending_payment', 'payment_uploaded', 'payment_verified') %}
               <span class="ml-1 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded-full">Today</span>
               {% endif %}
             </td>
             <td class="px-4 py-3 hidden sm:table-cell">
+              {# Payment status — also via helpers; falls back to em-dash if no invoice yet #}
               {% if b.invoice %}
-                <span class="px-2 py-0.5 rounded-full text-xs font-medium
-                  {% if b.invoice.payment_status == 'paid' %}bg-green-100 text-green-700
-                  {% elif b.invoice.payment_status == 'partial' %}bg-yellow-100 text-yellow-700
-                  {% else %}bg-red-100 text-red-600{% endif %}">
-                  {{ b.invoice.payment_status.title() }}
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ status_badge(b.status, b.invoice.payment_status, b.invoice) }}">
+                  {{ status_label(b.status, b.invoice.payment_status, b.invoice) }}
                 </span>
               {% elif b.status == 'confirmed' %}
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">Unpaid</span>

@@ -120,7 +120,15 @@ def submit():
     if slip_file and slip_file.filename and _allowed(slip_file.filename):
         payment_slip_filename, payment_slip_drive_id = _save_file(slip_file, f'slip_{prefix}', 'payment_slip')
 
-    status = 'pending_verification' if payment_slip_filename else 'unconfirmed'
+    # ── Initial lifecycle states (per booking_lifecycle.VALID_STATUS_PAIRS) ──
+    # Guest uploaded a slip → booking_status='payment_uploaded', invoice.payment_status='pending_review'
+    # No slip uploaded     → booking_status='pending_payment',   invoice.payment_status='not_received'
+    if payment_slip_filename:
+        booking_status = 'payment_uploaded'
+        invoice_payment_status = 'pending_review'
+    else:
+        booking_status = 'pending_payment'
+        invoice_payment_status = 'not_received'
     nights = (check_out - check_in).days
 
     guest = Guest(
@@ -141,7 +149,7 @@ def submit():
         num_guests=int(request.form.get('num_guests', 1)),
         special_requests=request.form.get('special_requests', '').strip(),
         total_amount=nights * room.price_per_night,
-        status=status,
+        status=booking_status,
         id_card_filename=id_card_filename,
         id_card_drive_id=id_card_drive_id,
         payment_slip_filename=payment_slip_filename,
@@ -156,6 +164,9 @@ def submit():
         company_name=request.form.get('company_name', '').strip() or None,
         billing_address=request.form.get('billing_address', '').strip() or None,
     )
+    # Override invoice's default 'unpaid' to the appropriate new-vocab value
+    if booking.invoice is not None:
+        booking.invoice.payment_status = invoice_payment_status
     db.session.commit()
 
     # WhatsApp: acknowledge to guest + notify staff (non-blocking)

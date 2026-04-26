@@ -76,6 +76,12 @@ def create_app(config_class=Config):
     from .cli import register_cli
     register_cli(app)
 
+    # Register booking-lifecycle Jinja helpers so templates can call
+    # status_label() and status_badge() directly. See app/booking_lifecycle.py
+    # for the canonical vocabularies and the (booking, payment) pair matrix.
+    from .booking_lifecycle import register_jinja_helpers
+    register_jinja_helpers(app)
+
     with app.app_context():
         import os
         upload_dir = os.path.join(app.root_path, 'uploads')

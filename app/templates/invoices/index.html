@@ -56,11 +56,9 @@
               MVR {{ '%.0f'|format(inv.balance_due) }}
             </td>
             <td class="px-4 py-3">
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium
-                {% if inv.payment_status == 'paid' %}bg-green-100 text-green-700
-                {% elif inv.payment_status == 'partial' %}bg-yellow-100 text-yellow-700
-                {% else %}bg-red-100 text-red-600{% endif %}">
-                {{ inv.payment_status.title() }}
+              {# Payment status badge via lifecycle helper #}
+              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ status_badge(inv.booking.status if inv.booking else None, inv.payment_status, inv) }}">
+                {{ status_label(inv.booking.status if inv.booking else None, inv.payment_status, inv) }}
               </span>
             </td>
           </tr>

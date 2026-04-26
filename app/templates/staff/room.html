@@ -520,13 +520,21 @@
   </div>
 </div>
 
-{# ── Booking payment badge (if occupied) ── #}
+{# ── Booking payment badge (if occupied) ──
+   Local CSS classes (badge-paid/badge-partial/badge-unpaid) come from this
+   page's own stylesheet; we derive which class to apply from balance_due +
+   verification trust so the same logic works for legacy ('paid'/'partial')
+   and new ('verified') values. The text label uses the lifecycle helper. #}
 {% if booking and room.status == 'occupied' %}
   {% if booking.invoice %}
     {% set ps = booking.invoice.payment_status %}
+    {% set _is_trusted    = ps in ('verified', 'paid', 'partial') %}
+    {% set _has_due       = booking.invoice.balance_due is defined and booking.invoice.balance_due > 0 %}
+    {% set _is_fully_paid = _is_trusted and not _has_due %}
+    {% set _is_partial    = _is_trusted and _has_due %}
     <div style="margin-bottom:14px;">
-      <span class="payment-badge {% if ps == 'paid' %}badge-paid{% elif ps == 'partial' %}badge-partial{% else %}badge-unpaid{% endif %}">
-        💳 Payment: {{ ps | upper }}
+      <span class="payment-badge {% if _is_fully_paid %}badge-paid{% elif _is_partial %}badge-partial{% else %}badge-unpaid{% endif %}">
+        💳 {{ status_label(booking.status, ps, booking.invoice) }}
       </span>
       <span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#8a98b4;margin-left:8px;letter-spacing:0.06em;">{{ booking.booking_ref }}</span>
     </div>

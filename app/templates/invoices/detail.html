@@ -19,10 +19,9 @@
     </a>
     <div>
       <h1 class="text-xl font-bold text-gray-800 font-mono">{{ invoice.invoice_number }}</h1>
-      <span class="text-xs px-2 py-0.5 rounded-full font-medium
-        {% if invoice.payment_status == 'unpaid' %}bg-red-100 text-red-600
-        {% else %}bg-gray-100 text-gray-700{% endif %}">
-        {{ invoice.payment_status.title() }}
+      {# Payment status badge via lifecycle helper — fuses booking + payment + balance #}
+      <span class="text-xs px-2 py-0.5 rounded-full font-medium {{ status_badge(invoice.booking.status if invoice.booking else None, invoice.payment_status, invoice) }}">
+        {{ status_label(invoice.booking.status if invoice.booking else None, invoice.payment_status, invoice) }}
       </span>
     </div>
   </div>

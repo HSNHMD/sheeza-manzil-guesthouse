@@ -9,14 +9,10 @@
       </a>
       <div>
         <h1 class="text-xl font-bold text-gray-800 font-mono">{{ booking.booking_ref }}</h1>
-        <span class="text-xs px-2 py-0.5 rounded-full font-medium
-          {% if booking.status == 'unconfirmed' %}bg-red-100 text-red-700
-          {% elif booking.status == 'pending_verification' %}bg-amber-100 text-amber-700
-          {% elif booking.status == 'confirmed' %}bg-yellow-100 text-yellow-700
-          {% elif booking.status == 'checked_in' %}bg-green-100 text-green-700
-          {% elif booking.status == 'checked_out' %}bg-gray-100 text-gray-600
-          {% else %}bg-red-100 text-red-600{% endif %}">
-          {{ booking.status.replace('_',' ').title() }}
+        {# Status badge via lifecycle helper — fuses booking + payment + balance #}
+        {% set _payment_status = (booking.invoice.payment_status if booking.invoice else 'not_received') %}
+        <span class="text-xs px-2 py-0.5 rounded-full font-medium {{ status_badge(booking.status, _payment_status, booking.invoice) }}">
+          {{ status_label(booking.status, _payment_status, booking.invoice) }}
         </span>
       </div>
     </div>
@@ -137,27 +133,32 @@
   <!-- Payment status panel -->
   {% if booking.status in ('confirmed', 'checked_in', 'checked_out') %}
   {% set inv = booking.invoice %}
+  {# Derive a 3-state panel color from balance_due + verification trust.
+     Works with both legacy values ('paid'/'partial'/'unpaid') and new vocab
+     ('verified'/'pending_review'/'not_received'/etc.). #}
+  {% set _is_trusted = inv and inv.payment_status in ('verified', 'paid', 'partial') %}
+  {% set _has_due    = inv and inv.balance_due is defined and inv.balance_due > 0 %}
+  {% set _is_fully_paid = _is_trusted and not _has_due %}
+  {% set _is_partial    = _is_trusted and _has_due %}
   <div class="rounded-xl border p-5
-    {% if inv and inv.payment_status == 'paid' %}bg-green-50 border-green-200
-    {% elif inv and inv.payment_status == 'partial' %}bg-yellow-50 border-yellow-200
+    {% if _is_fully_paid %}bg-green-50 border-green-200
+    {% elif _is_partial %}bg-yellow-50 border-yellow-200
     {% else %}bg-red-50 border-red-200{% endif %}">
     <div class="flex items-center justify-between mb-3">
       <div>
         {% if inv %}
-        <h2 class="font-semibold {% if inv.payment_status == 'paid' %}text-green-800{% elif inv.payment_status == 'partial' %}text-yellow-800{% else %}text-red-800{% endif %}">
+        <h2 class="font-semibold {% if _is_fully_paid %}text-green-800{% elif _is_partial %}text-yellow-800{% else %}text-red-800{% endif %}">
           Invoice {{ inv.invoice_number }}
         </h2>
         <p class="text-sm mt-0.5">
-          <span class="{% if inv.payment_status == 'paid' %}text-green-700{% elif inv.payment_status == 'partial' %}text-yellow-700{% else %}text-red-700{% endif %}">
+          <span class="{% if _is_fully_paid %}text-green-700{% elif _is_partial %}text-yellow-700{% else %}text-red-700{% endif %}">
             MVR {{ '%.0f'|format(inv.total_amount) }} ·
           </span>
-          <span class="font-semibold px-1.5 py-0.5 rounded text-xs
-            {% if inv.payment_status == 'paid' %}bg-green-100 text-green-800
-            {% elif inv.payment_status == 'partial' %}bg-yellow-100 text-yellow-800
-            {% else %}bg-red-100 text-red-800{% endif %}">
-            {{ inv.payment_status.upper() }}
+          {# Payment status badge — uses lifecycle helper for label + class #}
+          <span class="font-semibold px-1.5 py-0.5 rounded text-xs {{ status_badge(booking.status, inv.payment_status, inv) }}">
+            {{ status_label(booking.status, inv.payment_status, inv) }}
           </span>
-          {% if inv.payment_status == 'partial' %}
+          {% if _is_partial %}
           <span class="text-yellow-700 text-xs ml-1">· MVR {{ '%.0f'|format(inv.balance_due) }} remaining</span>
           {% endif %}
         </p>
@@ -168,16 +169,16 @@
       </div>
       {% if inv %}
       <a href="{{ url_for('invoices.detail', invoice_id=inv.id) }}"
-        class="text-sm underline {% if inv.payment_status == 'paid' %}text-green-700{% elif inv.payment_status == 'partial' %}text-yellow-700{% else %}text-red-700{% endif %}">
+        class="text-sm underline {% if _is_fully_paid %}text-green-700{% elif _is_partial %}text-yellow-700{% else %}text-red-700{% endif %}">
         View Invoice
       </a>
       {% endif %}
     </div>
 
-    <!-- Inline payment form for confirmed/unpaid bookings -->
-    {% if booking.status == 'confirmed' and (not inv or inv.payment_status != 'paid') %}
+    <!-- Inline payment form: shown if booking is 'confirmed' AND balance still due -->
+    {% if booking.status == 'confirmed' and (not inv or _has_due) %}
     <form method="POST" action="{{ url_for('bookings.record_payment', booking_id=booking.id) }}"
-      class="flex flex-wrap gap-2 pt-3 border-t {% if inv and inv.payment_status == 'partial' %}border-yellow-200{% else %}border-red-200{% endif %}">
+      class="flex flex-wrap gap-2 pt-3 border-t {% if _is_partial %}border-yellow-200{% else %}border-red-200{% endif %}">
       <input type="number" name="amount" step="1" min="1"
         value="{{ '%.0f'|format(inv.balance_due) if inv else '%.0f'|format(booking.total_amount) }}"
         placeholder="Amount (MVR)"
