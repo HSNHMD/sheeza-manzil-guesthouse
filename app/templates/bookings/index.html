@@ -26,25 +26,42 @@
     </div>
   </div>
 
-  <!-- Filters -->
+  <!-- Filters — two independent filters (booking_status + payment_status)
+       populated from the lifecycle module's canonical tuples, plus the
+       legacy 'unpaid' shortcut and date/search inputs. -->
   <form method="GET" class="flex flex-wrap gap-2">
     <input type="text" name="search" value="{{ search }}" placeholder="Search guest, ref, room..."
       class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto flex-1 min-w-48">
+
+    {# Booking-status filter (new vocab populated from BOOKING_STATUSES global) #}
+    <select name="booking_status" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All bookings</option>
+      {% for s in BOOKING_STATUSES %}
+        <option value="{{ s }}" {% if booking_status_filter == s %}selected{% endif %}>{{ status_label(s, None, None) }}</option>
+      {% endfor %}
+    </select>
+
+    {# Payment-status filter (new vocab populated from PAYMENT_STATUSES global) #}
+    <select name="payment_status" onchange="this.form.submit()"
+      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="">All payments</option>
+      {% for p in PAYMENT_STATUSES %}
+        <option value="{{ p }}" {% if payment_status_filter == p %}selected{% endif %}>{{ p.replace('_',' ').title() }}</option>
+      {% endfor %}
+    </select>
+
+    {# Legacy single-axis 'unpaid' shortcut — kept for back-compat with bookmarks #}
     <select name="status" onchange="this.form.submit()"
       class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <option value="">All Status</option>
-      <option value="unconfirmed" {% if status_filter=='unconfirmed' %}selected{% endif %}>🔴 Unconfirmed</option>
-      <option value="pending_verification" {% if status_filter=='pending_verification' %}selected{% endif %}>🟡 Pending Verification</option>
-      <option value="confirmed" {% if status_filter=='confirmed' %}selected{% endif %}>Confirmed</option>
-      <option value="checked_in" {% if status_filter=='checked_in' %}selected{% endif %}>Checked In</option>
-      <option value="checked_out" {% if status_filter=='checked_out' %}selected{% endif %}>Checked Out</option>
-      <option value="cancelled" {% if status_filter=='cancelled' %}selected{% endif %}>Cancelled</option>
-      <option value="unpaid" {% if status_filter=='unpaid' %}selected{% endif %}>⚠ Unpaid</option>
+      <option value="">— legacy —</option>
+      <option value="unpaid" {% if status_filter=='unpaid' %}selected{% endif %}>⚠ Unpaid (any)</option>
     </select>
+
     <input type="date" name="date" value="{{ date_filter }}"
       class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
     <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Search</button>
-    {% if search or status_filter or date_filter %}
+    {% if search or status_filter or booking_status_filter or payment_status_filter or date_filter %}
     <a href="{{ url_for('bookings.index') }}" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg">Clear</a>
     {% endif %}
   </form>

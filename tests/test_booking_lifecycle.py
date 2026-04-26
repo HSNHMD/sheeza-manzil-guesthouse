@@ -27,6 +27,13 @@ from app.booking_lifecycle import (  # noqa: E402
     CONFIRMABLE_FROM,
     can_confirm,
     can_confirm_booking,
+    can_verify_payment,
+    can_mark_mismatch,
+    can_mark_pending_review,
+    can_reject_payment,
+    can_cancel,
+    can_check_in,
+    can_check_out,
     is_valid_booking_status,
     is_valid_payment_status,
     is_valid_status_pair,
@@ -638,6 +645,268 @@ class TestCanConfirmBooking(unittest.TestCase):
         b = _FakeBooking(status='pending_payment', payment_slip_filename=None, invoice=WeirdInvoice())
         # Should not raise, should return False (no evidence)
         self.assertFalse(can_confirm_booking(b))
+
+
+class TestCanVerifyPayment(unittest.TestCase):
+    """can_verify_payment() — admin "Verify Payment" precondition."""
+
+    def test_payment_uploaded_pending_review_with_slip_can_verify(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='pending_review'))
+        self.assertTrue(can_verify_payment(b))
+
+    def test_payment_uploaded_mismatch_with_slip_can_verify(self):
+        """Admin can verify after fixing a previously-flagged mismatch."""
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='mismatch', amount_paid=600))
+        self.assertTrue(can_verify_payment(b))
+
+    def test_legacy_pending_verification_with_slip_can_verify(self):
+        b = _FakeBooking(status='pending_verification', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='unpaid'))
+        self.assertTrue(can_verify_payment(b))
+
+    def test_payment_uploaded_no_slip_no_amount_cannot_verify(self):
+        """No evidence at all → refuse."""
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename=None,
+                         invoice=_FakeInvoiceFull(payment_status='pending_review', amount_paid=0))
+        self.assertFalse(can_verify_payment(b))
+
+    def test_already_verified_cannot_be_re_verified(self):
+        b = _FakeBooking(status='payment_verified', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+        self.assertFalse(can_verify_payment(b))
+
+    def test_confirmed_booking_cannot_re_run_payment_verify(self):
+        b = _FakeBooking(status='confirmed', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+        self.assertFalse(can_verify_payment(b))
+
+    def test_rejected_payment_cannot_be_verified(self):
+        """If payment has been rejected, must reset to pending_review first."""
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='rejected'))
+        self.assertFalse(can_verify_payment(b))
+
+
+class TestCanMarkMismatch(unittest.TestCase):
+    """can_mark_mismatch() — flag amount mismatch on a slip in review."""
+
+    def test_payment_uploaded_pending_review_with_slip_can_mark_mismatch(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='pending_review'))
+        self.assertTrue(can_mark_mismatch(b))
+
+    def test_already_marked_mismatch_cannot_re_mark(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='mismatch'))
+        self.assertFalse(can_mark_mismatch(b))
+
+    def test_no_slip_cannot_mark_mismatch(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename=None,
+                         invoice=_FakeInvoiceFull(payment_status='pending_review'))
+        self.assertFalse(can_mark_mismatch(b))
+
+    def test_pending_payment_cannot_mark_mismatch(self):
+        """No slip uploaded yet → mismatch action makes no sense."""
+        b = _FakeBooking(status='pending_payment', payment_slip_filename=None,
+                         invoice=_FakeInvoiceFull(payment_status='not_received'))
+        self.assertFalse(can_mark_mismatch(b))
+
+
+class TestCanMarkPendingReview(unittest.TestCase):
+    """can_mark_pending_review() — undo a mismatch back to review queue."""
+
+    def test_mismatch_can_be_re_queued(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='mismatch'))
+        self.assertTrue(can_mark_pending_review(b))
+
+    def test_already_pending_cannot_re_queue(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='pending_review'))
+        self.assertFalse(can_mark_pending_review(b))
+
+    def test_verified_cannot_be_re_queued(self):
+        b = _FakeBooking(status='payment_verified', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified'))
+        self.assertFalse(can_mark_pending_review(b))
+
+
+class TestCanRejectPayment(unittest.TestCase):
+    """can_reject_payment() — admin rejects payment outright."""
+
+    def test_pending_review_can_be_rejected(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='pending_review'))
+        self.assertTrue(can_reject_payment(b))
+
+    def test_mismatch_can_be_rejected(self):
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='mismatch'))
+        self.assertTrue(can_reject_payment(b))
+
+    def test_already_verified_cannot_be_rejected_via_this_route(self):
+        """Rejecting an already-verified payment is a different scenario
+        (e.g. chargeback) — not handled by this admin action."""
+        b = _FakeBooking(status='payment_verified', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified'))
+        self.assertFalse(can_reject_payment(b))
+
+    def test_pending_payment_cannot_be_rejected(self):
+        """No payment to reject yet."""
+        b = _FakeBooking(status='pending_payment', payment_slip_filename=None,
+                         invoice=_FakeInvoiceFull(payment_status='not_received'))
+        self.assertFalse(can_reject_payment(b))
+
+
+class TestCanCancel(unittest.TestCase):
+    """can_cancel() — cancellation allowed unless terminal."""
+
+    def test_pre_confirmation_states_can_cancel(self):
+        for s in ('new_request', 'pending_payment', 'payment_uploaded',
+                  'payment_verified', 'unconfirmed', 'pending_verification'):
+            with self.subTest(status=s):
+                self.assertTrue(can_cancel(s))
+
+    def test_confirmed_can_cancel(self):
+        self.assertTrue(can_cancel('confirmed'))
+
+    def test_checked_in_can_cancel(self):
+        """Edge case: guest in-house but business decision to cancel.
+        Allow it; the room-status reset handles the side-effect."""
+        self.assertTrue(can_cancel('checked_in'))
+
+    def test_terminal_states_cannot_cancel(self):
+        for s in ('cancelled', 'rejected', 'checked_out'):
+            with self.subTest(status=s):
+                self.assertFalse(can_cancel(s))
+
+    def test_unknown_cannot_cancel(self):
+        self.assertFalse(can_cancel('garbage'))
+        self.assertFalse(can_cancel(None))
+
+
+class TestCanCheckIn(unittest.TestCase):
+    """can_check_in() — gate for /bookings/<id>/checkin."""
+
+    def test_confirmed_with_verified_payment_can_check_in(self):
+        b = _FakeBooking(status='confirmed', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+        self.assertTrue(can_check_in(b))
+
+    def test_confirmed_with_legacy_paid_can_check_in(self):
+        b = _FakeBooking(status='confirmed', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='paid', amount_paid=600))
+        self.assertTrue(can_check_in(b))
+
+    def test_confirmed_with_legacy_partial_can_check_in(self):
+        """Partial-payment guests can check in; balance can be settled at desk."""
+        b = _FakeBooking(status='confirmed', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='partial', amount_paid=300))
+        self.assertTrue(can_check_in(b))
+
+    def test_confirmed_with_pending_review_cannot_check_in(self):
+        """Slip uploaded but not yet verified — must not let guest in."""
+        b = _FakeBooking(status='confirmed', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='pending_review'))
+        self.assertFalse(can_check_in(b))
+
+    def test_confirmed_with_no_payment_evidence_cannot_check_in(self):
+        b = _FakeBooking(status='confirmed', payment_slip_filename=None,
+                         invoice=_FakeInvoiceFull(payment_status='not_received', amount_paid=0))
+        self.assertFalse(can_check_in(b))
+
+    def test_payment_verified_cannot_check_in_yet(self):
+        """payment_verified is the verify state; admin must Confirm first
+        before check-in."""
+        b = _FakeBooking(status='payment_verified', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+        self.assertFalse(can_check_in(b))
+
+    def test_already_checked_in_cannot_re_check_in(self):
+        b = _FakeBooking(status='checked_in', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+        self.assertFalse(can_check_in(b))
+
+    def test_cancelled_cannot_check_in(self):
+        b = _FakeBooking(status='cancelled', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+        self.assertFalse(can_check_in(b))
+
+    def test_no_invoice_cannot_check_in(self):
+        b = _FakeBooking(status='confirmed', payment_slip_filename='slip.jpg', invoice=None)
+        self.assertFalse(can_check_in(b))
+
+
+class TestCanCheckOut(unittest.TestCase):
+    """can_check_out() — only from checked_in."""
+
+    def test_checked_in_can_check_out(self):
+        self.assertTrue(can_check_out('checked_in'))
+
+    def test_other_states_cannot_check_out(self):
+        for s in ('new_request', 'pending_payment', 'payment_uploaded',
+                  'payment_verified', 'confirmed', 'checked_out',
+                  'cancelled', 'rejected',
+                  'unconfirmed', 'pending_verification'):
+            with self.subTest(status=s):
+                self.assertFalse(can_check_out(s))
+
+    def test_unknown_cannot_check_out(self):
+        self.assertFalse(can_check_out('garbage'))
+        self.assertFalse(can_check_out(None))
+
+
+class TestUserSpecifiedTransitionRequirements(unittest.TestCase):
+    """Direct verification of the user's explicit safety rules."""
+
+    def test_confirmed_plus_not_received_is_invalid_pair(self):
+        """Per user: 'Do not allow confirmed + not_received'."""
+        self.assertFalse(is_valid_status_pair('confirmed', 'not_received'))
+
+    def test_check_in_requires_confirmed(self):
+        """Per user: 'Do not allow check-in unless booking is confirmed.'"""
+        for s in BOOKING_STATUSES:
+            if s == 'confirmed':
+                continue
+            b = _FakeBooking(status=s, payment_slip_filename='slip.jpg',
+                             invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+            with self.subTest(status=s):
+                self.assertFalse(can_check_in(b),
+                                 f'{s!r} must NOT allow check-in (not confirmed)')
+
+    def test_check_out_requires_checked_in(self):
+        """Per user: 'Do not allow check-out unless booking is checked_in.'"""
+        for s in BOOKING_STATUSES:
+            if s == 'checked_in':
+                continue
+            with self.subTest(status=s):
+                self.assertFalse(can_check_out(s),
+                                 f'{s!r} must NOT allow check-out (not checked_in)')
+
+    def test_cancelled_terminal(self):
+        """Per user: 'Cancelled/rejected bookings should not be check-in/check-out/confirmed.'"""
+        b = _FakeBooking(status='cancelled', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600))
+        self.assertFalse(can_confirm_booking(b))
+        self.assertFalse(can_check_in(b))
+        self.assertFalse(can_check_out('cancelled'))
+        self.assertFalse(can_cancel('cancelled'))  # already cancelled
+
+    def test_rejected_terminal(self):
+        b = _FakeBooking(status='rejected', payment_slip_filename='slip.jpg',
+                         invoice=_FakeInvoiceFull(payment_status='rejected'))
+        self.assertFalse(can_confirm_booking(b))
+        self.assertFalse(can_check_in(b))
+        self.assertFalse(can_check_out('rejected'))
+        self.assertFalse(can_cancel('rejected'))
+
+    def test_payment_verification_requires_evidence(self):
+        """Per user: 'Do not allow payment verification if there is no payment evidence.'"""
+        b = _FakeBooking(status='payment_uploaded', payment_slip_filename=None,
+                         invoice=_FakeInvoiceFull(payment_status='pending_review', amount_paid=0))
+        self.assertFalse(can_verify_payment(b))
 
 
 if __name__ == '__main__':

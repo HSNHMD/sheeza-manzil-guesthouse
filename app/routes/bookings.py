@@ -1,10 +1,11 @@
 import random
 import string
 from datetime import datetime, date
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from ..utils import hotel_date
 from flask_login import login_required, current_user
 from ..models import db, Booking, Room, Guest, Invoice
+from ..decorators import admin_required
 from ..services.whatsapp import (
     send_booking_acknowledgment,
     send_booking_confirmation,
@@ -39,20 +40,43 @@ def check_room_availability(room_id, check_in, check_out, exclude_booking_id=Non
 @bookings_bp.route('/')
 @login_required
 def index():
+    # Filter params:
+    #   ?status=...           legacy single-axis filter (kept for back-compat
+    #                         with existing bookmarks; also accepts the magic
+    #                         value 'unpaid' as before)
+    #   ?booking_status=...   new explicit booking-status axis
+    #   ?payment_status=...   new explicit payment-status axis (joins Invoice)
     status_filter = request.args.get('status', '')
+    booking_status_filter = request.args.get('booking_status', '')
+    payment_status_filter = request.args.get('payment_status', '')
     date_filter = request.args.get('date', '')
     search = request.args.get('search', '').strip()
 
     query = Booking.query.join(Guest).join(Room)
 
     if status_filter == 'unpaid':
-        # bookings with no invoice or invoice.payment_status == 'unpaid', active only
+        # Bookings with no invoice or invoice.payment_status indicating
+        # money is still owed, active only. Includes legacy 'unpaid' AND
+        # new-vocab 'not_received'/'pending_review' to catch new submissions.
         query = query.outerjoin(Invoice, Invoice.booking_id == Booking.id).filter(
             Booking.status.in_(['confirmed', 'checked_in']),
-            db.or_(Invoice.id == None, Invoice.payment_status == 'unpaid')
+            db.or_(
+                Invoice.id == None,
+                Invoice.payment_status.in_(['unpaid', 'not_received', 'pending_review']),
+            ),
         )
     elif status_filter:
+        # Legacy single-status filter still works:
         query = query.filter(Booking.status == status_filter)
+
+    if booking_status_filter:
+        query = query.filter(Booking.status == booking_status_filter)
+
+    if payment_status_filter:
+        query = query.outerjoin(Invoice, Invoice.booking_id == Booking.id).filter(
+            Invoice.payment_status == payment_status_filter
+        )
+
     if date_filter:
         filter_date = date.fromisoformat(date_filter)
         query = query.filter(
@@ -82,6 +106,8 @@ def index():
                            departures_today=departures_today,
                            in_house=in_house,
                            status_filter=status_filter,
+                           booking_status_filter=booking_status_filter,
+                           payment_status_filter=payment_status_filter,
                            date_filter=date_filter,
                            search=search,
                            today=today)
@@ -165,14 +191,17 @@ def detail(booking_id):
 
 @bookings_bp.route('/<int:booking_id>/checkin', methods=['POST'])
 @login_required
+@admin_required
 def checkin(booking_id):
+    from ..booking_lifecycle import can_check_in
     booking = Booking.query.get_or_404(booking_id)
-    if booking.status != 'confirmed':
-        flash('Only confirmed bookings can be checked in.', 'error')
-        return redirect(url_for('bookings.detail', booking_id=booking_id))
-
-    if not booking.invoice or booking.invoice.payment_status == 'unpaid':
-        flash('Payment required before check-in. Please record a payment first.', 'error')
+    if not can_check_in(booking):
+        # Provide a precise reason in the flash. Two distinct failure modes:
+        if booking.status != 'confirmed':
+            flash(f'Only confirmed bookings can be checked in (status: {booking.status}).', 'error')
+        else:
+            flash('Payment required before check-in (must be verified or partially recorded). '
+                  'Record a payment or run payment verification first.', 'error')
         return redirect(url_for('bookings.detail', booking_id=booking_id))
 
     booking.status = 'checked_in'
@@ -186,11 +215,13 @@ def checkin(booking_id):
 
 @bookings_bp.route('/<int:booking_id>/checkout', methods=['POST'])
 @login_required
+@admin_required
 def checkout(booking_id):
     from .invoices import generate_invoice
+    from ..booking_lifecycle import can_check_out
     booking = Booking.query.get_or_404(booking_id)
-    if booking.status != 'checked_in':
-        flash('Only checked-in bookings can be checked out.', 'error')
+    if not can_check_out(booking.status):
+        flash(f'Only checked-in bookings can be checked out (status: {booking.status}).', 'error')
         return redirect(url_for('bookings.detail', booking_id=booking_id))
 
     booking.status = 'checked_out'
@@ -293,6 +324,7 @@ def edit(booking_id):
 
 @bookings_bp.route('/<int:booking_id>/confirm', methods=['POST'])
 @login_required
+@admin_required
 def confirm(booking_id):
     """Admin transitions a booking into 'confirmed'.
 
@@ -416,10 +448,12 @@ def delete(booking_id):
 
 @bookings_bp.route('/<int:booking_id>/cancel', methods=['POST'])
 @login_required
+@admin_required
 def cancel(booking_id):
+    from ..booking_lifecycle import can_cancel
     booking = Booking.query.get_or_404(booking_id)
-    if booking.status in ('checked_out', 'cancelled'):
-        flash('Cannot cancel this booking.', 'error')
+    if not can_cancel(booking.status):
+        flash(f'Cannot cancel — booking is already in terminal state ({booking.status}).', 'error')
         return redirect(url_for('bookings.detail', booking_id=booking_id))
 
     booking.status = 'cancelled'
@@ -428,3 +462,109 @@ def cancel(booking_id):
     db.session.commit()
     flash(f'Booking {booking.booking_ref} cancelled.', 'success')
     return redirect(url_for('bookings.index'))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Admin payment-lifecycle actions
+# ─────────────────────────────────────────────────────────────────────────
+# Each action gates on the lifecycle helper to keep state-machine knowledge
+# in one place (app/booking_lifecycle.py). Routes are POST-only and
+# admin-only. They write the new vocabulary into Invoice.payment_status
+# (no auto-mark-paid back-compat shim — these are the new clean paths).
+#
+# TODO(audit): no booking-lifecycle audit log exists yet. For now we use
+#   app.logger.info(...) + flash() messages. When a proper audit/activity
+#   log table lands, replace these calls with append-only audit writes.
+
+@bookings_bp.route('/<int:booking_id>/payment/pending-review', methods=['POST'])
+@login_required
+@admin_required
+def payment_pending_review(booking_id):
+    """Revert a previously-marked mismatch back to pending review.
+    Used when the guest tops up the missing amount or admin re-examines."""
+    from ..booking_lifecycle import can_mark_pending_review
+    booking = Booking.query.get_or_404(booking_id)
+    if not can_mark_pending_review(booking):
+        flash('Cannot mark pending review — only previously-mismatched payments can be re-queued for review.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+    booking.invoice.payment_status = 'pending_review'
+    db.session.commit()
+    current_app.logger.info(
+        '[BookingLifecycle] payment_pending_review on booking_id=%s ref=%s by user_id=%s',
+        booking.id, booking.booking_ref, getattr(current_user, 'id', None),
+    )
+    flash(f'Payment for {booking.booking_ref} marked as pending review.', 'success')
+    return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+
+@bookings_bp.route('/<int:booking_id>/payment/verify', methods=['POST'])
+@login_required
+@admin_required
+def payment_verify(booking_id):
+    """Admin verifies the payment evidence. Transitions:
+        booking.status        → 'payment_verified'
+        invoice.payment_status → 'verified'
+    """
+    from ..booking_lifecycle import can_verify_payment
+    booking = Booking.query.get_or_404(booking_id)
+    if not can_verify_payment(booking):
+        flash('Cannot verify payment — booking must be in payment_uploaded state with a slip on file '
+              '(or legacy pending_verification + slip / amount_paid > 0).', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+    booking.status = 'payment_verified'
+    booking.invoice.payment_status = 'verified'
+    db.session.commit()
+    current_app.logger.info(
+        '[BookingLifecycle] payment_verified on booking_id=%s ref=%s by user_id=%s',
+        booking.id, booking.booking_ref, getattr(current_user, 'id', None),
+    )
+    flash(f'Payment verified for {booking.booking_ref}. Booking is ready to confirm.', 'success')
+    return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+
+@bookings_bp.route('/<int:booking_id>/payment/mismatch', methods=['POST'])
+@login_required
+@admin_required
+def payment_mismatch(booking_id):
+    """Admin flags the payment as amount-mismatched. Booking_status stays
+    at 'payment_uploaded'; admin can later top-up-then-verify or reject."""
+    from ..booking_lifecycle import can_mark_mismatch
+    booking = Booking.query.get_or_404(booking_id)
+    if not can_mark_mismatch(booking):
+        flash('Cannot mark mismatch — booking must be at payment_uploaded with a slip pending review.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+    booking.invoice.payment_status = 'mismatch'
+    db.session.commit()
+    current_app.logger.info(
+        '[BookingLifecycle] payment_mismatch on booking_id=%s ref=%s by user_id=%s',
+        booking.id, booking.booking_ref, getattr(current_user, 'id', None),
+    )
+    flash(f'Payment for {booking.booking_ref} marked as amount mismatch. Guest will need to clarify or top up.', 'warning')
+    return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+
+@bookings_bp.route('/<int:booking_id>/payment/reject', methods=['POST'])
+@login_required
+@admin_required
+def payment_reject(booking_id):
+    """Admin rejects the payment. Transitions:
+        booking.status        → 'rejected'
+        invoice.payment_status → 'rejected'
+    Also releases the room hold."""
+    from ..booking_lifecycle import can_reject_payment
+    booking = Booking.query.get_or_404(booking_id)
+    if not can_reject_payment(booking):
+        flash('Cannot reject payment — booking must be at payment_uploaded with a slip currently '
+              'pending_review or mismatch.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+    booking.status = 'rejected'
+    booking.invoice.payment_status = 'rejected'
+    if booking.room and booking.room.status == 'occupied':
+        booking.room.status = 'available'
+    db.session.commit()
+    current_app.logger.info(
+        '[BookingLifecycle] payment_rejected on booking_id=%s ref=%s by user_id=%s',
+        booking.id, booking.booking_ref, getattr(current_user, 'id', None),
+    )
+    flash(f'Payment for {booking.booking_ref} rejected. Booking marked as rejected.', 'warning')
+    return redirect(url_for('bookings.detail', booking_id=booking_id))

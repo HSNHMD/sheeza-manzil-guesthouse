@@ -253,6 +253,155 @@ def can_confirm_booking(booking, invoice=None) -> bool:
     return _has_payment_evidence(booking, invoice)
 
 
+# ── Admin transition helpers ────────────────────────────────────────────────
+# One predicate per admin-action button, each returning bool. Routes and
+# templates call these instead of hardcoding status tuples — that way the
+# action-visibility logic and the route-precondition logic share a single
+# source of truth.
+
+def can_verify_payment(booking, invoice=None) -> bool:
+    """Admin can mark payment as verified.
+
+    Allowed iff:
+      - booking_status is 'payment_uploaded' OR legacy 'pending_verification'
+      - invoice's payment_status is 'pending_review' or 'mismatch' (admin
+        can verify after fixing a previously-flagged mismatch) — also
+        accepts legacy 'unpaid' for old rows
+      - admin actually has SOMETHING concrete to verify: a payment slip
+        on file, or a recorded amount_paid > 0. Note this is STRICTER
+        than `_has_payment_evidence()` — the broader helper treats
+        `pending_review` as evidence (presumes a slip was uploaded), but
+        for the verify action specifically the admin needs the slip /
+        money record itself, not just the "pending_review" annotation.
+    """
+    if booking is None:
+        return False
+    status = getattr(booking, 'status', None)
+    if status not in ('payment_uploaded', 'pending_verification'):
+        return False
+    if invoice is None:
+        invoice = getattr(booking, 'invoice', None)
+    if invoice is None:
+        # No invoice → only allowed if a slip is on file
+        return bool(getattr(booking, 'payment_slip_filename', None))
+    payment_status = getattr(invoice, 'payment_status', None)
+    if payment_status not in ('pending_review', 'mismatch', 'unpaid'):
+        return False
+    # Stricter evidence: actual slip OR actual recorded payment amount.
+    if getattr(booking, 'payment_slip_filename', None):
+        return True
+    try:
+        amount_paid = float(getattr(invoice, 'amount_paid', 0) or 0)
+    except (TypeError, ValueError):
+        amount_paid = 0.0
+    return amount_paid > 0
+
+
+def can_mark_mismatch(booking, invoice=None) -> bool:
+    """Admin can mark payment as 'amount mismatch'.
+
+    Allowed iff:
+      - booking_status is 'payment_uploaded' (only — mismatch is a review
+        annotation, not a state for already-verified payments)
+      - invoice's payment_status is 'pending_review' (the just-arrived state)
+      - a payment slip is on file
+    """
+    if booking is None:
+        return False
+    if getattr(booking, 'status', None) != 'payment_uploaded':
+        return False
+    if not getattr(booking, 'payment_slip_filename', None):
+        return False
+    if invoice is None:
+        invoice = getattr(booking, 'invoice', None)
+    if invoice is None:
+        return False
+    return getattr(invoice, 'payment_status', None) == 'pending_review'
+
+
+def can_mark_pending_review(booking, invoice=None) -> bool:
+    """Admin can revert a previously-marked mismatch back to pending review.
+
+    Allowed iff:
+      - booking_status is 'payment_uploaded'
+      - invoice's payment_status is 'mismatch' (only — used to undo the
+        mismatch flag once the guest tops up or admin re-examines)
+    """
+    if booking is None:
+        return False
+    if getattr(booking, 'status', None) != 'payment_uploaded':
+        return False
+    if invoice is None:
+        invoice = getattr(booking, 'invoice', None)
+    if invoice is None:
+        return False
+    return getattr(invoice, 'payment_status', None) == 'mismatch'
+
+
+def can_reject_payment(booking, invoice=None) -> bool:
+    """Admin can reject the payment outright.
+
+    Allowed iff:
+      - booking_status is 'payment_uploaded' OR legacy 'pending_verification'
+      - invoice's payment_status is 'pending_review' or 'mismatch'
+        (already-verified or already-rejected payments cannot be re-rejected
+        via this action)
+    """
+    if booking is None:
+        return False
+    if getattr(booking, 'status', None) not in ('payment_uploaded', 'pending_verification'):
+        return False
+    if invoice is None:
+        invoice = getattr(booking, 'invoice', None)
+    if invoice is None:
+        return False
+    return getattr(invoice, 'payment_status', None) in ('pending_review', 'mismatch', 'unpaid')
+
+
+# Statuses from which Cancel is permitted. Already-cancelled, rejected, or
+# checked-out bookings are terminal — cancellation is a no-op or harmful.
+_CANCELLABLE_FROM = frozenset({
+    'new_request', 'pending_payment', 'payment_uploaded', 'payment_verified',
+    'confirmed', 'checked_in',
+    # Legacy values:
+    'unconfirmed', 'pending_verification',
+})
+
+
+def can_cancel(booking_status: Optional[str]) -> bool:
+    """Cancellation is allowed unless the booking is already terminal
+    (cancelled, rejected, or checked_out)."""
+    return booking_status in _CANCELLABLE_FROM
+
+
+def can_check_in(booking, invoice=None) -> bool:
+    """Check-in allowed iff:
+      - booking_status is 'confirmed'
+      - invoice exists with payment_status indicating real money has been
+        received (verified/paid/partial — the legacy and new trust set,
+        EXCLUDING pending_review which is "slip uploaded but not yet verified")
+      - balance_due is allowed to be > 0 (partial-payment guests can still
+        check in; the existing UI already supports recording the rest at
+        front desk)
+    """
+    if booking is None:
+        return False
+    if getattr(booking, 'status', None) != 'confirmed':
+        return False
+    if invoice is None:
+        invoice = getattr(booking, 'invoice', None)
+    if invoice is None:
+        return False
+    payment_status = getattr(invoice, 'payment_status', None)
+    # Trust set for check-in: actually received money, not just "slip uploaded".
+    return payment_status in ('verified', 'paid', 'partial')
+
+
+def can_check_out(booking_status: Optional[str]) -> bool:
+    """Check-out is allowed only from 'checked_in'."""
+    return booking_status == 'checked_in'
+
+
 # ── Validators ──────────────────────────────────────────────────────────────
 
 def is_valid_booking_status(status: Optional[str]) -> bool:
@@ -428,6 +577,13 @@ def register_jinja_helpers(app) -> None:
     app.jinja_env.globals['status_badge'] = get_status_badge_class
     app.jinja_env.globals['can_confirm'] = can_confirm
     app.jinja_env.globals['can_confirm_booking'] = can_confirm_booking
+    app.jinja_env.globals['can_verify_payment'] = can_verify_payment
+    app.jinja_env.globals['can_mark_mismatch'] = can_mark_mismatch
+    app.jinja_env.globals['can_mark_pending_review'] = can_mark_pending_review
+    app.jinja_env.globals['can_reject_payment'] = can_reject_payment
+    app.jinja_env.globals['can_cancel'] = can_cancel
+    app.jinja_env.globals['can_check_in'] = can_check_in
+    app.jinja_env.globals['can_check_out'] = can_check_out
     app.jinja_env.globals['BOOKING_STATUSES'] = BOOKING_STATUSES
     app.jinja_env.globals['PAYMENT_STATUSES'] = PAYMENT_STATUSES
     app.jinja_env.globals['CONFIRMABLE_FROM'] = CONFIRMABLE_FROM
