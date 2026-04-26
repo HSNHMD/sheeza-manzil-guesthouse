@@ -109,6 +109,40 @@ VALID_STATUS_PAIRS: frozenset = frozenset({
 })
 
 
+# ── Transition predecessor sets ─────────────────────────────────────────────
+# Centralizes which booking statuses are valid SOURCE states for each admin
+# transition. Routes and templates should call the helpers below rather than
+# hardcoding the tuples — that way a future status addition only needs to
+# update this module.
+
+# Statuses from which admin "Confirm Booking" is allowed.
+# Includes legacy values ('unconfirmed', 'pending_verification') so existing
+# DB rows submitted before the new vocabulary still confirm correctly.
+# Excludes 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'rejected'
+# — those are post-confirmation or terminal states.
+CONFIRMABLE_FROM: tuple = (
+    # Legacy values still present in production rows:
+    'unconfirmed',
+    'pending_verification',
+    # New-vocabulary pre-confirmation states:
+    'new_request',
+    'pending_payment',
+    'payment_uploaded',
+    'payment_verified',
+)
+
+
+def can_confirm(booking_status: Optional[str]) -> bool:
+    """True iff admin can confirm a booking from this status.
+
+    Pre-confirmation states (new and legacy) are allowed.
+    Post-confirmation and terminal states (confirmed, checked_in,
+    checked_out, cancelled, rejected) are refused.
+    Unknown / None statuses are refused (safe default).
+    """
+    return booking_status in CONFIRMABLE_FROM
+
+
 # ── Validators ──────────────────────────────────────────────────────────────
 
 def is_valid_booking_status(status: Optional[str]) -> bool:
@@ -282,5 +316,7 @@ def register_jinja_helpers(app) -> None:
     """Expose helpers as Jinja globals so templates can call them directly."""
     app.jinja_env.globals['status_label'] = get_status_label
     app.jinja_env.globals['status_badge'] = get_status_badge_class
+    app.jinja_env.globals['can_confirm'] = can_confirm
     app.jinja_env.globals['BOOKING_STATUSES'] = BOOKING_STATUSES
     app.jinja_env.globals['PAYMENT_STATUSES'] = PAYMENT_STATUSES
+    app.jinja_env.globals['CONFIRMABLE_FROM'] = CONFIRMABLE_FROM

@@ -294,14 +294,37 @@ def edit(booking_id):
 @bookings_bp.route('/<int:booking_id>/confirm', methods=['POST'])
 @login_required
 def confirm(booking_id):
+    """Admin transitions a booking into 'confirmed'.
+
+    Allowed source states are centralized in
+    `app.booking_lifecycle.CONFIRMABLE_FROM` and queried via `can_confirm()`.
+    This includes legacy values ('unconfirmed', 'pending_verification') so
+    existing DB rows still confirm correctly, plus the new pre-confirmation
+    vocabulary ('new_request', 'pending_payment', 'payment_uploaded',
+    'payment_verified'). Post-confirmation and terminal states (already
+    confirmed, checked_in, checked_out, cancelled, rejected) are refused.
+    """
     from .invoices import generate_invoice
+    from ..booking_lifecycle import can_confirm
     booking = Booking.query.get_or_404(booking_id)
-    if booking.status not in ('unconfirmed', 'pending_verification'):
-        flash('Only unconfirmed or pending bookings can be confirmed.', 'error')
+    if not can_confirm(booking.status):
+        flash(
+            f'Booking is in status "{booking.status}" — only pre-confirmation '
+            f'states can be confirmed (new_request, pending_payment, '
+            f'payment_uploaded, payment_verified, or legacy unconfirmed/pending_verification).',
+            'error',
+        )
         return redirect(url_for('bookings.detail', booking_id=booking_id))
     booking.status = 'confirmed'
 
-    # Auto-mark payment if guest uploaded a payment slip
+    # Auto-mark payment if guest uploaded a payment slip — legacy behavior preserved.
+    # NOTE on payment_status='paid': this writes the LEGACY value rather than the
+    # new vocabulary 'verified', because 7 accounting queries still filter on
+    # `Invoice.payment_status.in_(['paid', 'partial'])` (see app/routes/accounting.py
+    # and app/routes/invoices.py). Coordinated migration is Phase 2 of the dashboard
+    # plan in docs/admin_dashboard_plan.md. Display layer normalizes 'paid' →
+    # 'verified' transparently via app.booking_lifecycle.normalize_legacy_payment_status,
+    # so badges + labels render correctly regardless.
     if booking.payment_slip_filename:
         if not booking.invoice:
             db.session.flush()

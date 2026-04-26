@@ -24,6 +24,8 @@ from app.booking_lifecycle import (  # noqa: E402
     BOOKING_STATUSES,
     PAYMENT_STATUSES,
     VALID_STATUS_PAIRS,
+    CONFIRMABLE_FROM,
+    can_confirm,
     is_valid_booking_status,
     is_valid_payment_status,
     is_valid_status_pair,
@@ -330,6 +332,73 @@ class TestPartialDerivedFromInvoice(unittest.TestCase):
         # Should not raise:
         label = get_status_label('confirmed', 'verified', BrokenInvoice())
         self.assertIsInstance(label, str)
+
+
+class TestCanConfirm(unittest.TestCase):
+    """can_confirm() — admin Confirm precondition (Phase 0 unblocker).
+
+    Pre-confirmation source states (both legacy and new vocab) must be
+    accepted; post-confirmation and terminal states must be refused.
+    """
+
+    def test_allows_new_vocab_pre_confirmation_states(self):
+        """The four new-vocabulary pre-confirmation states must be confirmable."""
+        for s in ('new_request', 'pending_payment', 'payment_uploaded', 'payment_verified'):
+            with self.subTest(status=s):
+                self.assertTrue(can_confirm(s),
+                                f'{s!r} must be confirmable (new-vocab pre-confirmation state)')
+
+    def test_allows_legacy_pre_confirmation_states(self):
+        """Legacy values still in DB rows must remain confirmable."""
+        for s in ('unconfirmed', 'pending_verification'):
+            with self.subTest(status=s):
+                self.assertTrue(can_confirm(s),
+                                f'{s!r} must be confirmable for backward compat with existing rows')
+
+    def test_blocks_post_confirmation_state(self):
+        """Already-confirmed bookings cannot be re-confirmed."""
+        self.assertFalse(can_confirm('confirmed'))
+
+    def test_blocks_in_house_states(self):
+        """Once a guest is in-house, the booking cannot transition back."""
+        for s in ('checked_in', 'checked_out'):
+            with self.subTest(status=s):
+                self.assertFalse(can_confirm(s),
+                                 f'{s!r} must NOT be confirmable')
+
+    def test_blocks_terminal_states(self):
+        """Cancelled/rejected bookings cannot be confirmed."""
+        for s in ('cancelled', 'rejected'):
+            with self.subTest(status=s):
+                self.assertFalse(can_confirm(s),
+                                 f'{s!r} must NOT be confirmable (terminal state)')
+
+    def test_blocks_unknown_status(self):
+        """Unknown / None / empty must default to refused (safe default)."""
+        self.assertFalse(can_confirm('garbage'))
+        self.assertFalse(can_confirm(None))
+        self.assertFalse(can_confirm(''))
+
+    def test_CONFIRMABLE_FROM_membership_matches_helper(self):
+        """can_confirm(s) must return True iff s is in CONFIRMABLE_FROM."""
+        all_statuses = list(BOOKING_STATUSES) + ['unconfirmed', 'pending_verification']
+        for s in all_statuses:
+            self.assertEqual(can_confirm(s), s in CONFIRMABLE_FROM,
+                             f'mismatch for {s!r}')
+
+    def test_CONFIRMABLE_FROM_excludes_post_confirmation_states(self):
+        """The constant itself must not contain any post-confirmation state."""
+        for s in ('confirmed', 'checked_in', 'checked_out', 'cancelled', 'rejected'):
+            self.assertNotIn(s, CONFIRMABLE_FROM)
+
+    def test_target_pair_after_confirm_is_canonically_valid(self):
+        """The IDEAL post-confirm pair (confirmed, verified) is in VALID_STATUS_PAIRS,
+        even if the route currently writes legacy 'paid' for back-compat with
+        accounting queries."""
+        self.assertTrue(is_valid_status_pair('confirmed', 'verified'))
+        # Legacy 'paid' is NOT a canonical value — the route uses it temporarily
+        # but is_valid_status_pair correctly refuses to bless it:
+        self.assertFalse(is_valid_status_pair('confirmed', 'paid'))
 
 
 if __name__ == '__main__':
