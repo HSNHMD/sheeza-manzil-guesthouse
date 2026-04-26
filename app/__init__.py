@@ -70,27 +70,22 @@ def create_app(config_class=Config):
     def privacy():
         return render_template('privacy.html')
 
+    # Register CLI commands (e.g. `flask admin create`, `flask admin reset-password`).
+    # NOTE: there is intentionally NO automatic admin seeding. The initial admin
+    # must be created explicitly via the CLI — no default credentials anywhere.
+    from .cli import register_cli
+    register_cli(app)
+
     with app.app_context():
         import os
         upload_dir = os.path.join(app.root_path, 'uploads')
         os.makedirs(upload_dir, exist_ok=True)
         try:
-            _seed_admin(app)
             _seed_rooms(app)
         except Exception as e:
-            app.logger.warning('Seeding skipped (tables not ready): %s', e)
+            app.logger.warning('Room seeding skipped (tables not ready): %s', e)
 
     return app
-
-
-def _seed_admin(app):
-    """Create default admin if none exists."""
-    if not User.query.filter_by(role='admin').first():
-        admin = User(username='admin', email='admin@guesthouse.com', role='admin')
-        admin.set_password('admin123')
-        db.session.add(admin)
-        db.session.commit()
-        app.logger.info('Default admin created: admin / admin123')
 
 
 def _seed_rooms(app):
