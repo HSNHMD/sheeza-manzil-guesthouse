@@ -321,5 +321,20 @@
     </form>
     {% endif %}
   </div>
+
+  <!-- Activity timeline (audit log, scoped to this booking) -->
+  {% if activity_entries is defined %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-gray-700">Activity</h2>
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('activity.index', booking_id=booking.id) }}"
+         class="text-xs text-blue-600 hover:underline">View full log</a>
+      {% endif %}
+    </div>
+    {% set entries = activity_entries %}
+    {% include 'activity/_timeline.html' %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

@@ -42,6 +42,7 @@ def create_app(config_class=Config):
     from .routes.public import public_bp
     from .routes.accounting import accounting_bp
     from .routes.staff import staff_bp
+    from .routes.activity import activity_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -53,6 +54,7 @@ def create_app(config_class=Config):
     app.register_blueprint(public_bp)
     app.register_blueprint(accounting_bp)
     app.register_blueprint(staff_bp)
+    app.register_blueprint(activity_bp)
 
     from flask import request, redirect
     from flask_login import current_user
@@ -62,7 +64,8 @@ def create_app(config_class=Config):
         # Only intercept authenticated non-admin (staff) users
         if not current_user.is_authenticated or current_user.is_admin:
             return
-        allowed = ('/staff', '/console', '/appadmin', '/logout', '/static', '/public', '/privacy', '/account')
+        allowed = ('/staff', '/console', '/appadmin', '/logout', '/static',
+                   '/public', '/privacy', '/account', '/admin/activity')
         if not any(request.path == p or request.path.startswith(p + '/') for p in allowed):
             return redirect('/staff/dashboard')
 

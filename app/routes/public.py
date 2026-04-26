@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from ..models import db, Booking, Room, Guest
 from ..routes.invoices import generate_invoice
 from ..routes.bookings import generate_booking_ref
+from ..services.audit import log_activity
 from ..utils import hotel_date
 
 public_bp = Blueprint('public', __name__, url_prefix='')
@@ -167,6 +168,47 @@ def submit():
     # Override invoice's default 'unpaid' to the appropriate new-vocab value
     if booking.invoice is not None:
         booking.invoice.payment_status = invoice_payment_status
+
+    # ── Audit trail (best-effort; never blocks the booking) ──────────────
+    log_activity(
+        'booking.created',
+        actor_type='guest',
+        booking=booking, invoice=booking.invoice,
+        new_value=booking_status,
+        description=f'Guest submitted booking {booking.booking_ref} for room {room.number}.',
+        metadata={
+            'booking_ref': booking.booking_ref,
+            'room_number': room.number,
+            'nights': nights,
+            'total_amount': booking.total_amount,
+            'has_payment_slip': bool(payment_slip_filename),
+            'source': 'public_form',
+        },
+    )
+    log_activity(
+        'file.id_card.uploaded',
+        actor_type='guest',
+        booking=booking, invoice=booking.invoice,
+        description='Guest uploaded ID card / passport.',
+        metadata={
+            'booking_ref': booking.booking_ref,
+            'filename': id_card_filename,
+            'r2_object_id': id_card_drive_id,
+        },
+    )
+    if payment_slip_filename:
+        log_activity(
+            'file.payment_slip.uploaded',
+            actor_type='guest',
+            booking=booking, invoice=booking.invoice,
+            new_value='pending_review',
+            description='Guest uploaded payment slip.',
+            metadata={
+                'booking_ref': booking.booking_ref,
+                'filename': payment_slip_filename,
+                'r2_object_id': payment_slip_drive_id,
+            },
+        )
     db.session.commit()
 
     # WhatsApp: acknowledge to guest + notify staff (non-blocking)

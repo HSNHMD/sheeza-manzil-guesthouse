@@ -210,3 +210,47 @@ class HousekeepingLog(db.Model):
 
     def __repr__(self):
         return f'<HousekeepingLog room={self.room_id} action={self.action}>'
+
+
+# ── Audit / Activity Log (append-only) ─────────────────────────────────────
+# Records important booking/payment/admin lifecycle events. Rows are written
+# only via app.services.audit.log_activity() — no UPDATE or DELETE routes are
+# exposed. See docs/admin_dashboard_plan.md and the helper module for the
+# privacy contract (no secrets, no passport/slip contents, no message bodies).
+class ActivityLog(db.Model):
+    __tablename__ = 'activity_logs'
+
+    id            = db.Column(db.Integer, primary_key=True)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow,
+                              nullable=False, index=True)
+    actor_type    = db.Column(db.String(20), nullable=False)
+    # 'guest' | 'admin' | 'system' | 'ai_agent'
+    actor_user_id = db.Column(db.Integer,
+                              db.ForeignKey('users.id', ondelete='SET NULL'),
+                              nullable=True)
+    booking_id    = db.Column(db.Integer,
+                              db.ForeignKey('bookings.id', ondelete='SET NULL'),
+                              nullable=True)
+    invoice_id    = db.Column(db.Integer,
+                              db.ForeignKey('invoices.id', ondelete='SET NULL'),
+                              nullable=True)
+    action        = db.Column(db.String(64), nullable=False)
+    old_value     = db.Column(db.String(64), nullable=True)
+    new_value     = db.Column(db.String(64), nullable=True)
+    description   = db.Column(db.String(500), nullable=False, default='')
+    metadata_json = db.Column(db.Text, nullable=True)
+    ip_address    = db.Column(db.String(45), nullable=True)   # IPv4 or IPv6
+    user_agent    = db.Column(db.String(255), nullable=True)
+
+    actor   = db.relationship('User', foreign_keys=[actor_user_id])
+    booking = db.relationship('Booking', foreign_keys=[booking_id])
+    invoice = db.relationship('Invoice', foreign_keys=[invoice_id])
+
+    __table_args__ = (
+        db.Index('ix_activity_logs_booking_created', 'booking_id', 'created_at'),
+        db.Index('ix_activity_logs_invoice_created', 'invoice_id', 'created_at'),
+        db.Index('ix_activity_logs_action_created',  'action',     'created_at'),
+    )
+
+    def __repr__(self):
+        return f'<ActivityLog id={self.id} action={self.action}>'

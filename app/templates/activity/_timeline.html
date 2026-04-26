@@ -1,0 +1,62 @@
+{# Reusable activity-timeline partial.
+
+   Required context vars:
+     entries          — iterable of ActivityLog rows (newest first)
+
+   Optional context vars:
+     show_links       — bool; render booking_ref / invoice_number as links
+                        (default True). Set False on the booking/invoice
+                        detail pages to avoid noisy self-links.
+     compact          — bool; if True, drops the metadata blob to keep the
+                        embedded panel small (default True).
+#}
+{% set show_links = show_links if show_links is defined else True %}
+{% set compact    = compact    if compact    is defined else True  %}
+
+{% if entries %}
+<ol class="space-y-3">
+  {% for e in entries %}
+  <li class="border-l-2 border-gray-200 pl-3">
+    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+      <span class="font-mono text-gray-500">
+        {{ e.created_at.strftime('%Y-%m-%d %H:%M') }}
+      </span>
+      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium
+        {% if e.actor_type == 'admin' %}bg-purple-100 text-purple-700
+        {% elif e.actor_type == 'guest' %}bg-blue-100 text-blue-700
+        {% elif e.actor_type == 'ai_agent' %}bg-pink-100 text-pink-700
+        {% else %}bg-gray-100 text-gray-600{% endif %}">
+        {{ e.actor_type }}{% if e.actor and e.actor.username %} · {{ e.actor.username }}{% endif %}
+      </span>
+      <span class="font-semibold text-gray-800">{{ e.action }}</span>
+      {% if e.old_value or e.new_value %}
+      <span class="text-gray-500">
+        {{ e.old_value or '—' }} → <span class="text-gray-800">{{ e.new_value or '—' }}</span>
+      </span>
+      {% endif %}
+    </div>
+    {% if e.description %}
+    <p class="text-sm text-gray-700 mt-1">{{ e.description }}</p>
+    {% endif %}
+    {% if show_links %}
+    <p class="text-[11px] text-gray-400 mt-0.5">
+      {% if e.booking %}
+      <a href="{{ url_for('bookings.detail', booking_id=e.booking_id) }}"
+         class="hover:text-blue-600 hover:underline font-mono">
+        {{ e.booking.booking_ref }}
+      </a>
+      {% endif %}
+      {% if e.invoice %}
+      · <a href="{{ url_for('invoices.detail', invoice_id=e.invoice_id) }}"
+           class="hover:text-blue-600 hover:underline font-mono">
+        {{ e.invoice.invoice_number }}
+      </a>
+      {% endif %}
+    </p>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="text-sm text-gray-400 italic">No activity recorded yet.</p>
+{% endif %}

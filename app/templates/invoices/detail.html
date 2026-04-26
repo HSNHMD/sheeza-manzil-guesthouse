@@ -296,6 +296,20 @@
 </div>
 {% endif %}
 
+{% if activity_entries is defined %}
+<div class="max-w-3xl mx-auto mt-5 bg-white border border-gray-200 rounded-lg p-5 print:hidden">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-semibold text-gray-700">Activity</h2>
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('activity.index', invoice_id=invoice.id) }}"
+       class="text-xs text-blue-600 hover:underline">View full log</a>
+    {% endif %}
+  </div>
+  {% set entries = activity_entries %}
+  {% include 'activity/_timeline.html' %}
+</div>
+{% endif %}
+
 <div class="max-w-3xl mx-auto mt-3 flex gap-3 print:hidden">
   <a href="{{ url_for('bookings.detail', booking_id=invoice.booking_id) }}"
     class="flex-1 text-center border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-2.5 rounded-lg text-sm transition-colors">

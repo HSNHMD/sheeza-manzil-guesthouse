@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% block title %}Activity Log{% endblock %}
+{% block content %}
+<div class="space-y-5">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-xl font-bold text-gray-800">Activity Log</h1>
+      <p class="text-xs text-gray-500 mt-1">
+        Append-only audit trail. Showing newest {{ result_limit }} entries.
+      </p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="flex flex-wrap gap-2 items-end">
+    <div>
+      <label class="block text-[11px] font-medium text-gray-500 mb-1">Booking ID</label>
+      <input type="number" name="booking_id" value="{{ booking_id or '' }}"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="block text-[11px] font-medium text-gray-500 mb-1">Invoice ID</label>
+      <input type="number" name="invoice_id" value="{{ invoice_id or '' }}"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="block text-[11px] font-medium text-gray-500 mb-1">Action</label>
+      <input type="text" name="action" value="{{ action_filter }}"
+        placeholder="e.g. payment.verified"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="block text-[11px] font-medium text-gray-500 mb-1">Actor</label>
+      <select name="actor_type"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">All</option>
+        <option value="admin"    {% if actor_type_filter == 'admin'    %}selected{% endif %}>admin</option>
+        <option value="guest"    {% if actor_type_filter == 'guest'    %}selected{% endif %}>guest</option>
+        <option value="system"   {% if actor_type_filter == 'system'   %}selected{% endif %}>system</option>
+        <option value="ai_agent" {% if actor_type_filter == 'ai_agent' %}selected{% endif %}>ai_agent</option>
+      </select>
+    </div>
+    <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+      Filter
+    </button>
+    {% if booking_id or invoice_id or action_filter or actor_type_filter %}
+    <a href="{{ url_for('activity.index') }}"
+       class="px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- Results -->
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    {% if entries %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Time</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Actor</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Action</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Description</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Old → New</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-600">Refs</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for e in entries %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">
+              {{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+            </td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-0.5 rounded-full text-xs font-medium
+                {% if e.actor_type == 'admin' %}bg-purple-100 text-purple-700
+                {% elif e.actor_type == 'guest' %}bg-blue-100 text-blue-700
+                {% elif e.actor_type == 'ai_agent' %}bg-pink-100 text-pink-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                {{ e.actor_type }}
+              </span>
+              {% if e.actor and e.actor.username %}
+              <span class="text-xs text-gray-500 ml-1">{{ e.actor.username }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 font-mono text-xs text-gray-800">{{ e.action }}</td>
+            <td class="px-4 py-3 text-gray-700 hidden md:table-cell">{{ e.description }}</td>
+            <td class="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell whitespace-nowrap">
+              {% if e.old_value or e.new_value %}
+              {{ e.old_value or '—' }} → {{ e.new_value or '—' }}
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-xs whitespace-nowrap">
+              {% if e.booking %}
+              <a href="{{ url_for('bookings.detail', booking_id=e.booking_id) }}"
+                 class="text-blue-600 hover:underline font-mono">{{ e.booking.booking_ref }}</a>
+              {% endif %}
+              {% if e.invoice %}
+              {% if e.booking %}<br>{% endif %}
+              <a href="{{ url_for('invoices.detail', invoice_id=e.invoice_id) }}"
+                 class="text-blue-600 hover:underline font-mono">{{ e.invoice.invoice_number }}</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-12 text-center">
+      <p class="text-gray-400">No activity entries match these filters.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

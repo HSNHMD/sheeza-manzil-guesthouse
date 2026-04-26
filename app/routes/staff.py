@@ -22,6 +22,7 @@ from flask import (Blueprint, render_template, redirect, url_for,
                    flash, request, jsonify)
 from flask_login import logout_user, login_required, current_user
 from ..models import db, User, Room, Booking, Guest, Invoice
+from ..services.audit import log_activity
 from ..utils import hotel_date
 from ..services.whatsapp import send_checkin_reminder, send_checkout_invoice_summary
 
@@ -135,8 +136,31 @@ def do_checkin(room_id):
             amount_paid=total if payment_status == 'paid' else 0.0,
         )
         db.session.add(invoice)
+        db.session.flush()
 
         room.status = 'occupied'
+        log_activity(
+            'booking.created',
+            booking=booking, invoice=invoice,
+            new_value='checked_in',
+            description=f'Walk-in {booking.booking_ref} created and checked in to room {room.number}.',
+            metadata={
+                'booking_ref': booking.booking_ref,
+                'invoice_number': invoice.invoice_number,
+                'room_number': room.number,
+                'nights': nights,
+                'total_amount': total,
+                'payment_status': payment_status,
+                'source': 'staff_walkin',
+            },
+        )
+        log_activity(
+            'booking.checked_in',
+            booking=booking, invoice=invoice,
+            new_value='checked_in',
+            description=f'Walk-in checked in to room {room.number}.',
+            metadata={'booking_ref': booking.booking_ref, 'room_number': room.number},
+        )
         db.session.commit()
 
     except Exception:
@@ -164,10 +188,18 @@ def do_checkout(room_id):
     if not booking:
         return jsonify(success=False, error='No checked-in booking found for this room.')
 
+    prev_status = booking.status
     booking.status = 'checked_out'
     booking.actual_check_out = datetime.utcnow()
     room.status = 'cleaning'
     room.housekeeping_status = 'dirty'
+    log_activity(
+        'booking.checked_out',
+        booking=booking, invoice=booking.invoice,
+        old_value=prev_status, new_value='checked_out',
+        description=f'Guest checked out of room {room.number}.',
+        metadata={'booking_ref': booking.booking_ref, 'room_number': room.number},
+    )
     db.session.commit()
 
     try:
@@ -269,10 +301,18 @@ def checkout(room_id):
     if not booking:
         return jsonify(success=False, error='No checked-in booking found for this room.')
 
+    prev_status = booking.status
     booking.status = 'checked_out'
     booking.actual_check_out = datetime.utcnow()
     room.status = 'cleaning'
     room.housekeeping_status = 'dirty'
+    log_activity(
+        'booking.checked_out',
+        booking=booking, invoice=booking.invoice,
+        old_value=prev_status, new_value='checked_out',
+        description=f'Guest checked out of room {room.number}.',
+        metadata={'booking_ref': booking.booking_ref, 'room_number': room.number},
+    )
     db.session.commit()
 
     try:

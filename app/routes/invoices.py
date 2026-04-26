@@ -4,6 +4,7 @@ from datetime import date
 from flask import Blueprint, render_template, redirect, url_for, flash, request, make_response
 from flask_login import login_required, current_user
 from ..models import db, Invoice, Booking
+from ..services.audit import log_activity
 from ..utils import hotel_date
 from ..booking_lifecycle import OUTSTANDING_PAYMENT_STATUSES
 
@@ -41,6 +42,18 @@ def generate_invoice(booking, invoice_to=None, company_name=None, billing_addres
         billing_address=billing_address or None,
     )
     db.session.add(invoice)
+    db.session.flush()  # ensure invoice.id is available for the audit row
+    log_activity(
+        'invoice.created',
+        booking=booking, invoice=invoice,
+        new_value='unpaid',
+        description=f'Invoice {invoice.invoice_number} generated for booking {booking.booking_ref}.',
+        metadata={
+            'booking_ref': booking.booking_ref,
+            'invoice_number': invoice.invoice_number,
+            'total_amount': total,
+        },
+    )
     return invoice
 
 
@@ -77,8 +90,21 @@ def index():
 @invoices_bp.route('/<int:invoice_id>')
 @login_required
 def detail(invoice_id):
+    from ..models import ActivityLog
     invoice = Invoice.query.get_or_404(invoice_id)
-    return render_template('invoices/detail.html', invoice=invoice)
+    activity_entries = (
+        ActivityLog.query
+        .filter(db.or_(
+            ActivityLog.invoice_id == invoice.id,
+            ActivityLog.booking_id == invoice.booking_id,
+        ))
+        .order_by(ActivityLog.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return render_template('invoices/detail.html',
+                           invoice=invoice,
+                           activity_entries=activity_entries)
 
 
 @invoices_bp.route('/<int:invoice_id>/pdf')
@@ -122,6 +148,7 @@ def record_payment(invoice_id):
     amount = float(request.form.get('amount', 0))
     method = request.form.get('payment_method', 'cash')
 
+    prev_payment_status = invoice.payment_status
     invoice.amount_paid = min(invoice.amount_paid + amount, invoice.total_amount)
     invoice.payment_method = method
 
@@ -130,6 +157,18 @@ def record_payment(invoice_id):
     elif invoice.amount_paid > 0:
         invoice.payment_status = 'partial'
 
+    log_activity(
+        'invoice.payment_recorded',
+        booking=invoice.booking, invoice=invoice,
+        old_value=prev_payment_status, new_value=invoice.payment_status,
+        description=f'Payment of MVR {amount:.0f} recorded on invoice {invoice.invoice_number}.',
+        metadata={
+            'invoice_number': invoice.invoice_number,
+            'amount': amount,
+            'method': method,
+            'amount_paid_total': invoice.amount_paid,
+        },
+    )
     db.session.commit()
     flash(f'Payment of {amount:.2f} recorded. Status: {invoice.payment_status}.', 'success')
     return redirect(url_for('invoices.detail', invoice_id=invoice_id))
