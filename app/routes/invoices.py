@@ -5,6 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from ..models import db, Invoice, Booking
 from ..utils import hotel_date
+from ..booking_lifecycle import OUTSTANDING_PAYMENT_STATUSES
 
 invoices_bp = Blueprint('invoices', __name__, url_prefix='/invoices')
 
@@ -62,8 +63,11 @@ def index():
         )
 
     invoices = query.order_by(Invoice.created_at.desc()).all()
+    # Outstanding sum spans both legacy (unpaid/partial) and new vocab
+    # (not_received/pending_review) so admins see all owed money — see
+    # app.booking_lifecycle.OUTSTANDING_PAYMENT_STATUSES for the canonical list.
     total_outstanding = sum(i.balance_due for i in Invoice.query.filter(
-        Invoice.payment_status.in_(['unpaid', 'partial'])).all())
+        Invoice.payment_status.in_(OUTSTANDING_PAYMENT_STATUSES)).all())
 
     return render_template('invoices/index.html', invoices=invoices,
                            status_filter=status_filter, search=search,

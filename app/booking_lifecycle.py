@@ -162,6 +162,38 @@ _PAYMENT_EVIDENCE_STATUSES = frozenset({
     'pending_review',
 })
 
+# Payment_status values that count as REVENUE-BEARING — i.e. real money has
+# been received and trusted. Used by accounting filters that sum revenue,
+# generate P&L / tax / reconciliation reports, or export financial data.
+#
+# Includes:
+#   - 'paid'    (legacy: full payment received)
+#   - 'partial' (legacy: some payment received; balance is outstanding too,
+#                so this value also appears in OUTSTANDING_PAYMENT_STATUSES)
+#   - 'verified'(new vocab: admin verified payment evidence)
+#
+# Does NOT include:
+#   - 'rejected' / 'mismatch' — payment is bad, not revenue
+#   - 'pending_review'         — slip uploaded but not yet trusted
+#   - 'not_received' / 'unpaid' — no payment yet
+REVENUE_PAYMENT_STATUSES = ('paid', 'partial', 'verified')
+
+# Payment_status values that count as OUTSTANDING — money is still owed.
+# Used by receivables/outstanding queries.
+#
+# Includes:
+#   - 'unpaid'         (legacy: nothing paid yet)
+#   - 'partial'        (legacy: balance still due)
+#   - 'not_received'   (new vocab: equivalent to unpaid)
+#   - 'pending_review' (new vocab: slip on file but not trusted yet — money
+#                       hasn't been booked as revenue)
+#
+# Does NOT include:
+#   - 'paid' / 'verified' — fully paid
+#   - 'rejected' / 'mismatch' — bad payments; the booking is presumed
+#                               cancelled or being re-handled, not "owed"
+OUTSTANDING_PAYMENT_STATUSES = ('unpaid', 'partial', 'not_received', 'pending_review')
+
 # Payment_status values that explicitly mean the payment is bad — admin
 # must NEVER confirm a booking while in one of these states.
 _PAYMENT_BAD_STATUSES = frozenset({

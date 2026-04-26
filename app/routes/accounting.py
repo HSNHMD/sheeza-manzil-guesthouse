@@ -14,6 +14,7 @@ from werkzeug.utils import secure_filename
 
 from ..models import db, Booking, Invoice, Expense, BankTransaction, EXPENSE_CATEGORIES
 from ..utils import hotel_date
+from ..booking_lifecycle import REVENUE_PAYMENT_STATUSES, OUTSTANDING_PAYMENT_STATUSES
 
 accounting_bp = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -54,7 +55,7 @@ def _month_revenue(year, month):
     start = date(year, month, 1)
     end = date(year, month, monthrange(year, month)[1])
     return db.session.query(db.func.coalesce(db.func.sum(Invoice.amount_paid), 0)).join(Booking).filter(
-        Invoice.payment_status.in_(['paid', 'partial']),
+        Invoice.payment_status.in_(REVENUE_PAYMENT_STATUSES),
         Booking.check_in_date >= start,
         Booking.check_in_date <= end,
     ).scalar()
@@ -149,7 +150,7 @@ def dashboard():
 
     # Outstanding invoices
     outstanding = Invoice.query.filter(
-        Invoice.payment_status.in_(['unpaid', 'partial'])
+        Invoice.payment_status.in_(OUTSTANDING_PAYMENT_STATUSES)
     ).join(Booking).order_by(Invoice.created_at.desc()).all()
     outstanding_total = sum(i.balance_due for i in outstanding)
 
@@ -368,7 +369,7 @@ def upload_reconciliation():
             inv = Invoice.query.filter(
                 Invoice.issue_date == check_date,
                 db.func.abs(Invoice.amount_paid - amount) < 0.01,
-                Invoice.payment_status.in_(['paid', 'partial']),
+                Invoice.payment_status.in_(REVENUE_PAYMENT_STATUSES),
             ).first()
             if inv:
                 match_type = 'invoice'
@@ -428,7 +429,7 @@ def pl():
     revenue = float(db.session.query(
         db.func.coalesce(db.func.sum(Invoice.amount_paid), 0)
     ).join(Booking).filter(
-        Invoice.payment_status.in_(['paid', 'partial']),
+        Invoice.payment_status.in_(REVENUE_PAYMENT_STATUSES),
         Booking.check_in_date >= start,
         Booking.check_in_date <= end,
     ).scalar())
@@ -490,7 +491,7 @@ def tax():
     total_collected = float(db.session.query(
         db.func.coalesce(db.func.sum(Invoice.amount_paid), 0)
     ).join(Booking).filter(
-        Invoice.payment_status.in_(['paid', 'partial']),
+        Invoice.payment_status.in_(REVENUE_PAYMENT_STATUSES),
         Booking.check_in_date >= start,
         Booking.check_in_date <= end,
     ).scalar())
@@ -557,7 +558,7 @@ def export_pdf():
     revenue = float(db.session.query(
         db.func.coalesce(db.func.sum(Invoice.amount_paid), 0)
     ).join(Booking).filter(
-        Invoice.payment_status.in_(['paid', 'partial']),
+        Invoice.payment_status.in_(REVENUE_PAYMENT_STATUSES),
         Booking.check_in_date >= start,
         Booking.check_in_date <= end,
     ).scalar())

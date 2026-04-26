@@ -25,6 +25,8 @@ from app.booking_lifecycle import (  # noqa: E402
     PAYMENT_STATUSES,
     VALID_STATUS_PAIRS,
     CONFIRMABLE_FROM,
+    REVENUE_PAYMENT_STATUSES,
+    OUTSTANDING_PAYMENT_STATUSES,
     can_confirm,
     can_confirm_booking,
     can_verify_payment,
@@ -907,6 +909,129 @@ class TestUserSpecifiedTransitionRequirements(unittest.TestCase):
         b = _FakeBooking(status='payment_uploaded', payment_slip_filename=None,
                          invoice=_FakeInvoiceFull(payment_status='pending_review', amount_paid=0))
         self.assertFalse(can_verify_payment(b))
+
+
+class TestRevenueAndOutstandingFilterMembership(unittest.TestCase):
+    """REVENUE_PAYMENT_STATUSES and OUTSTANDING_PAYMENT_STATUSES are the
+    single source of truth for the accounting/invoice query filters.
+    These tests guard against regressions where a future code change drops
+    one of the values from the lists, silently breaking revenue reports."""
+
+    # ── Revenue filter membership ───────────────────────────────────────────
+    def test_legacy_paid_in_revenue(self):
+        """Old DB rows with payment_status='paid' must still count as revenue."""
+        self.assertIn('paid', REVENUE_PAYMENT_STATUSES)
+
+    def test_legacy_partial_in_revenue(self):
+        """Partial payments contribute to revenue (the part received)."""
+        self.assertIn('partial', REVENUE_PAYMENT_STATUSES)
+
+    def test_new_verified_in_revenue(self):
+        """The post-fix headline check: invoices marked 'verified' by the
+        new admin Verify Payment button MUST appear in revenue reports."""
+        self.assertIn('verified', REVENUE_PAYMENT_STATUSES)
+
+    def test_revenue_excludes_unpaid_and_not_received(self):
+        """No money received yet → not revenue."""
+        self.assertNotIn('unpaid',       REVENUE_PAYMENT_STATUSES)
+        self.assertNotIn('not_received', REVENUE_PAYMENT_STATUSES)
+
+    def test_revenue_excludes_pending_review(self):
+        """Slip uploaded but not yet verified → not revenue (only trusted
+        payments count)."""
+        self.assertNotIn('pending_review', REVENUE_PAYMENT_STATUSES)
+
+    def test_revenue_excludes_rejected_and_mismatch(self):
+        """Bad payments → not revenue."""
+        self.assertNotIn('rejected', REVENUE_PAYMENT_STATUSES)
+        self.assertNotIn('mismatch', REVENUE_PAYMENT_STATUSES)
+
+    # ── Outstanding filter membership ───────────────────────────────────────
+    def test_legacy_unpaid_in_outstanding(self):
+        """Old DB rows with payment_status='unpaid' must still appear in
+        outstanding/receivables reports."""
+        self.assertIn('unpaid', OUTSTANDING_PAYMENT_STATUSES)
+
+    def test_legacy_partial_in_outstanding(self):
+        """Partial payments still have a balance owing."""
+        self.assertIn('partial', OUTSTANDING_PAYMENT_STATUSES)
+
+    def test_new_not_received_in_outstanding(self):
+        """New-vocab equivalent of 'unpaid' must be visible to admins."""
+        self.assertIn('not_received', OUTSTANDING_PAYMENT_STATUSES)
+
+    def test_new_pending_review_in_outstanding(self):
+        """Slip-uploaded-but-not-yet-verified counts as outstanding because
+        the money has not been booked as received."""
+        self.assertIn('pending_review', OUTSTANDING_PAYMENT_STATUSES)
+
+    def test_outstanding_excludes_paid_and_verified(self):
+        """Fully paid → not outstanding."""
+        self.assertNotIn('paid',     OUTSTANDING_PAYMENT_STATUSES)
+        self.assertNotIn('verified', OUTSTANDING_PAYMENT_STATUSES)
+
+    def test_outstanding_excludes_rejected_and_mismatch(self):
+        """Bad payments are not 'owed' — they're problematic. Booking is
+        presumed cancelled or in re-handling, not on the outstanding list."""
+        self.assertNotIn('rejected', OUTSTANDING_PAYMENT_STATUSES)
+        self.assertNotIn('mismatch', OUTSTANDING_PAYMENT_STATUSES)
+
+    # ── Cross-list invariants ──────────────────────────────────────────────
+    def test_partial_appears_in_both_lists(self):
+        """Partial is the only value that's BOTH revenue (some money received)
+        AND outstanding (balance still due) — this is a deliberate overlap."""
+        self.assertIn('partial', REVENUE_PAYMENT_STATUSES)
+        self.assertIn('partial', OUTSTANDING_PAYMENT_STATUSES)
+
+    def test_paid_and_verified_never_outstanding(self):
+        """A fully-paid (paid/verified) invoice can never be both fully paid
+        AND outstanding — those values must NOT be in the outstanding list."""
+        self.assertNotIn('paid',     OUTSTANDING_PAYMENT_STATUSES)
+        self.assertNotIn('verified', OUTSTANDING_PAYMENT_STATUSES)
+
+    def test_unpaid_and_not_received_never_revenue(self):
+        """No-money-received states can never be revenue."""
+        self.assertNotIn('unpaid',       REVENUE_PAYMENT_STATUSES)
+        self.assertNotIn('not_received', REVENUE_PAYMENT_STATUSES)
+
+
+class TestQuerySitesUseConstants(unittest.TestCase):
+    """Defensive: the source files that hold accounting/invoice queries
+    must import and reference the canonical constants — not hardcode the
+    legacy literal lists. Catches regressions where a developer reverts
+    or duplicates a filter literal somewhere."""
+
+    def _read(self, relpath):
+        with open(os.path.join(_PROJECT_ROOT, relpath)) as f:
+            return f.read()
+
+    def test_accounting_imports_constants(self):
+        src = self._read('app/routes/accounting.py')
+        self.assertIn('REVENUE_PAYMENT_STATUSES', src,
+                      'accounting.py must import REVENUE_PAYMENT_STATUSES')
+        self.assertIn('OUTSTANDING_PAYMENT_STATUSES', src,
+                      'accounting.py must import OUTSTANDING_PAYMENT_STATUSES')
+
+    def test_invoices_imports_outstanding_constant(self):
+        src = self._read('app/routes/invoices.py')
+        self.assertIn('OUTSTANDING_PAYMENT_STATUSES', src,
+                      'invoices.py must import OUTSTANDING_PAYMENT_STATUSES')
+
+    def test_no_hardcoded_paid_partial_filter_in_accounting(self):
+        """Defensive: no remaining literal `['paid', 'partial']` filter."""
+        src = self._read('app/routes/accounting.py')
+        self.assertNotIn("['paid', 'partial']", src,
+                         'accounting.py should use REVENUE_PAYMENT_STATUSES, not literal list')
+
+    def test_no_hardcoded_unpaid_partial_filter_in_accounting(self):
+        src = self._read('app/routes/accounting.py')
+        self.assertNotIn("['unpaid', 'partial']", src,
+                         'accounting.py should use OUTSTANDING_PAYMENT_STATUSES, not literal list')
+
+    def test_no_hardcoded_unpaid_partial_filter_in_invoices(self):
+        src = self._read('app/routes/invoices.py')
+        self.assertNotIn("['unpaid', 'partial']", src,
+                         'invoices.py should use OUTSTANDING_PAYMENT_STATUSES, not literal list')
 
 
 if __name__ == '__main__':
