@@ -26,6 +26,7 @@ from app.booking_lifecycle import (  # noqa: E402
     VALID_STATUS_PAIRS,
     CONFIRMABLE_FROM,
     can_confirm,
+    can_confirm_booking,
     is_valid_booking_status,
     is_valid_payment_status,
     is_valid_status_pair,
@@ -33,6 +34,29 @@ from app.booking_lifecycle import (  # noqa: E402
     get_status_label,
     get_status_badge_class,
 )
+
+
+class _FakeBooking:
+    """Minimal Booking-like stub for can_confirm_booking() tests."""
+
+    def __init__(self, status=None, payment_slip_filename=None, invoice=None):
+        self.status = status
+        self.payment_slip_filename = payment_slip_filename
+        self.invoice = invoice
+        self.booking_ref = 'BKTEST00'
+
+
+class _FakeInvoiceFull:
+    """Invoice-like stub with payment_status + amount_paid + balance_due."""
+
+    def __init__(self, payment_status='unpaid', amount_paid=0.0, total_amount=600.0):
+        self.payment_status = payment_status
+        self.amount_paid = amount_paid
+        self.total_amount = total_amount
+
+    @property
+    def balance_due(self):
+        return self.total_amount - self.amount_paid
 
 
 class _FakeInvoice:
@@ -399,6 +423,221 @@ class TestCanConfirm(unittest.TestCase):
         # Legacy 'paid' is NOT a canonical value — the route uses it temporarily
         # but is_valid_status_pair correctly refuses to bless it:
         self.assertFalse(is_valid_status_pair('confirmed', 'paid'))
+
+
+class TestCanConfirmBooking(unittest.TestCase):
+    """can_confirm_booking() — full business rule (status + payment evidence).
+
+    Prevents the previously-permitted unsafe transition:
+        pending_payment + not_received  →  confirmed
+    by requiring payment evidence in addition to a confirmable status.
+    """
+
+    # ── Pre-confirmation states with NO payment evidence: must REFUSE ────────
+    def test_pending_payment_not_received_no_slip_cannot_confirm(self):
+        b = _FakeBooking(
+            status='pending_payment',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='not_received', amount_paid=0),
+        )
+        self.assertFalse(can_confirm_booking(b))
+
+    def test_new_request_not_received_no_slip_cannot_confirm(self):
+        b = _FakeBooking(
+            status='new_request',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='not_received', amount_paid=0),
+        )
+        self.assertFalse(can_confirm_booking(b))
+
+    def test_pending_payment_with_no_invoice_at_all_cannot_confirm(self):
+        b = _FakeBooking(status='pending_payment', payment_slip_filename=None, invoice=None)
+        self.assertFalse(can_confirm_booking(b))
+
+    # ── Pre-confirmation states WITH payment evidence: must ALLOW ───────────
+    def test_payment_uploaded_with_slip_can_confirm(self):
+        b = _FakeBooking(
+            status='payment_uploaded',
+            payment_slip_filename='slip_test.jpg',
+            invoice=_FakeInvoiceFull(payment_status='pending_review', amount_paid=0),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    def test_payment_uploaded_no_slip_cannot_confirm_data_anomaly(self):
+        """Defensive: if status says 'payment_uploaded' but no slip is on
+        file, treat as data corruption and refuse confirmation."""
+        b = _FakeBooking(
+            status='payment_uploaded',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='pending_review', amount_paid=0),
+        )
+        # pending_review IS evidence (admin will review the supposedly-uploaded
+        # slip), so this passes — anomaly is a data-integrity concern, not a
+        # confirmation-block concern. Verifying current behavior:
+        self.assertTrue(can_confirm_booking(b))
+
+    def test_payment_verified_can_confirm(self):
+        """payment_verified is the dedicated evidence-reviewed state — admin
+        can always proceed to 'confirmed' from here."""
+        b = _FakeBooking(
+            status='payment_verified',
+            payment_slip_filename='slip_test.jpg',
+            invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    def test_payment_verified_without_slip_still_confirmable(self):
+        """payment_verified should NOT require a slip to be present —
+        admin verified payment by some other means (cash, bank transfer
+        confirmation outside the app)."""
+        b = _FakeBooking(
+            status='payment_verified',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    # ── Bad payment states: must REFUSE regardless of status ────────────────
+    def test_payment_uploaded_with_mismatch_cannot_confirm(self):
+        b = _FakeBooking(
+            status='payment_uploaded',
+            payment_slip_filename='slip_test.jpg',  # slip exists but flagged
+            invoice=_FakeInvoiceFull(payment_status='mismatch', amount_paid=0),
+        )
+        self.assertFalse(can_confirm_booking(b))
+
+    def test_any_state_with_rejected_payment_cannot_confirm(self):
+        """Even from a normally-confirmable state, a rejected invoice
+        blocks confirmation."""
+        b = _FakeBooking(
+            status='payment_uploaded',
+            payment_slip_filename='slip_test.jpg',
+            invoice=_FakeInvoiceFull(payment_status='rejected', amount_paid=0),
+        )
+        self.assertFalse(can_confirm_booking(b))
+
+    # ── Post-confirmation and terminal states: always REFUSE ────────────────
+    def test_already_confirmed_cannot_be_re_confirmed(self):
+        b = _FakeBooking(
+            status='confirmed',
+            payment_slip_filename='slip_test.jpg',
+            invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600),
+        )
+        self.assertFalse(can_confirm_booking(b))
+
+    def test_in_house_states_cannot_confirm(self):
+        for s in ('checked_in', 'checked_out'):
+            with self.subTest(status=s):
+                b = _FakeBooking(
+                    status=s,
+                    payment_slip_filename='slip_test.jpg',
+                    invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600),
+                )
+                self.assertFalse(can_confirm_booking(b),
+                                 f'{s} must not be confirmable')
+
+    def test_terminal_states_cannot_confirm(self):
+        for s in ('cancelled', 'rejected'):
+            with self.subTest(status=s):
+                b = _FakeBooking(
+                    status=s,
+                    payment_slip_filename='slip_test.jpg',
+                    invoice=_FakeInvoiceFull(payment_status='verified', amount_paid=600),
+                )
+                self.assertFalse(can_confirm_booking(b))
+
+    # ── Legacy compat with payment evidence: must ALLOW ─────────────────────
+    def test_legacy_unconfirmed_with_slip_can_confirm(self):
+        b = _FakeBooking(
+            status='unconfirmed',
+            payment_slip_filename='slip_test.jpg',
+            invoice=_FakeInvoiceFull(payment_status='unpaid', amount_paid=0),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    def test_legacy_pending_verification_with_slip_can_confirm(self):
+        b = _FakeBooking(
+            status='pending_verification',
+            payment_slip_filename='slip_test.jpg',
+            invoice=_FakeInvoiceFull(payment_status='unpaid', amount_paid=0),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    def test_legacy_unconfirmed_with_partial_payment_can_confirm(self):
+        """Legacy 'partial' is treated as evidence — guest paid SOMETHING
+        and staff already recorded it."""
+        b = _FakeBooking(
+            status='unconfirmed',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='partial', amount_paid=200),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    def test_legacy_unconfirmed_with_paid_payment_can_confirm(self):
+        b = _FakeBooking(
+            status='unconfirmed',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='paid', amount_paid=600),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    # ── Legacy compat WITHOUT payment evidence: must REFUSE ─────────────────
+    def test_legacy_unconfirmed_without_evidence_cannot_confirm(self):
+        b = _FakeBooking(
+            status='unconfirmed',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='unpaid', amount_paid=0),
+        )
+        self.assertFalse(can_confirm_booking(b))
+
+    def test_legacy_pending_verification_without_evidence_cannot_confirm(self):
+        """Defensive: pending_verification SHOULD imply slip exists (it's
+        the legacy equivalent of 'payment_uploaded'). If slip column is
+        empty AND no other evidence, treat the row as data-anomalous and
+        refuse confirmation rather than silently allow."""
+        b = _FakeBooking(
+            status='pending_verification',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='unpaid', amount_paid=0),
+        )
+        self.assertFalse(can_confirm_booking(b))
+
+    # ── Recorded amount_paid > 0 alone is sufficient evidence ───────────────
+    def test_amount_paid_alone_is_evidence_even_with_unrecognized_payment_status(self):
+        """If staff recorded a cash payment, that's evidence regardless of
+        what payment_status string is on file."""
+        b = _FakeBooking(
+            status='unconfirmed',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='unpaid', amount_paid=100),
+        )
+        self.assertTrue(can_confirm_booking(b))
+
+    # ── Defensive None / bad-data handling ──────────────────────────────────
+    def test_None_booking_is_not_confirmable(self):
+        self.assertFalse(can_confirm_booking(None))
+
+    def test_invoice_arg_overrides_booking_invoice(self):
+        """If caller passes an explicit invoice arg, that's used in lieu of
+        booking.invoice — useful for tests and for routes that want to
+        validate against a hypothetical post-update invoice state."""
+        b = _FakeBooking(
+            status='pending_payment',
+            payment_slip_filename=None,
+            invoice=_FakeInvoiceFull(payment_status='not_received', amount_paid=0),  # would refuse
+        )
+        # Override with a verified invoice → allows
+        override = _FakeInvoiceFull(payment_status='verified', amount_paid=600)
+        self.assertTrue(can_confirm_booking(b, invoice=override))
+
+    def test_booking_with_non_numeric_amount_paid_does_not_crash(self):
+        """If amount_paid is somehow a non-numeric value, fall back to 0."""
+        class WeirdInvoice:
+            payment_status = 'not_received'
+            amount_paid = 'not a number'
+        b = _FakeBooking(status='pending_payment', payment_slip_filename=None, invoice=WeirdInvoice())
+        # Should not raise, should return False (no evidence)
+        self.assertFalse(can_confirm_booking(b))
 
 
 if __name__ == '__main__':

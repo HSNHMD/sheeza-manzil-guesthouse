@@ -139,8 +139,118 @@ def can_confirm(booking_status: Optional[str]) -> bool:
     Post-confirmation and terminal states (confirmed, checked_in,
     checked_out, cancelled, rejected) are refused.
     Unknown / None statuses are refused (safe default).
+
+    NOTE: this is a STATUS-ONLY check. For the full business rule that
+    also requires payment evidence before confirmation, use
+    `can_confirm_booking(booking, invoice=None)` instead — most callers
+    (the /bookings/<id>/confirm route + the Confirm button visibility)
+    should use the safer helper.
     """
     return booking_status in CONFIRMABLE_FROM
+
+
+# Payment_status values that count as evidence of a real payment having
+# been received by the business — not just "guest claims to have paid".
+# 'verified' is the new-vocab canonical; 'paid'/'partial' are legacy values
+# still present in production rows; 'pending_review' is also accepted because
+# it is by definition coupled with an uploaded slip (the admin will review
+# it and either verify or reject — but the slip itself IS evidence).
+_PAYMENT_EVIDENCE_STATUSES = frozenset({
+    'verified',
+    'paid',
+    'partial',
+    'pending_review',
+})
+
+# Payment_status values that explicitly mean the payment is bad — admin
+# must NEVER confirm a booking while in one of these states.
+_PAYMENT_BAD_STATUSES = frozenset({
+    'rejected',
+    'mismatch',
+})
+
+
+def _has_payment_evidence(booking, invoice) -> bool:
+    """True iff there is concrete payment evidence on the booking.
+
+    Counts as evidence (any one of):
+      - a payment slip filename is set on the booking, OR
+      - the invoice's payment_status is in _PAYMENT_EVIDENCE_STATUSES
+        (verified / paid / partial / pending_review), OR
+      - the invoice records amount_paid > 0 (cash or card recorded by staff)
+
+    Defensive: returns False if booking is None. Tolerates missing or
+    non-numeric amount_paid without raising.
+    """
+    if booking is None:
+        return False
+
+    if getattr(booking, 'payment_slip_filename', None):
+        return True
+
+    if invoice is None:
+        return False
+
+    if getattr(invoice, 'payment_status', None) in _PAYMENT_EVIDENCE_STATUSES:
+        return True
+
+    try:
+        amount_paid = float(getattr(invoice, 'amount_paid', 0) or 0)
+    except (TypeError, ValueError):
+        amount_paid = 0.0
+    return amount_paid > 0
+
+
+def can_confirm_booking(booking, invoice=None) -> bool:
+    """Full confirmation business rule — combines status + payment evidence.
+
+    A booking may be confirmed by admin only when ALL of the following hold:
+      1. booking.status is a pre-confirmation state (`can_confirm()`)
+      2. The invoice (if any) is NOT in a bad payment state — i.e.
+         payment_status not in {'rejected', 'mismatch'}.
+      3. There is payment evidence (`_has_payment_evidence()`), UNLESS
+         the booking is already in `payment_verified` — that state IS the
+         "evidence has been verified" state and needs no further proof.
+
+    The third rule prevents the previously-permitted unsafe transition:
+        pending_payment + not_received  →  confirmed
+    which would have confirmed a booking with zero payment evidence.
+
+    TODO(future): if a manual admin override is ever required to confirm
+    a no-evidence booking (e.g. corporate guest, post-stay billing), add
+    a separate explicit admin route — do NOT relax this rule.
+
+    Args:
+        booking:  a Booking-like object with .status, .payment_slip_filename,
+                  and optionally .invoice (used only if `invoice` arg is None).
+                  None-safe: returns False.
+        invoice:  optional Invoice-like object with .payment_status and
+                  .amount_paid. If None, falls back to booking.invoice.
+
+    Returns:
+        True iff confirmation is permitted under the full rule.
+    """
+    if booking is None:
+        return False
+
+    status = getattr(booking, 'status', None)
+    if not can_confirm(status):
+        return False
+
+    if invoice is None:
+        invoice = getattr(booking, 'invoice', None)
+
+    # Hard-block when payment is in a known-bad state regardless of status.
+    if invoice is not None and getattr(invoice, 'payment_status', None) in _PAYMENT_BAD_STATUSES:
+        return False
+
+    # payment_verified is the dedicated "evidence already reviewed and
+    # verified" state — no extra evidence check required.
+    if status == 'payment_verified':
+        return True
+
+    # All other pre-confirmation states require payment evidence.
+    return _has_payment_evidence(booking, invoice)
 
 
 # ── Validators ──────────────────────────────────────────────────────────────
@@ -317,6 +427,7 @@ def register_jinja_helpers(app) -> None:
     app.jinja_env.globals['status_label'] = get_status_label
     app.jinja_env.globals['status_badge'] = get_status_badge_class
     app.jinja_env.globals['can_confirm'] = can_confirm
+    app.jinja_env.globals['can_confirm_booking'] = can_confirm_booking
     app.jinja_env.globals['BOOKING_STATUSES'] = BOOKING_STATUSES
     app.jinja_env.globals['PAYMENT_STATUSES'] = PAYMENT_STATUSES
     app.jinja_env.globals['CONFIRMABLE_FROM'] = CONFIRMABLE_FROM

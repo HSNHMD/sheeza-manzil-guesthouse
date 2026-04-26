@@ -202,10 +202,12 @@
 
   <!-- Actions -->
   <div class="flex flex-wrap gap-3">
-    {# Confirm button shown only from pre-confirmation states; helper covers
-       both legacy (unconfirmed/pending_verification) and new vocabulary
-       (new_request/pending_payment/payment_uploaded/payment_verified). #}
-    {% if can_confirm(booking.status) %}
+    {# Confirm button shown only when full business rule allows: status is
+       pre-confirmation AND payment evidence exists (slip on file, recorded
+       payment, or verified status). This deliberately HIDES the button when
+       a booking is in pending_payment/new_request with no payment evidence
+       — admin must wait for payment first. #}
+    {% if can_confirm_booking(booking) %}
     <form method="POST" action="{{ url_for('bookings.confirm', booking_id=booking.id) }}" class="flex-1">
       <button type="submit"
         class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg text-sm transition-colors">

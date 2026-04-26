@@ -296,22 +296,46 @@ def edit(booking_id):
 def confirm(booking_id):
     """Admin transitions a booking into 'confirmed'.
 
-    Allowed source states are centralized in
-    `app.booking_lifecycle.CONFIRMABLE_FROM` and queried via `can_confirm()`.
-    This includes legacy values ('unconfirmed', 'pending_verification') so
-    existing DB rows still confirm correctly, plus the new pre-confirmation
-    vocabulary ('new_request', 'pending_payment', 'payment_uploaded',
-    'payment_verified'). Post-confirmation and terminal states (already
-    confirmed, checked_in, checked_out, cancelled, rejected) are refused.
+    Uses the full confirmation business rule
+    `app.booking_lifecycle.can_confirm_booking(booking)`, which combines:
+      1. status must be a pre-confirmation state, AND
+      2. invoice (if any) must not be in {'rejected', 'mismatch'}, AND
+      3. payment evidence must exist (slip on file, payment_status indicating
+         trust, or amount_paid > 0) — UNLESS booking is already at
+         'payment_verified' (which is the "evidence reviewed" state).
+
+    This prevents the previously-permitted unsafe transition
+        pending_payment + not_received  →  confirmed
+    where a booking could be confirmed with zero payment evidence.
+
+    Post-confirmation and terminal states (confirmed, checked_in,
+    checked_out, cancelled, rejected) are refused as before.
+
+    TODO(future): a separate explicit admin-override route may be added
+    later for manual-confirm of no-evidence bookings (e.g. corporate
+    post-stay billing). DO NOT relax the rule here.
     """
     from .invoices import generate_invoice
-    from ..booking_lifecycle import can_confirm
+    from ..booking_lifecycle import can_confirm, can_confirm_booking
     booking = Booking.query.get_or_404(booking_id)
+
+    # Status-only sanity check first so the error message can be specific.
     if not can_confirm(booking.status):
         flash(
             f'Booking is in status "{booking.status}" — only pre-confirmation '
             f'states can be confirmed (new_request, pending_payment, '
             f'payment_uploaded, payment_verified, or legacy unconfirmed/pending_verification).',
+            'error',
+        )
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    # Full business-rule check (status + payment evidence).
+    if not can_confirm_booking(booking):
+        flash(
+            f'Cannot confirm booking {booking.booking_ref} — payment evidence is required '
+            f'(payment slip on file, recorded payment, or verified status). '
+            f'Ask the guest to upload a slip, record a cash/card payment first, or use '
+            f'the dedicated payment-verification action.',
             'error',
         )
         return redirect(url_for('bookings.detail', booking_id=booking_id))
