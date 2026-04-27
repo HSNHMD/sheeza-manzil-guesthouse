@@ -38,9 +38,16 @@
 </header>
 
 <div class="flex">
-  <!-- Sidebar -->
-  <nav id="sidebar" class="fixed inset-y-0 left-0 z-30 w-60 bg-white border-r border-gray-200 transform -translate-x-full lg:translate-x-0 lg:static lg:inset-auto transition-transform duration-200 pt-14 lg:pt-0">
-    <div class="p-4 space-y-1">
+  <!-- Sidebar.
+       flex flex-col + inner flex-1 overflow-y-auto makes the menu list
+       scrollable when content exceeds viewport height (iPhone, short
+       laptop windows). Desktop behavior unchanged: when content fits,
+       overflow-y-auto is a no-op. The fixed positioning + inset-y-0
+       on mobile already constrains the nav to viewport height, so the
+       inner area can scroll vertically within it. -->
+  <nav id="sidebar" class="fixed inset-y-0 left-0 z-30 w-60 bg-white border-r border-gray-200 transform -translate-x-full lg:translate-x-0 lg:static lg:inset-auto transition-transform duration-200 pt-14 lg:pt-0 flex flex-col">
+    <div class="p-4 pb-8 space-y-1 flex-1 overflow-y-auto overscroll-contain"
+         style="-webkit-overflow-scrolling: touch;">
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-2 pb-1">Management</p>
       <a href="{{ url_for('rooms.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'rooms' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
