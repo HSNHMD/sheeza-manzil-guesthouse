@@ -322,6 +322,95 @@
     {% endif %}
   </div>
 
+  <!-- AI Draft Assistant (admin-only) -->
+  {% if current_user.is_admin and ai_draft_types is defined %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-gray-700">AI Draft Assistant</h2>
+      <span class="text-[11px] text-gray-400">Drafts only — not sent automatically</span>
+    </div>
+
+    <form method="POST" action="{{ url_for('bookings.ai_draft', booking_id=booking.id) }}"
+          class="flex flex-wrap gap-2">
+      <select name="draft_type"
+              class="flex-1 min-w-44 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        {% for dt in ai_draft_types %}
+        <option value="{{ dt }}"
+          {% if ai_draft_selected is defined and ai_draft_selected == dt %}selected{% endif %}
+          {% if not can_draft(booking, dt) %}disabled{% endif %}>
+          {{ ai_draft_labels[dt] }}{% if not can_draft(booking, dt) %} (state n/a){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <button type="submit"
+              class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">
+        Generate AI Draft
+      </button>
+    </form>
+
+    {% if ai_draft is defined and ai_draft is not none %}
+      {% if ai_draft.success %}
+      <div class="mt-4 border border-yellow-300 bg-yellow-50 rounded-lg p-4">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs font-bold uppercase tracking-wider text-yellow-800">
+            ⚠ AI-generated draft — review before sending.
+          </p>
+          <span class="text-[11px] text-yellow-700">
+            type: {{ ai_draft.draft_type }} · {{ ai_draft.length_chars }} chars
+          </span>
+        </div>
+        <textarea id="ai-draft-text" readonly rows="8"
+                  class="w-full text-sm font-sans text-gray-800 bg-white border border-yellow-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-400">{{ ai_draft.draft }}</textarea>
+        <p class="text-[11px] text-yellow-700 mt-2">
+          This draft is not sent automatically. Copy the text and review it
+          before sharing with the guest.
+        </p>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button type="button"
+                  onclick="
+                    var t=document.getElementById('ai-draft-text');
+                    t.select();t.setSelectionRange(0,99999);
+                    navigator.clipboard&&navigator.clipboard.writeText(t.value);
+                    this.textContent='Copied ✓';
+                    setTimeout(function(){this.textContent='📋 Copy draft'}.bind(this),2000);
+                  "
+                  class="px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium rounded-lg transition-colors">
+            📋 Copy draft
+          </button>
+          {% if booking.guest.phone %}
+          <a href="https://wa.me/{{ booking.guest.phone | replace('+','') | replace(' ','') }}?text={{ ai_draft.draft | urlencode }}"
+             target="_blank"
+             class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors">
+            📱 Open in WhatsApp
+          </a>
+          {% else %}
+          <span class="px-3 py-1.5 bg-gray-100 text-gray-400 text-xs rounded-lg">
+            No guest phone on file
+          </span>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="mt-4 border border-gray-300 bg-gray-50 rounded-lg p-3">
+        <p class="text-sm text-gray-700">
+          {% if ai_draft.error == 'ai_not_configured' %}
+            AI draft assistant is not configured. Set <code class="text-xs bg-white px-1 rounded">ANTHROPIC_API_KEY</code> in the server environment to enable drafts.
+          {% elif ai_draft.error == 'ai_unavailable' %}
+            {{ ai_draft.message or 'AI draft service is temporarily unavailable. Please try again later.' }}
+          {% elif ai_draft.error == 'ai_empty_response' %}
+            AI returned an empty response. Please try again or pick a different draft type.
+          {% elif ai_draft.error == 'invalid_draft_type' %}
+            Invalid draft type selected.
+          {% else %}
+            AI draft generation failed. Please try again.
+          {% endif %}
+        </p>
+      </div>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- Activity timeline (audit log, scoped to this booking) -->
   {% if activity_entries is defined %}
   <div class="bg-white rounded-xl border border-gray-200 p-5">

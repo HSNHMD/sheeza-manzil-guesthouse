@@ -200,6 +200,7 @@ def new():
 @login_required
 def detail(booking_id):
     from ..models import ActivityLog
+    from ..services.ai_drafts import DRAFT_TYPES, DRAFT_LABELS, can_draft
     booking = Booking.query.get_or_404(booking_id)
     activity_entries = (
         ActivityLog.query
@@ -210,7 +211,91 @@ def detail(booking_id):
     )
     return render_template('bookings/detail.html',
                            booking=booking,
-                           activity_entries=activity_entries)
+                           activity_entries=activity_entries,
+                           ai_draft=None,
+                           ai_draft_types=DRAFT_TYPES,
+                           ai_draft_labels=DRAFT_LABELS,
+                           can_draft=can_draft)
+
+
+@bookings_bp.route('/<int:booking_id>/ai-draft', methods=['POST'])
+@login_required
+@admin_required
+def ai_draft(booking_id):
+    """Admin-only AI draft generator.
+
+    Renders the booking detail template directly (NOT redirect-after-POST)
+    so the draft preview is preserved without round-tripping through a flash
+    or query param. Refreshing the resulting page re-POSTs and re-generates
+    — non-destructive (one extra Anthropic API call).
+
+    Hard rules enforced here:
+      • No booking/invoice/room mutation
+      • No WhatsApp / email send (helper does not import _send / _send_template)
+      • Draft body NEVER passed to log_activity — only metadata
+      • Draft body NEVER persisted server-side — returned to admin only
+    """
+    from ..models import ActivityLog
+    from ..services.ai_drafts import (
+        DRAFT_TYPES, DRAFT_LABELS, can_draft, generate_draft,
+    )
+    booking = Booking.query.get_or_404(booking_id)
+    draft_type = (request.form.get('draft_type') or '').strip()
+
+    # Hard allow-list (defense-in-depth even though UI is gated).
+    if draft_type not in DRAFT_TYPES:
+        flash('Invalid draft type.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    result = generate_draft(draft_type, booking)
+
+    # Audit: log the EVENT and sanitized metadata, never the body or prompt.
+    if result.get('success'):
+        log_activity(
+            'ai.draft.created',
+            booking=booking, invoice=booking.invoice,
+            description=f'Admin generated AI draft (type: {draft_type}).',
+            metadata={
+                'draft_type': draft_type,
+                'booking_ref': booking.booking_ref,
+                'model': result.get('model'),
+                'length_chars': result.get('length_chars'),
+                'has_phone': bool(getattr(booking.guest, 'phone', None)),
+                'success': True,
+            },
+        )
+    else:
+        log_activity(
+            'ai.draft.failed',
+            booking=booking, invoice=booking.invoice,
+            description=f'AI draft generation failed (type: {draft_type}).',
+            metadata={
+                'draft_type': draft_type,
+                'booking_ref': booking.booking_ref,
+                'error': result.get('error', 'unknown'),
+                'success': False,
+            },
+        )
+    db.session.commit()
+
+    activity_entries = (
+        ActivityLog.query
+        .filter(ActivityLog.booking_id == booking.id)
+        .order_by(ActivityLog.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    return render_template(
+        'bookings/detail.html',
+        booking=booking,
+        activity_entries=activity_entries,
+        ai_draft=result,
+        ai_draft_selected=draft_type,
+        ai_draft_types=DRAFT_TYPES,
+        ai_draft_labels=DRAFT_LABELS,
+        can_draft=can_draft,
+    )
 
 
 @bookings_bp.route('/<int:booking_id>/checkin', methods=['POST'])
