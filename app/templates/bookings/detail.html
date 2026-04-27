@@ -329,6 +329,9 @@
       <h2 class="font-semibold text-gray-700">AI Draft Assistant</h2>
       <span class="text-[11px] text-gray-400">Drafts only — not sent automatically</span>
     </div>
+    <p class="text-[11px] text-gray-500 mb-3">
+      Payment drafts use the configured Sheeza Manzil bank transfer details.
+    </p>
 
     <form method="POST" action="{{ url_for('bookings.ai_draft', booking_id=booking.id) }}"
           class="flex flex-wrap gap-2">

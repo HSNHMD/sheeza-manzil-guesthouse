@@ -238,6 +238,7 @@ def ai_draft(booking_id):
     from ..models import ActivityLog
     from ..services.ai_drafts import (
         DRAFT_TYPES, DRAFT_LABELS, can_draft, generate_draft,
+        uses_payment_instructions,
     )
     booking = Booking.query.get_or_404(booking_id)
     draft_type = (request.form.get('draft_type') or '').strip()
@@ -250,6 +251,9 @@ def ai_draft(booking_id):
     result = generate_draft(draft_type, booking)
 
     # Audit: log the EVENT and sanitized metadata, never the body or prompt.
+    # NOTE: when the draft type embeds the official Sheeza Manzil bank
+    # transfer block, we record only a `payment_instructions_used: True`
+    # boolean — the block text itself is NEVER persisted to the audit log.
     if result.get('success'):
         log_activity(
             'ai.draft.created',
@@ -261,6 +265,7 @@ def ai_draft(booking_id):
                 'provider':    result.get('provider'),
                 'model':       result.get('model'),
                 'length_chars': result.get('length_chars'),
+                'payment_instructions_used': uses_payment_instructions(draft_type),
                 'success':     True,
             },
         )

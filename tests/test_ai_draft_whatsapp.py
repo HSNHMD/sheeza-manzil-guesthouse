@@ -421,6 +421,31 @@ class ValidationTests(_RouteTestBase):
             0,
         )
 
+    def test_body_with_real_bank_details_passes_placeholder_guard(self):
+        # Hotfix verification: a draft that includes the real Sheeza Manzil
+        # bank details (and no '[admin:' placeholder) should pass the
+        # placeholder guard and reach the wrapper.
+        booking = _seed_booking(db)
+        body = (
+            'Dear Hassan, please send your payment to:\n'
+            'Account Name: SHEEZA IMAD/MOHAMED S.R.\n'
+            'Account Number: 7770000212622\n'
+            'Then send us the payment slip. Sheeza Manzil Guesthouse.'
+        )
+        self.assertNotIn('[admin:', body.lower())
+        with mock.patch.object(
+            wa, 'send_text_message',
+            return_value={'success': True, 'message_id': 'wamid.x',
+                          'error_class': None},
+        ) as m:
+            r = self.client.post(
+                f'/bookings/{booking.id}/ai-draft/send-whatsapp',
+                data={'message_body': body},
+                follow_redirects=False,
+            )
+        self.assertIn(r.status_code, (301, 302))
+        m.assert_called_once()
+
 
 class SuccessPathTests(_RouteTestBase):
     """Tests 6, 8, 9, 11 — happy path."""

@@ -200,6 +200,142 @@ class PromptBuilderPrivacyTests(unittest.TestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Payment instruction block embedding (hotfix: bank details hard-coded)
+# ─────────────────────────────────────────────────────────────────────────
+
+class PaymentInstructionBlockTests(unittest.TestCase):
+    """Verify that payment-related draft types embed the official Sheeza
+    Manzil bank transfer block in their prompts, and that the prompt no
+    longer contains the legacy `[admin: please paste current bank details]`
+    placeholder for those types."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        self.booking = _seed_booking(db)
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    # ── Account name + number appear in the prompt for all 3 types ──
+
+    def test_payment_instructions_prompt_contains_account_name(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('payment_instructions', self.booking)
+        self.assertIn('SHEEZA IMAD/MOHAMED S.R.', prompt)
+
+    def test_payment_instructions_prompt_contains_account_number(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('payment_instructions', self.booking)
+        self.assertIn('7770000212622', prompt)
+
+    def test_booking_received_prompt_contains_account_name(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('booking_received', self.booking)
+        self.assertIn('SHEEZA IMAD/MOHAMED S.R.', prompt)
+
+    def test_booking_received_prompt_contains_account_number(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('booking_received', self.booking)
+        self.assertIn('7770000212622', prompt)
+
+    def test_missing_payment_prompt_contains_account_name(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('missing_payment', self.booking)
+        self.assertIn('SHEEZA IMAD/MOHAMED S.R.', prompt)
+
+    def test_missing_payment_prompt_contains_account_number(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('missing_payment', self.booking)
+        self.assertIn('7770000212622', prompt)
+
+    # ── Legacy [admin:] placeholder for bank details is GONE ──
+
+    def test_payment_instructions_prompt_has_no_admin_bank_placeholder(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('payment_instructions', self.booking)
+        # The legacy placeholder text used to read:
+        # "[admin: please paste current bank details]"
+        self.assertNotIn('paste current bank details', prompt)
+        self.assertNotIn('paste bank details', prompt)
+        # The model is also explicitly told NOT to write any [admin: …]
+        # placeholder for bank/payment details:
+        self.assertIn('OFFICIAL PAYMENT INSTRUCTION BLOCK', prompt)
+        # Single-quoted assertion: the prompt's instruction line tells the
+        # model not to use [admin: ...] for bank details.
+        self.assertIn('placeholders for any bank or payment detail',
+                      prompt.replace('\n', ' '))
+
+    def test_booking_received_prompt_has_no_admin_bank_placeholder(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('booking_received', self.booking)
+        self.assertNotIn('paste current bank details', prompt)
+        self.assertNotIn('paste bank details', prompt)
+
+    def test_missing_payment_prompt_has_no_admin_bank_placeholder(self):
+        from app.services.ai_drafts import build_prompt
+        prompt = build_prompt('missing_payment', self.booking)
+        self.assertNotIn('paste current bank details', prompt)
+        self.assertNotIn('paste bank details', prompt)
+
+    # ── Other draft types do NOT include the payment block ──
+
+    def test_payment_block_only_in_three_specific_draft_types(self):
+        from app.services.ai_drafts import (
+            build_prompt, _DRAFT_TYPES_WITH_PAYMENT_BLOCK, DRAFT_TYPES,
+        )
+        for dt in DRAFT_TYPES:
+            prompt = build_prompt(dt, self.booking)
+            if dt in _DRAFT_TYPES_WITH_PAYMENT_BLOCK:
+                self.assertIn(
+                    '7770000212622', prompt,
+                    f'{dt}: should embed account number',
+                )
+                self.assertIn(
+                    'OFFICIAL PAYMENT INSTRUCTION BLOCK', prompt,
+                    f'{dt}: should embed the labeled block',
+                )
+            else:
+                self.assertNotIn(
+                    '7770000212622', prompt,
+                    f'{dt}: should NOT contain bank details',
+                )
+
+    # ── Helper consistency ──
+
+    def test_uses_payment_instructions_helper_matches_prompt(self):
+        from app.services.ai_drafts import (
+            uses_payment_instructions, _DRAFT_TYPES_WITH_PAYMENT_BLOCK,
+            DRAFT_TYPES,
+        )
+        for dt in DRAFT_TYPES:
+            self.assertEqual(
+                uses_payment_instructions(dt),
+                dt in _DRAFT_TYPES_WITH_PAYMENT_BLOCK,
+            )
+        # Unknown types return False:
+        self.assertFalse(uses_payment_instructions('totally_unknown'))
+
+    # ── Constants source-of-truth check ──
+
+    def test_payment_instructions_module_has_correct_constants(self):
+        from app.services.payment_instructions import (
+            ACCOUNT_NAME, ACCOUNT_NUMBER, get_payment_instruction_block,
+        )
+        self.assertEqual(ACCOUNT_NAME, 'SHEEZA IMAD/MOHAMED S.R.')
+        self.assertEqual(ACCOUNT_NUMBER, '7770000212622')
+        block = get_payment_instruction_block()
+        self.assertIn('Bank Transfer Details', block)
+        self.assertIn('SHEEZA IMAD/MOHAMED S.R.', block)
+        self.assertIn('7770000212622', block)
+        self.assertIn('payment slip', block)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # State gating
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -642,6 +778,48 @@ class RouteAuthAndIntegrityTests(unittest.TestCase):
         self.assertIn('"model"', meta)
         self.assertIn('"draft_type"', meta)
         self.assertIn('"booking_ref"', meta)
+
+    # Hotfix V2.1 — payment_instructions_used flag in metadata
+    def test_audit_records_payment_instructions_used_for_payment_types(self):
+        # For draft types in _DRAFT_TYPES_WITH_PAYMENT_BLOCK, the flag is True
+        self._login(self.admin_id)
+        self.client.post(
+            f'/bookings/{self.booking_id}/ai-draft',
+            data={'draft_type': 'payment_instructions'},
+        )
+        row = ActivityLog.query.filter_by(
+            action='ai.draft.created').order_by(ActivityLog.id.desc()).first()
+        meta = (row.metadata_json or '')
+        self.assertIn('"payment_instructions_used": true', meta)
+
+    def test_audit_payment_instructions_false_for_non_payment_types(self):
+        # For other types, the flag is False
+        self._login(self.admin_id)
+        self.client.post(
+            f'/bookings/{self.booking_id}/ai-draft',
+            data={'draft_type': 'booking_confirmed'},
+        )
+        row = ActivityLog.query.filter_by(
+            action='ai.draft.created').order_by(ActivityLog.id.desc()).first()
+        meta = (row.metadata_json or '')
+        self.assertIn('"payment_instructions_used": false', meta)
+
+    def test_audit_does_not_store_full_payment_block(self):
+        # The actual bank-details block must NEVER be persisted server-side.
+        self._login(self.admin_id)
+        self.client.post(
+            f'/bookings/{self.booking_id}/ai-draft',
+            data={'draft_type': 'payment_instructions'},
+        )
+        row = ActivityLog.query.filter_by(
+            action='ai.draft.created').order_by(ActivityLog.id.desc()).first()
+        for blob in (row.description or '', row.metadata_json or ''):
+            self.assertNotIn('SHEEZA IMAD/MOHAMED S.R.', blob,
+                             'Account name leaked into audit row')
+            self.assertNotIn('7770000212622', blob,
+                             'Account number leaked into audit row')
+            self.assertNotIn('Bank Transfer Details', blob,
+                             'Block header leaked into audit row')
 
     # Test 13 — no secret-like keys in metadata.
     def test_metadata_has_no_secret_like_keys(self):

@@ -62,7 +62,31 @@ try:
 except ImportError:  # pragma: no cover
     _requests = None
 
+from .payment_instructions import get_payment_instruction_block
+
 logger = logging.getLogger(__name__)
+
+
+# Draft types whose generated message body should embed the official
+# Sheeza Manzil bank transfer details verbatim. The prompt builder
+# appends an "OFFICIAL PAYMENT INSTRUCTION BLOCK" section for these
+# types and instructs the model to use it as-is — eliminating the
+# previous "[admin: please paste current bank details]" placeholder.
+_DRAFT_TYPES_WITH_PAYMENT_BLOCK = frozenset((
+    'payment_instructions',
+    'booking_received',
+    'missing_payment',
+))
+
+
+def uses_payment_instructions(draft_type: str) -> bool:
+    """Return True if the draft type embeds the bank transfer block.
+
+    Used by the route handler to set the ``payment_instructions_used``
+    flag in ActivityLog metadata. Pure function — safe to call without
+    Flask context. Returns False for unknown draft types.
+    """
+    return draft_type in _DRAFT_TYPES_WITH_PAYMENT_BLOCK
 
 
 # ── Public constants ─────────────────────────────────────────────────────
@@ -248,16 +272,18 @@ def _booking_facts(booking) -> str:
 _DRAFT_INSTRUCTIONS = {
     'booking_received': (
         'Draft a message acknowledging that the guest\'s booking has been '
-        'received. Tell them payment instructions will follow. Mention the '
-        'booking_ref, room, dates. Do NOT confirm the booking is accepted '
-        '— it is awaiting payment review.'
+        'received. Mention the booking_ref, room, and dates. Then include '
+        'the OFFICIAL PAYMENT INSTRUCTION BLOCK shown below verbatim so '
+        'the guest knows where to send payment. Do NOT confirm the booking '
+        'is accepted — it is awaiting payment review.'
     ),
     'payment_instructions': (
         'Draft a message providing bank-transfer payment instructions. '
-        'Mention the booking_ref, total_amount_mvr, and ask the guest to '
-        'send a payment slip when done. Do NOT include actual bank account '
-        'numbers — write "[admin: please paste current bank details]" '
-        'where the account info should go.'
+        'Mention the booking_ref and total_amount_mvr in your own words. '
+        'Then include the OFFICIAL PAYMENT INSTRUCTION BLOCK shown below '
+        'verbatim — that block already contains the account name, account '
+        'number, and the request to send the payment slip. Do NOT invent '
+        'or alter any bank details and do NOT use placeholders for them.'
     ),
     'payment_received_pending_review': (
         'Draft a message acknowledging that the payment slip has been '
@@ -283,8 +309,10 @@ _DRAFT_INSTRUCTIONS = {
     ),
     'missing_payment': (
         'Draft a polite reminder that payment has not yet been received '
-        'for booking_ref. Ask them to send the payment slip when done. '
-        'Mention total_amount_mvr.'
+        'for booking_ref. Mention total_amount_mvr. Then include the '
+        'OFFICIAL PAYMENT INSTRUCTION BLOCK shown below verbatim so the '
+        'guest has the bank details ready to hand. Do NOT invent or alter '
+        'any bank details.'
     ),
     'checkin_instructions': (
         'Draft a brief check-in instructions message. Mention room_number, '
@@ -302,12 +330,33 @@ _DRAFT_INSTRUCTIONS = {
 
 
 def build_prompt(draft_type: str, booking) -> str:
-    """Construct the user-message prompt. Pure function — no API call."""
+    """Construct the user-message prompt. Pure function — no API call.
+
+    For draft types in `_DRAFT_TYPES_WITH_PAYMENT_BLOCK` the prompt also
+    embeds the official Sheeza Manzil bank transfer block verbatim, with
+    explicit instructions for the model to use it as-is and never to
+    write "[admin: ...]" placeholders for bank details.
+    """
     if draft_type not in DRAFT_TYPES:
         raise ValueError(f'unknown draft_type: {draft_type!r}')
 
     instructions = _DRAFT_INSTRUCTIONS[draft_type]
     facts = _booking_facts(booking)
+
+    payment_block_section = ''
+    if draft_type in _DRAFT_TYPES_WITH_PAYMENT_BLOCK:
+        payment_block_section = (
+            '\n────────────────────────────────────────\n'
+            'OFFICIAL PAYMENT INSTRUCTION BLOCK\n'
+            '(use this EXACT text verbatim in the message body where\n'
+            'appropriate; do NOT invent, modify, or paraphrase the\n'
+            'account name or account number; do NOT write\n'
+            '"[admin: …]" placeholders for any bank or payment detail —\n'
+            'the block below contains everything needed):\n'
+            '────────────────────────────────────────\n'
+            f'{get_payment_instruction_block()}\n'
+            '────────────────────────────────────────\n'
+        )
 
     return (
         f'{instructions}\n\n'
@@ -315,8 +364,9 @@ def build_prompt(draft_type: str, booking) -> str:
         'BOOKING FACTS (use ONLY these — guess nothing):\n'
         '────────────────────────────────────────\n'
         f'{facts}\n'
-        '────────────────────────────────────────\n\n'
-        'Output the message body now. No preamble. No commentary.'
+        '────────────────────────────────────────\n'
+        f'{payment_block_section}'
+        '\nOutput the message body now. No preamble. No commentary.'
     )
 
 
