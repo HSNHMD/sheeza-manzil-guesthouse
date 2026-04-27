@@ -199,7 +199,7 @@ def new():
 @bookings_bp.route('/<int:booking_id>')
 @login_required
 def detail(booking_id):
-    from ..models import ActivityLog
+    from ..models import ActivityLog, WhatsAppMessage
     from ..services.ai_drafts import DRAFT_TYPES, DRAFT_LABELS, can_draft
     booking = Booking.query.get_or_404(booking_id)
     activity_entries = (
@@ -209,9 +209,17 @@ def detail(booking_id):
         .limit(50)
         .all()
     )
+    whatsapp_messages = (
+        WhatsAppMessage.query
+        .filter(WhatsAppMessage.booking_id == booking.id)
+        .order_by(WhatsAppMessage.created_at.desc())
+        .limit(50)
+        .all()
+    )
     return render_template('bookings/detail.html',
                            booking=booking,
                            activity_entries=activity_entries,
+                           whatsapp_messages=whatsapp_messages,
                            ai_draft=None,
                            ai_draft_types=DRAFT_TYPES,
                            ai_draft_labels=DRAFT_LABELS,
@@ -284,10 +292,18 @@ def ai_draft(booking_id):
         )
     db.session.commit()
 
+    from ..models import WhatsAppMessage
     activity_entries = (
         ActivityLog.query
         .filter(ActivityLog.booking_id == booking.id)
         .order_by(ActivityLog.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    whatsapp_messages = (
+        WhatsAppMessage.query
+        .filter(WhatsAppMessage.booking_id == booking.id)
+        .order_by(WhatsAppMessage.created_at.desc())
         .limit(50)
         .all()
     )
@@ -296,6 +312,7 @@ def ai_draft(booking_id):
         'bookings/detail.html',
         booking=booking,
         activity_entries=activity_entries,
+        whatsapp_messages=whatsapp_messages,
         ai_draft=result,
         ai_draft_selected=draft_type,
         ai_draft_types=DRAFT_TYPES,

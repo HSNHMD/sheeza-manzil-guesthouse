@@ -254,3 +254,77 @@ class ActivityLog(db.Model):
 
     def __repr__(self):
         return f'<ActivityLog id={self.id} action={self.action}>'
+
+
+# ── Inbound / outbound WhatsApp message log ────────────────────────────────
+# Stores a normalized record of every WhatsApp message that touches the
+# system. Inbound messages arrive via Meta's webhook (POST /webhooks/whatsapp)
+# and are persisted by app.routes.whatsapp_webhook. Outbound messages may be
+# logged here by future code paths — V1 only writes inbound.
+#
+# Privacy:
+#   - The full sender phone number is NOT stored. Instead we keep an
+#     HMAC-SHA256 hash (keyed by SECRET_KEY) for cross-message correlation
+#     plus the last-4 digits for human-friendly display. This means an
+#     attacker who exfiltrates this table cannot recover guest phone
+#     numbers without also breaching SECRET_KEY.
+#   - The full message body IS stored (`body_text`) because the admin
+#     needs to read the guest's message. It is exposed only via
+#     admin-gated routes; ActivityLog rows linked to inbound events
+#     never include the body or its preview.
+class WhatsAppMessage(db.Model):
+    __tablename__ = 'whatsapp_messages'
+
+    id            = db.Column(db.Integer, primary_key=True)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow,
+                              nullable=False, index=True)
+    direction     = db.Column(db.String(10), nullable=False)
+                    # 'inbound' | 'outbound'
+
+    # Meta's wamid.… — UNIQUE so re-deliveries from Meta dedupe naturally.
+    # Nullable to allow future outbound rows that pre-date a Meta ID.
+    wa_message_id = db.Column(db.String(128), unique=True, nullable=True)
+    wa_timestamp  = db.Column(db.DateTime, nullable=True)
+
+    # Privacy-preserving phone storage. See module docstring above.
+    from_phone_hash  = db.Column(db.String(64), nullable=True)
+    from_phone_last4 = db.Column(db.String(8),  nullable=True)
+    to_phone_last4   = db.Column(db.String(8),  nullable=True)
+
+    profile_name  = db.Column(db.String(100), nullable=True)
+
+    booking_id    = db.Column(db.Integer,
+                              db.ForeignKey('bookings.id', ondelete='SET NULL'),
+                              nullable=True)
+    guest_id      = db.Column(db.Integer,
+                              db.ForeignKey('guests.id', ondelete='SET NULL'),
+                              nullable=True)
+
+    message_type  = db.Column(db.String(30), nullable=False)
+                    # 'text' | 'image' | 'audio' | 'video' | 'document' |
+                    # 'location' | 'sticker' | 'unsupported_<type>'
+    body_text     = db.Column(db.Text, nullable=True)
+                    # Full body for admin display; never copied to ActivityLog
+    body_preview  = db.Column(db.String(120), nullable=True)
+                    # First 120 chars for inbox list view
+    status        = db.Column(db.String(20), default='received')
+
+    metadata_json = db.Column(db.Text, nullable=True)
+
+    booking = db.relationship('Booking', foreign_keys=[booking_id])
+    guest   = db.relationship('Guest',   foreign_keys=[guest_id])
+
+    __table_args__ = (
+        db.Index('ix_wa_messages_booking_created',
+                 'booking_id', 'created_at'),
+        db.Index('ix_wa_messages_guest_created',
+                 'guest_id', 'created_at'),
+        db.Index('ix_wa_messages_direction_created',
+                 'direction', 'created_at'),
+        db.Index('ix_wa_messages_from_phone_hash',
+                 'from_phone_hash'),
+    )
+
+    def __repr__(self):
+        return (f'<WhatsAppMessage id={self.id} '
+                f'direction={self.direction} type={self.message_type}>')

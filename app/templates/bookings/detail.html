@@ -445,6 +445,22 @@
   </div>
   {% endif %}
 
+  <!-- WhatsApp messages (linked to this booking) -->
+  {% if whatsapp_messages is defined %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-gray-700">WhatsApp Messages</h2>
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('whatsapp.inbox') }}"
+         class="text-xs text-blue-600 hover:underline">View inbox</a>
+      {% endif %}
+    </div>
+    {% set messages = whatsapp_messages %}
+    {% set show_full_body = True %}
+    {% include 'whatsapp/_messages.html' %}
+  </div>
+  {% endif %}
+
   <!-- Activity timeline (audit log, scoped to this booking) -->
   {% if activity_entries is defined %}
   <div class="bg-white rounded-xl border border-gray-200 p-5">

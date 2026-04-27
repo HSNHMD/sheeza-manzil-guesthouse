@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}WhatsApp Inbox{% endblock %}
+{% block content %}
+<div class="space-y-5">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-xl font-bold text-gray-800">WhatsApp Inbox</h1>
+      <p class="text-xs text-gray-500 mt-1">
+        Inbound messages from guests. Showing newest 100. Replies must be
+        composed manually — there is no auto-reply.
+      </p>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <form method="GET" class="flex flex-wrap gap-2 items-end">
+    <div>
+      <label class="block text-[11px] font-medium text-gray-500 mb-1">Linkage</label>
+      <div class="flex gap-1 text-xs">
+        <a href="{{ url_for('whatsapp.inbox') }}"
+           class="px-3 py-2 border rounded-lg
+                  {% if not show_linked and not show_unlinked %}bg-gray-800 text-white border-gray-800{% else %}border-gray-300 text-gray-600{% endif %}">
+          All
+        </a>
+        <a href="{{ url_for('whatsapp.inbox', linked='1') }}"
+           class="px-3 py-2 border rounded-lg
+                  {% if show_linked %}bg-gray-800 text-white border-gray-800{% else %}border-gray-300 text-gray-600{% endif %}">
+          Linked
+        </a>
+        <a href="{{ url_for('whatsapp.inbox', unlinked='1') }}"
+           class="px-3 py-2 border rounded-lg
+                  {% if show_unlinked %}bg-gray-800 text-white border-gray-800{% else %}border-gray-300 text-gray-600{% endif %}">
+          Unlinked
+        </a>
+      </div>
+    </div>
+    <div>
+      <label class="block text-[11px] font-medium text-gray-500 mb-1">Type</label>
+      <input type="text" name="message_type" value="{{ msg_type }}"
+             placeholder="e.g. text, image"
+             class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+      Filter
+    </button>
+  </form>
+
+  <!-- Results -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    {% set show_full_body = True %}
+    {% include 'whatsapp/_messages.html' %}
+  </div>
+</div>
+{% endblock %}

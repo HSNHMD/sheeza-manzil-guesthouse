@@ -1,0 +1,62 @@
+{# Reusable WhatsApp message-list partial.
+   Required context vars:
+     messages         — iterable of WhatsAppMessage rows (newest first)
+
+   Optional context vars:
+     show_links       — bool; render booking_ref as a link (default True)
+     show_full_body   — bool; render full body_text instead of preview
+                        (default True; admin-gated views only)
+#}
+{% set show_links     = show_links     if show_links     is defined else True %}
+{% set show_full_body = show_full_body if show_full_body is defined else True %}
+
+{% if messages %}
+<ol class="space-y-3">
+  {% for m in messages %}
+  <li class="border-l-2 border-gray-200 pl-3">
+    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+      <span class="font-mono text-gray-500">
+        {{ m.created_at.strftime('%Y-%m-%d %H:%M') }}
+      </span>
+      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium
+        {% if m.direction == 'inbound' %}bg-green-100 text-green-700
+        {% else %}bg-blue-100 text-blue-700{% endif %}">
+        {{ m.direction }}
+      </span>
+      {% if m.profile_name %}
+      <span class="text-gray-700 font-medium">{{ m.profile_name }}</span>
+      {% endif %}
+      {% if m.from_phone_last4 %}
+      <span class="text-gray-400">…{{ m.from_phone_last4 }}</span>
+      {% endif %}
+      <span class="text-gray-500">type: {{ m.message_type }}</span>
+      {% if m.status and m.status != 'received' %}
+      <span class="text-gray-500">status: {{ m.status }}</span>
+      {% endif %}
+    </div>
+    {% if m.message_type == 'text' and m.body_text %}
+      {% if show_full_body %}
+      <p class="text-sm text-gray-800 mt-1 whitespace-pre-wrap">{{ m.body_text }}</p>
+      {% else %}
+      <p class="text-sm text-gray-700 mt-1">{{ m.body_preview or m.body_text[:120] }}{% if m.body_text and m.body_text|length > 120 %}…{% endif %}</p>
+      {% endif %}
+    {% elif m.message_type != 'text' %}
+      <p class="text-xs text-gray-500 italic mt-1">[non-text message — type: {{ m.message_type }}]</p>
+    {% endif %}
+    {% if show_links and m.booking %}
+    <p class="text-[11px] text-gray-400 mt-0.5">
+      Linked to
+      <a href="{{ url_for('bookings.detail', booking_id=m.booking_id) }}"
+         class="hover:text-blue-600 hover:underline font-mono">
+        {{ m.booking.booking_ref }}
+      </a>
+    </p>
+    {% elif not m.booking_id %}
+    <p class="text-[11px] text-gray-400 mt-0.5">Unlinked</p>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="text-sm text-gray-400 italic">No messages.</p>
+{% endif %}
