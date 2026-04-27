@@ -356,7 +356,7 @@
             ⚠ AI-generated draft — review before sending.
           </p>
           <span class="text-[11px] text-yellow-700">
-            type: {{ ai_draft.draft_type }} · {{ ai_draft.length_chars }} chars
+            {{ ai_draft.draft_type }} · {{ ai_draft.provider }} · {{ ai_draft.length_chars }} chars
           </span>
         </div>
         <textarea id="ai-draft-text" readonly rows="8"
@@ -394,7 +394,16 @@
       <div class="mt-4 border border-gray-300 bg-gray-50 rounded-lg p-3">
         <p class="text-sm text-gray-700">
           {% if ai_draft.error == 'ai_not_configured' %}
-            AI draft assistant is not configured. Set <code class="text-xs bg-white px-1 rounded">ANTHROPIC_API_KEY</code> in the server environment to enable drafts.
+            AI draft assistant is not configured.
+            {% if ai_draft.provider == 'gemini' %}
+              Set <code class="text-xs bg-white px-1 rounded">GEMINI_API_KEY</code> in the server environment to enable drafts.
+            {% elif ai_draft.provider == 'anthropic' %}
+              Set <code class="text-xs bg-white px-1 rounded">ANTHROPIC_API_KEY</code> in the server environment to enable drafts.
+            {% else %}
+              Set the API key for the active provider in the server environment.
+            {% endif %}
+          {% elif ai_draft.error == 'invalid_provider' %}
+            {{ ai_draft.message or 'Configured AI provider is not supported.' }}
           {% elif ai_draft.error == 'ai_unavailable' %}
             {{ ai_draft.message or 'AI draft service is temporarily unavailable. Please try again later.' }}
           {% elif ai_draft.error == 'ai_empty_response' %}

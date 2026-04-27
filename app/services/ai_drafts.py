@@ -1,32 +1,46 @@
 """AI Draft Assistant — V1.
 
-Generates draft replies to guests using the Anthropic Claude API.
+Generates draft replies to guests using a configurable AI provider.
+
+Currently supported providers:
+    * ``gemini``   — Google Gemini (default; cheap Flash/Flash-Lite models).
+                     Called via REST so no extra Python SDK is required —
+                     just the existing ``requests`` library.
+    * ``anthropic``— Anthropic Claude. Uses the ``anthropic`` SDK that is
+                     already vendored for the receipt OCR feature.
+
+Provider is selected at call-time via the ``AI_DRAFT_PROVIDER`` env var
+(falls back to gemini). Model is selected via ``AI_DRAFT_MODEL`` (falls
+back to the provider's default). Each provider has its own API-key env
+var (``GEMINI_API_KEY`` / ``ANTHROPIC_API_KEY``) so they coexist without
+collision.
 
 Design rules (binding):
 
 1. **Draft-only.** This module produces TEXT, period. It does NOT call
-   `_send_template`, `_send`, smtp, sendmail, or any auto-delivery mechanism.
-   Sending is the admin's manual action via the existing wa.me deeplink.
+   any WhatsApp / SMTP / sendmail mechanism. Sending is the admin's
+   manual action via the existing wa.me deeplink.
 
 2. **No fabrication.** The prompt builder passes ONLY explicit booking
-   fields (booking_ref, room number, dates, total, status). It NEVER passes
-   passport numbers, ID types, full address, or uploaded file contents.
-   Every prompt instructs Claude to write 'admin: please verify <field>'
-   when a fact is unclear, instead of guessing.
+   fields (booking_ref, room number, dates, total, status). It NEVER
+   passes passport numbers, ID types, full address, or uploaded file
+   contents. Every prompt instructs the model to write
+   '[admin: please verify <field>]' when a fact is unclear.
 
 3. **No persistence of body.** This module never returns or stores the
    prompt text in the audit log. The route caller logs only metadata
-   (draft_type, length, model, success boolean). The draft text itself
-   is rendered to the admin's browser and discarded server-side.
+   (draft_type, provider, model, length_chars, booking_ref). The draft
+   text itself is rendered to the admin's browser and discarded
+   server-side.
 
-4. **Graceful degradation.** Missing `ANTHROPIC_API_KEY` is not an error
-   condition — `generate_draft()` returns
-   `{'error': 'ai_not_configured', 'message': '...'}` and the booking
+4. **Graceful degradation.** Missing API key for the active provider is
+   not an error — ``generate_draft()`` returns
+   ``{'error': 'ai_not_configured', 'message': '...'}`` and the booking
    detail page continues to render normally.
 
-5. **Cost containment.** `max_tokens=400`, single attempt per call, no
-   retry loop. The route gate (admin-only POST) keeps cost per booking
-   bounded by admin clicks.
+5. **Cost containment.** ``max_tokens=400``, single attempt per call,
+   no retry loop. The route gate (admin-only POST) bounds cost per
+   booking by admin clicks.
 """
 
 from __future__ import annotations
@@ -35,12 +49,21 @@ import logging
 import os
 from typing import Optional
 
+# Anthropic SDK is optional — only required when provider == 'anthropic'.
 try:
     import anthropic  # type: ignore
 except ImportError:  # pragma: no cover - import error path
     anthropic = None  # noqa: N816
 
+# requests is required for the Gemini REST call. It is in requirements.txt
+# already (used by the WhatsApp service), so this should always be present.
+try:
+    import requests as _requests  # type: ignore
+except ImportError:  # pragma: no cover
+    _requests = None
+
 logger = logging.getLogger(__name__)
+
 
 # ── Public constants ─────────────────────────────────────────────────────
 
@@ -57,8 +80,6 @@ DRAFT_TYPES = (
     'thank_you_review',
 )
 
-# Human labels for the dropdown / log description. Internal use only —
-# never sent to Claude as the source of truth.
 DRAFT_LABELS = {
     'booking_received':                'Booking received — payment instructions',
     'payment_instructions':            'Payment instructions reminder',
@@ -71,51 +92,96 @@ DRAFT_LABELS = {
     'thank_you_review':                'Thank-you / review request',
 }
 
-# Universal banner the admin sees above every preview. Also embedded in
-# the prompt as a header so Claude knows the output is for review-only.
 DRAFT_DISCLAIMER = 'AI-generated draft — review before sending.'
 
-# Anthropic call shape.
-_DEFAULT_MODEL = 'claude-sonnet-4-6'
+
+# ── Provider config ──────────────────────────────────────────────────────
+
+PROVIDERS = ('gemini', 'anthropic')
+_DEFAULT_PROVIDER = 'gemini'
+
+_DEFAULT_MODEL_BY_PROVIDER = {
+    # Cheap, fast, current Gemini Flash-Lite. Operator can override via
+    # AI_DRAFT_MODEL if they want a different price/quality point.
+    'gemini':    'gemini-2.5-flash-lite',
+    # Sonnet 4.6 is the current Anthropic mid-tier. Operator can downgrade
+    # to a Haiku or upgrade to an Opus via AI_DRAFT_MODEL.
+    'anthropic': 'claude-sonnet-4-6',
+}
+
 _MAX_TOKENS = 400
 _TIMEOUT_SECONDS = 20
 
-
-# ── Lazy client (module-level singleton) ─────────────────────────────────
-
-_client: Optional['anthropic.Anthropic'] = None  # populated on first call
+# Gemini REST endpoint (v1beta supports all current Flash/Flash-Lite models).
+_GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 
-def _get_client():
-    """Return a cached Anthropic client, or None if API key / SDK missing.
+def _get_provider() -> str:
+    """Return the active provider, falling back to default if unset/invalid."""
+    raw = (os.environ.get('AI_DRAFT_PROVIDER') or '').strip().lower()
+    if raw in PROVIDERS:
+        return raw
+    if raw:
+        # Unknown value — log once at INFO so operator sees the fallback
+        # in the journal. The route surfaces the error separately.
+        logger.info('AI drafts: unknown AI_DRAFT_PROVIDER=%r — '
+                    'falling back to %s', raw, _DEFAULT_PROVIDER)
+    return _DEFAULT_PROVIDER
 
-    Reads `ANTHROPIC_API_KEY` at first call (not module import) so env
-    changes during a long-running process are picked up after restart.
+
+def _resolve_model(provider: str) -> str:
+    """Return the model name for ``provider``.
+
+    Precedence:
+      1. ``AI_DRAFT_MODEL`` env var (provider-agnostic override)
+      2. ``ANTHROPIC_MODEL`` env var (legacy; only when provider=anthropic)
+      3. Per-provider default in _DEFAULT_MODEL_BY_PROVIDER
     """
-    global _client
-    if _client is not None:
-        return _client
+    unified = os.environ.get('AI_DRAFT_MODEL')
+    if unified:
+        return unified
+    if provider == 'anthropic':
+        legacy = os.environ.get('ANTHROPIC_MODEL')
+        if legacy:
+            return legacy
+    return _DEFAULT_MODEL_BY_PROVIDER.get(provider, '')
+
+
+def _is_provider_configured(provider: str) -> bool:
+    """Return True if the API key for ``provider`` is set."""
+    if provider == 'gemini':
+        return bool(os.environ.get('GEMINI_API_KEY'))
+    if provider == 'anthropic':
+        return bool(os.environ.get('ANTHROPIC_API_KEY'))
+    return False
+
+
+# ── Anthropic client (lazy singleton) ────────────────────────────────────
+
+_anthropic_client: Optional['anthropic.Anthropic'] = None
+
+
+def _get_anthropic_client():
+    """Return a cached Anthropic client, or None if SDK / key missing."""
+    global _anthropic_client
+    if _anthropic_client is not None:
+        return _anthropic_client
     if anthropic is None:
         return None
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         return None
     try:
-        _client = anthropic.Anthropic(api_key=api_key)
-        return _client
+        _anthropic_client = anthropic.Anthropic(api_key=api_key)
+        return _anthropic_client
     except Exception as exc:  # pragma: no cover - SDK init error path
-        logger.warning('AI drafts: anthropic.Anthropic init failed: %s', exc)
+        logger.warning('AI drafts: anthropic.Anthropic init failed (%s)',
+                       type(exc).__name__)
         return None
 
 
-def _get_model() -> str:
-    """Return the model name from env, falling back to a safe default."""
-    return os.environ.get('ANTHROPIC_MODEL') or _DEFAULT_MODEL
+# ── Prompt construction (provider-agnostic) ──────────────────────────────
 
-
-# ── Prompt construction ──────────────────────────────────────────────────
-
-# Universal system prompt. Same for every draft type.
 _SYSTEM_PROMPT = (
     'You write short, polite WhatsApp drafts for the front desk of '
     'Sheeza Manzil Guesthouse, a small family guesthouse in Hanimaadhoo, '
@@ -142,20 +208,13 @@ _SYSTEM_PROMPT = (
 
 
 def _missing(value) -> str:
-    """Render a value for the prompt, or '[unknown]' if missing/falsy."""
     if value is None or value == '' or value == 0:
         return '[unknown]'
     return str(value)
 
 
 def _booking_facts(booking) -> str:
-    """Serialize the SAFE subset of booking fields for the prompt.
-
-    EXPLICITLY EXCLUDED (privacy):
-        guest.id_number, guest.id_type, guest.address,
-        booking.id_card_filename, booking.payment_slip_filename,
-        any drive_id / R2 object key.
-    """
+    """Serialize the SAFE subset of booking fields for the prompt."""
     inv = getattr(booking, 'invoice', None)
     payment_status = getattr(inv, 'payment_status', None) if inv else None
     amount_paid = getattr(inv, 'amount_paid', None) if inv else None
@@ -186,8 +245,6 @@ def _booking_facts(booking) -> str:
     return '\n'.join(lines)
 
 
-# Per-draft-type instruction snippets. Each one is appended to the system
-# prompt before the booking facts.
 _DRAFT_INSTRUCTIONS = {
     'booking_received': (
         'Draft a message acknowledging that the guest\'s booking has been '
@@ -200,7 +257,7 @@ _DRAFT_INSTRUCTIONS = {
         'Mention the booking_ref, total_amount_mvr, and ask the guest to '
         'send a payment slip when done. Do NOT include actual bank account '
         'numbers — write "[admin: please paste current bank details]" '
-        'where the account info should go. The admin will fill it in.'
+        'where the account info should go.'
     ),
     'payment_received_pending_review': (
         'Draft a message acknowledging that the payment slip has been '
@@ -245,11 +302,7 @@ _DRAFT_INSTRUCTIONS = {
 
 
 def build_prompt(draft_type: str, booking) -> str:
-    """Construct the full user-message prompt for Claude.
-
-    Pure function — no API call. Safe to call in unit tests without
-    network access. Raises ValueError on unknown draft_type.
-    """
+    """Construct the user-message prompt. Pure function — no API call."""
     if draft_type not in DRAFT_TYPES:
         raise ValueError(f'unknown draft_type: {draft_type!r}')
 
@@ -270,12 +323,7 @@ def build_prompt(draft_type: str, booking) -> str:
 # ── State gating ─────────────────────────────────────────────────────────
 
 def can_draft(booking, draft_type: str) -> bool:
-    """Soft-gate: is this draft type appropriate for this booking state?
-
-    Used to show / hide buttons in the UI. The route allow-list is the
-    HARD gate — this is just UX. Returns True for unknown types so a
-    future draft_type works without a code edit (route still validates).
-    """
+    """Soft-gate: is this draft type appropriate for this booking state?"""
     if draft_type not in DRAFT_TYPES:
         return True
     bs = (booking.status or '').strip()
@@ -306,88 +354,195 @@ def can_draft(booking, draft_type: str) -> bool:
     return True
 
 
-# ── Generation ───────────────────────────────────────────────────────────
+# ── Provider call dispatchers ────────────────────────────────────────────
 
-def generate_draft(draft_type: str, booking) -> dict:
-    """Generate a draft via Claude. Never raises — returns a result dict.
-
-    Success shape:
-        {'success': True, 'draft': str, 'model': str, 'length_chars': int,
-         'draft_type': str}
-
-    Error shapes:
-        {'success': False, 'error': 'invalid_draft_type'}
-        {'success': False, 'error': 'ai_not_configured',
-         'message': 'AI draft assistant is not configured.'}
-        {'success': False, 'error': 'ai_unavailable',
-         'message': 'AI draft service is temporarily unavailable.'}
-    """
-    if draft_type not in DRAFT_TYPES:
-        return {'success': False, 'error': 'invalid_draft_type'}
-
-    client = _get_client()
+def _call_anthropic(system: str, user: str, model: str) -> dict:
+    """Call the Anthropic API. Returns {'success': True, 'text': str} or
+    {'success': False, 'error': '<short>'}. Never raises."""
+    client = _get_anthropic_client()
     if client is None:
-        return {
-            'success': False,
-            'error': 'ai_not_configured',
-            'message': 'AI draft assistant is not configured.',
-        }
-
-    try:
-        prompt = build_prompt(draft_type, booking)
-    except Exception as exc:
-        # Programming error in prompt builder — log and surface generic.
-        logger.warning('AI drafts: prompt build failed for %s: %s',
-                       draft_type, exc)
-        return {'success': False, 'error': 'prompt_build_failed'}
-
-    model = _get_model()
-
+        return {'success': False, 'error': 'ai_not_configured'}
     try:
         response = client.messages.create(
             model=model,
             max_tokens=_MAX_TOKENS,
             timeout=_TIMEOUT_SECONDS,
-            system=_SYSTEM_PROMPT,
-            messages=[{'role': 'user', 'content': prompt}],
+            system=system,
+            messages=[{'role': 'user', 'content': user}],
         )
     except Exception as exc:
-        # NOTE: deliberately log only the exception class — never headers,
-        # API key, or full response body.
-        logger.warning('AI drafts: API call failed (%s)', type(exc).__name__)
-        return {
-            'success': False,
-            'error': 'ai_unavailable',
-            'message': 'AI draft service is temporarily unavailable.',
-        }
-
+        logger.warning('AI drafts: Anthropic call failed (%s)',
+                       type(exc).__name__)
+        return {'success': False, 'error': 'ai_unavailable'}
     try:
-        # Anthropic SDK returns response.content as a list of content blocks.
         body = ''
         for block in getattr(response, 'content', []):
             text = getattr(block, 'text', None)
             if text:
                 body += text
         body = body.strip()
-    except Exception as exc:  # pragma: no cover - shape error path
-        logger.warning('AI drafts: response parsing failed (%s)',
+    except Exception as exc:  # pragma: no cover - shape error
+        logger.warning('AI drafts: Anthropic parse failed (%s)',
                        type(exc).__name__)
-        return {
-            'success': False,
-            'error': 'ai_unavailable',
-            'message': 'AI draft service returned an unexpected response.',
-        }
-
+        return {'success': False, 'error': 'ai_unavailable'}
     if not body:
+        return {'success': False, 'error': 'ai_empty_response'}
+    return {'success': True, 'text': body}
+
+
+def _call_gemini(system: str, user: str, model: str) -> dict:
+    """Call the Gemini REST API. Returns same shape as _call_anthropic.
+
+    Uses ``requests`` (already in deps); no extra Python SDK required.
+    """
+    if _requests is None:
+        return {'success': False, 'error': 'ai_not_configured'}
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if not api_key:
+        return {'success': False, 'error': 'ai_not_configured'}
+
+    url = f'{_GEMINI_API_BASE}/{model}:generateContent'
+    payload = {
+        'system_instruction': {'parts': [{'text': system}]},
+        'contents': [{'role': 'user',
+                      'parts': [{'text': user}]}],
+        'generationConfig': {
+            'maxOutputTokens': _MAX_TOKENS,
+            # Slightly conservative temperature for hospitality drafts.
+            'temperature': 0.4,
+        },
+    }
+    try:
+        resp = _requests.post(
+            url,
+            params={'key': api_key},
+            json=payload,
+            timeout=_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        # NEVER log headers, payload, or the API key.
+        logger.warning('AI drafts: Gemini call failed (%s)',
+                       type(exc).__name__)
+        return {'success': False, 'error': 'ai_unavailable'}
+
+    if resp.status_code != 200:
+        # Log the status code only — the response body may contain echoed
+        # request metadata that we do not want in the journal.
+        logger.warning('AI drafts: Gemini HTTP %s', resp.status_code)
+        return {'success': False, 'error': 'ai_unavailable'}
+
+    try:
+        body = resp.json()
+    except Exception as exc:
+        logger.warning('AI drafts: Gemini JSON decode failed (%s)',
+                       type(exc).__name__)
+        return {'success': False, 'error': 'ai_unavailable'}
+
+    candidates = (body or {}).get('candidates') or []
+    if not candidates:
+        return {'success': False, 'error': 'ai_empty_response'}
+
+    parts = (candidates[0].get('content') or {}).get('parts') or []
+    text = ''.join(p.get('text', '') for p in parts if isinstance(p, dict))
+    text = text.strip()
+    if not text:
+        return {'success': False, 'error': 'ai_empty_response'}
+    return {'success': True, 'text': text}
+
+
+def _call_provider(provider: str, system: str, user: str, model: str) -> dict:
+    """Dispatch to the right provider. Tests can patch this to bypass
+    actual SDK / HTTP plumbing entirely."""
+    if provider == 'anthropic':
+        return _call_anthropic(system, user, model)
+    if provider == 'gemini':
+        return _call_gemini(system, user, model)
+    return {'success': False, 'error': 'invalid_provider'}
+
+
+# ── Public entry point ───────────────────────────────────────────────────
+
+def generate_draft(draft_type: str, booking) -> dict:
+    """Generate a draft. Never raises — returns a result dict.
+
+    Success shape:
+        {'success': True, 'draft': str, 'provider': str, 'model': str,
+         'length_chars': int, 'draft_type': str}
+
+    Error shapes:
+        {'success': False, 'error': 'invalid_draft_type'}
+        {'success': False, 'error': 'invalid_provider',
+         'message': 'Configured AI provider is not supported.'}
+        {'success': False, 'error': 'ai_not_configured',
+         'message': 'AI draft assistant is not configured.',
+         'provider': str}
+        {'success': False, 'error': 'ai_unavailable',
+         'message': 'AI draft service is temporarily unavailable.',
+         'provider': str}
+        {'success': False, 'error': 'ai_empty_response', ...}
+        {'success': False, 'error': 'prompt_build_failed'}
+    """
+    if draft_type not in DRAFT_TYPES:
+        return {'success': False, 'error': 'invalid_draft_type'}
+
+    # Resolve provider FIRST so error responses can include it for UX.
+    raw_provider = (os.environ.get('AI_DRAFT_PROVIDER') or '').strip().lower()
+    if raw_provider and raw_provider not in PROVIDERS:
         return {
             'success': False,
-            'error': 'ai_empty_response',
-            'message': 'AI draft service returned an empty response.',
+            'error': 'invalid_provider',
+            'message': (f'Configured AI provider {raw_provider!r} is not '
+                        f'supported. Allowed: {", ".join(PROVIDERS)}.'),
         }
 
+    provider = _get_provider()  # validated — falls back to default
+    model = _resolve_model(provider)
+
+    if not _is_provider_configured(provider):
+        return {
+            'success': False,
+            'error': 'ai_not_configured',
+            'provider': provider,
+            'message': 'AI draft assistant is not configured.',
+        }
+
+    try:
+        prompt = build_prompt(draft_type, booking)
+    except Exception as exc:
+        logger.warning('AI drafts: prompt build failed for %s (%s)',
+                       draft_type, type(exc).__name__)
+        return {
+            'success': False,
+            'error': 'prompt_build_failed',
+            'provider': provider,
+        }
+
+    result = _call_provider(provider, _SYSTEM_PROMPT, prompt, model)
+
+    if not result.get('success'):
+        # Pass through whatever short error the provider returned, but add
+        # a friendly user-facing message so the route can render cleanly.
+        err = result.get('error', 'ai_unavailable')
+        msg_by_err = {
+            'ai_not_configured':
+                'AI draft assistant is not configured.',
+            'ai_unavailable':
+                'AI draft service is temporarily unavailable.',
+            'ai_empty_response':
+                'AI draft service returned an empty response.',
+        }
+        return {
+            'success': False,
+            'error': err,
+            'provider': provider,
+            'message': msg_by_err.get(err, 'AI draft generation failed.'),
+        }
+
+    body = result['text']
     return {
         'success': True,
         'draft': body,
+        'provider': provider,
         'model': model,
         'length_chars': len(body),
         'draft_type': draft_type,

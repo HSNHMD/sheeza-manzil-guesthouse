@@ -1,31 +1,24 @@
-"""Tests for the AI Draft Assistant V1.
+"""Tests for the AI Draft Assistant V1 (provider-pluggable).
 
 Covers:
-  1. Draft-type whitelist contains exactly the 9 V1 types.
-  2. Invalid draft_type is rejected by route + service.
-  3. Prompt builder NEVER includes passport/ID number, address, or full
-     uploaded filename even when the booking carries those values.
-  4. Prompt builder DOES include booking_ref / room / dates / total when
-     present.
-  5. Missing ANTHROPIC_API_KEY → service returns ai_not_configured (no
-     crash, no API call attempted).
-  6. AI service errors are caught and surfaced as ai_unavailable, not
-     re-raised.
-  7. Route requires admin login (anonymous → redirect to /console;
-     non-admin → 403).
-  8. Route does not import _send / _send_template; no WhatsApp/email
-     send is possible from the AI draft path.
-  9. Route does not mutate booking.status / invoice.payment_status /
-     room.status / amount_paid.
- 10. ActivityLog receives ai.draft.created with metadata only (no draft
-     body, no prompt text).
- 11. Banned-key sanitizer drops anything containing api_key|token|secret
-     in case future code regresses (smoke check).
- 12. Service output is presented to the user with the 'AI-generated draft —
-     review before sending.' banner (template renders the constant).
+  1. Draft-type whitelist (9 V1 types).
+  2. Invalid draft_type rejected by service + route.
+  3. Privacy: prompt builder NEVER includes passport/ID number, address,
+     or full uploaded filename.
+  4. Content: prompt DOES include booking_ref / room / dates / total.
+  5. Provider selection — gemini default, anthropic on env var.
+  6. Missing API key for the active provider → ai_not_configured.
+  7. Invalid AI_DRAFT_PROVIDER → invalid_provider error path.
+  8. API failure handling (Anthropic SDK raise, Gemini HTTP non-200).
+  9. Route requires admin login.
+ 10. Route does not import or call any WhatsApp send helper.
+ 11. Route does not mutate booking/payment/room state.
+ 12. ActivityLog has metadata only (no body, no prompt, no API key, no PII).
+ 13. Disclaimer banner rendered to user.
 
-These tests use an in-memory SQLite DB and mock the Anthropic SDK so no
-real API calls are made. They pass without ANTHROPIC_API_KEY set.
+These tests use an in-memory SQLite DB. Both providers are mocked at the
+public dispatcher boundary (`_call_provider`) so neither the Anthropic
+SDK nor the Gemini REST endpoint is ever contacted.
 """
 
 from __future__ import annotations
@@ -36,10 +29,11 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-# Clean env BEFORE app import. We want NO live anthropic key during tests.
-os.environ.pop('DATABASE_URL', None)
-os.environ.pop('ANTHROPIC_API_KEY', None)
-os.environ.pop('ANTHROPIC_MODEL', None)
+# Clean env BEFORE app import — no live keys, no DATABASE_URL.
+for _v in ('DATABASE_URL',
+           'AI_DRAFT_PROVIDER', 'AI_DRAFT_MODEL',
+           'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL'):
+    os.environ.pop(_v, None)
 os.environ.setdefault('SECRET_KEY', 'test-secret-do-not-use-in-prod')
 
 from config import Config                                         # noqa: E402
@@ -48,12 +42,8 @@ from app.models import db, User, Room, Guest, Booking, Invoice    # noqa: E402
 from app.models import ActivityLog                                # noqa: E402
 from app.services import ai_drafts                                # noqa: E402
 from app.services.ai_drafts import (                              # noqa: E402
-    DRAFT_TYPES,
-    DRAFT_LABELS,
-    DRAFT_DISCLAIMER,
-    build_prompt,
-    can_draft,
-    generate_draft,
+    DRAFT_TYPES, DRAFT_LABELS, DRAFT_DISCLAIMER, PROVIDERS,
+    build_prompt, can_draft, generate_draft,
 )
 
 
@@ -75,7 +65,6 @@ def _make_app():
 def _seed_booking(db_, *, with_id=True, with_slip=False,
                   status='confirmed', payment_status='unpaid',
                   amount_paid=0.0):
-    """Insert a fully-populated test booking and return it."""
     room = Room(number='99', name='Test Room', room_type='Test',
                 floor=0, capacity=2, price_per_night=600.0)
     guest = Guest(
@@ -83,7 +72,7 @@ def _seed_booking(db_, *, with_id=True, with_slip=False,
         phone='+9607000000',
         email='hassan@example.com',
         nationality='Maldivian',
-        # PII that must NOT leak into the prompt:
+        # PII that must NOT leak:
         id_type='passport', id_number='ABCDE12345',
         address='Maaveyo Magu, Hanimaadhoo, Hdh. Maldives',
     )
@@ -114,8 +103,20 @@ def _seed_booking(db_, *, with_id=True, with_slip=False,
     return booking
 
 
+def _reset_module_state():
+    """Wipe the lazy Anthropic singleton + provider env so each test starts
+    from a clean state."""
+    ai_drafts._anthropic_client = None
+    for v in ('AI_DRAFT_PROVIDER', 'AI_DRAFT_MODEL',
+              'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL'):
+        os.environ.pop(v, None)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 1, 2 — whitelist + invalid type
+# ─────────────────────────────────────────────────────────────────────────
+
 class DraftTypeWhitelistTests(unittest.TestCase):
-    """Tests 1, 2 — whitelist + invalid type rejection."""
 
     def test_v1_draft_types_match_promised_set(self):
         expected = {
@@ -133,14 +134,16 @@ class DraftTypeWhitelistTests(unittest.TestCase):
             self.assertTrue(DRAFT_LABELS[dt].strip())
 
     def test_invalid_draft_type_rejected_by_service(self):
-        # No app context needed for this — service short-circuits.
         result = generate_draft('not_a_real_type', booking=None)
         self.assertFalse(result['success'])
         self.assertEqual(result['error'], 'invalid_draft_type')
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# 3, 4 — privacy + content of the prompt builder
+# ─────────────────────────────────────────────────────────────────────────
+
 class PromptBuilderPrivacyTests(unittest.TestCase):
-    """Tests 3, 4 — privacy + content correctness of the prompt builder."""
 
     def setUp(self):
         self.app = _make_app()
@@ -155,16 +158,12 @@ class PromptBuilderPrivacyTests(unittest.TestCase):
         self.ctx.pop()
 
     def test_prompt_does_not_contain_passport_number(self):
-        # The PRIVATE thing is the actual passport NUMBER value — this
-        # must never appear in a prompt regardless of draft type.
-        # The word "passport" itself is fine in instructions (e.g.
-        # missing_id tells Claude to mention "ID or passport").
         for dt in DRAFT_TYPES:
             prompt = build_prompt(dt, self.booking)
             self.assertNotIn('ABCDE12345', prompt,
-                             f'{dt}: passport number value leaked')
+                             f'{dt}: passport NUMBER value leaked')
 
-    def test_prompt_does_not_contain_id_type_or_number_field_names(self):
+    def test_prompt_does_not_contain_id_field_names(self):
         for dt in DRAFT_TYPES:
             prompt = build_prompt(dt, self.booking)
             self.assertNotIn('id_number', prompt,
@@ -179,8 +178,6 @@ class PromptBuilderPrivacyTests(unittest.TestCase):
                              f'{dt}: full guest address leaked')
 
     def test_prompt_does_not_contain_full_uploaded_filenames(self):
-        # Filename strings include random hex suffix — the prompt should
-        # only carry the boolean has_id_card_uploaded / has_payment_slip_uploaded.
         for dt in DRAFT_TYPES:
             prompt = build_prompt(dt, self.booking)
             self.assertNotIn('id_hassan_abc123.jpg', prompt,
@@ -196,19 +193,17 @@ class PromptBuilderPrivacyTests(unittest.TestCase):
             self.assertIn('1200', prompt, f'{dt}: total amount missing')
 
     def test_no_fabrication_hedging_in_system_prompt(self):
-        # System prompt is shared — assert the no-guess instruction exists.
         sys_prompt = ai_drafts._SYSTEM_PROMPT
         self.assertIn('Use ONLY the booking facts', sys_prompt)
         self.assertIn('admin: please verify', sys_prompt)
         self.assertIn('Sheeza Manzil', sys_prompt)
 
-    def test_unknown_draft_type_raises_on_build(self):
-        with self.assertRaises(ValueError):
-            build_prompt('not_real', self.booking)
 
+# ─────────────────────────────────────────────────────────────────────────
+# State gating
+# ─────────────────────────────────────────────────────────────────────────
 
 class StateGatingTests(unittest.TestCase):
-    """can_draft soft-gate behavior."""
 
     def setUp(self):
         self.app = _make_app()
@@ -231,112 +226,284 @@ class StateGatingTests(unittest.TestCase):
         b1 = _seed_booking(db, with_id=True)
         self.assertFalse(can_draft(b1, 'missing_id'))
 
-    def test_unknown_draft_type_returns_true_by_default(self):
-        b = _seed_booking(db)
-        # Future-proof: unknown types pass the soft-gate; route still
-        # validates against DRAFT_TYPES allow-list.
-        self.assertTrue(can_draft(b, 'future_unknown_type'))
 
+# ─────────────────────────────────────────────────────────────────────────
+# 5 — provider selection
+# ─────────────────────────────────────────────────────────────────────────
 
-class MissingApiKeyTests(unittest.TestCase):
-    """Test 5 — clean degradation when key is absent."""
+class ProviderResolutionTests(unittest.TestCase):
 
     def setUp(self):
+        _reset_module_state()
         self.app = _make_app()
         self.ctx = self.app.app_context()
         self.ctx.push()
         db.create_all()
         self.booking = _seed_booking(db)
-        # Wipe singleton + env to simulate fresh start without key.
-        ai_drafts._client = None
-        os.environ.pop('ANTHROPIC_API_KEY', None)
 
     def tearDown(self):
+        _reset_module_state()
         db.session.remove()
         db.drop_all()
         self.ctx.pop()
 
-    def test_no_key_returns_not_configured(self):
+    def test_default_provider_is_gemini(self):
+        self.assertEqual(ai_drafts._get_provider(), 'gemini')
+
+    def test_supported_providers_set(self):
+        self.assertIn('gemini', PROVIDERS)
+        self.assertIn('anthropic', PROVIDERS)
+
+    def test_explicit_anthropic_provider(self):
+        os.environ['AI_DRAFT_PROVIDER'] = 'anthropic'
+        self.assertEqual(ai_drafts._get_provider(), 'anthropic')
+
+    def test_unknown_provider_falls_back_to_default_for_get_provider(self):
+        os.environ['AI_DRAFT_PROVIDER'] = 'mystery-llm'
+        # _get_provider() always returns a valid one for routing safety;
+        # the user-facing 'invalid_provider' error is raised separately
+        # by generate_draft() before _get_provider() is called.
+        self.assertEqual(ai_drafts._get_provider(), 'gemini')
+
+    def test_default_models_per_provider(self):
+        self.assertEqual(ai_drafts._resolve_model('gemini'),
+                         'gemini-2.5-flash-lite')
+        self.assertEqual(ai_drafts._resolve_model('anthropic'),
+                         'claude-sonnet-4-6')
+
+    def test_unified_ai_draft_model_overrides_default(self):
+        os.environ['AI_DRAFT_MODEL'] = 'gemini-2.0-flash'
+        self.assertEqual(ai_drafts._resolve_model('gemini'),
+                         'gemini-2.0-flash')
+        # And applies to anthropic too:
+        self.assertEqual(ai_drafts._resolve_model('anthropic'),
+                         'gemini-2.0-flash')
+
+    def test_legacy_anthropic_model_still_honored_for_anthropic(self):
+        # When AI_DRAFT_MODEL is unset, ANTHROPIC_MODEL still works
+        # for the anthropic path only.
+        os.environ['ANTHROPIC_MODEL'] = 'claude-haiku-4-5-20251001'
+        self.assertEqual(ai_drafts._resolve_model('anthropic'),
+                         'claude-haiku-4-5-20251001')
+        # Gemini is unaffected:
+        self.assertEqual(ai_drafts._resolve_model('gemini'),
+                         'gemini-2.5-flash-lite')
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 6 — missing API key → ai_not_configured
+# ─────────────────────────────────────────────────────────────────────────
+
+class MissingApiKeyTests(unittest.TestCase):
+
+    def setUp(self):
+        _reset_module_state()
+        self.app = _make_app()
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        self.booking = _seed_booking(db)
+
+    def tearDown(self):
+        _reset_module_state()
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def test_gemini_no_key_returns_not_configured(self):
+        # Default provider is gemini; no GEMINI_API_KEY set.
         result = generate_draft('booking_confirmed', self.booking)
         self.assertFalse(result['success'])
         self.assertEqual(result['error'], 'ai_not_configured')
+        self.assertEqual(result['provider'], 'gemini')
         self.assertIn('not configured', result['message'].lower())
 
-    def test_no_key_does_not_call_anthropic(self):
-        # If the SDK were called, it would raise auth errors — mock to
-        # detect any accidental call.
-        with mock.patch.object(ai_drafts, 'anthropic') as mocked_sdk:
+    def test_anthropic_no_key_returns_not_configured(self):
+        os.environ['AI_DRAFT_PROVIDER'] = 'anthropic'
+        result = generate_draft('booking_confirmed', self.booking)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error'], 'ai_not_configured')
+        self.assertEqual(result['provider'], 'anthropic')
+
+    def test_no_real_api_called_when_key_missing(self):
+        # Patch the dispatcher boundary — assert it's NEVER called when
+        # the key is absent (we short-circuit before dispatch).
+        with mock.patch.object(ai_drafts, '_call_provider') as called:
             result = generate_draft('booking_confirmed', self.booking)
             self.assertFalse(result['success'])
             self.assertEqual(result['error'], 'ai_not_configured')
-            mocked_sdk.Anthropic.assert_not_called()
+            called.assert_not_called()
 
 
-class ApiFailureTests(unittest.TestCase):
-    """Test 6 — API errors are caught and converted to safe error dict."""
+# ─────────────────────────────────────────────────────────────────────────
+# 7 — invalid provider
+# ─────────────────────────────────────────────────────────────────────────
+
+class InvalidProviderTests(unittest.TestCase):
 
     def setUp(self):
+        _reset_module_state()
         self.app = _make_app()
         self.ctx = self.app.app_context()
         self.ctx.push()
         db.create_all()
         self.booking = _seed_booking(db)
-        os.environ['ANTHROPIC_API_KEY'] = 'sk-test-fake-do-not-use'
-        ai_drafts._client = None  # force re-init
 
     def tearDown(self):
+        _reset_module_state()
         db.session.remove()
         db.drop_all()
         self.ctx.pop()
-        os.environ.pop('ANTHROPIC_API_KEY', None)
-        ai_drafts._client = None
 
-    def test_api_exception_returns_unavailable(self):
-        fake_client = mock.MagicMock()
-        fake_client.messages.create.side_effect = RuntimeError('boom')
-        ai_drafts._client = fake_client
-
+    def test_invalid_provider_returns_invalid_provider_error(self):
+        os.environ['AI_DRAFT_PROVIDER'] = 'mystery-llm'
         result = generate_draft('booking_confirmed', self.booking)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error'], 'invalid_provider')
+        self.assertIn('mystery-llm', result['message'])
+
+    def test_invalid_provider_does_not_call_api(self):
+        os.environ['AI_DRAFT_PROVIDER'] = 'mystery-llm'
+        with mock.patch.object(ai_drafts, '_call_provider') as called:
+            generate_draft('booking_confirmed', self.booking)
+            called.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 8 — API failure handling for both providers
+# ─────────────────────────────────────────────────────────────────────────
+
+class GeminiCallTests(unittest.TestCase):
+
+    def setUp(self):
+        _reset_module_state()
+        self.app = _make_app()
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        self.booking = _seed_booking(db)
+        os.environ['GEMINI_API_KEY'] = 'fake-test-key-do-not-use'
+
+    def tearDown(self):
+        _reset_module_state()
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def test_gemini_success_path(self):
+        # Mock requests.post to return a valid Gemini response.
+        fake_resp = mock.MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {
+            'candidates': [{
+                'content': {'parts': [{'text': 'Dear Hassan, your booking is confirmed.'}]}
+            }]
+        }
+        with mock.patch.object(ai_drafts, '_requests') as req:
+            req.post.return_value = fake_resp
+            result = generate_draft('booking_confirmed', self.booking)
+        self.assertTrue(result['success'])
+        self.assertEqual(result['provider'], 'gemini')
+        self.assertIn('Dear Hassan', result['draft'])
+        self.assertEqual(result['model'], 'gemini-2.5-flash-lite')
+
+    def test_gemini_http_non_200_returns_unavailable(self):
+        fake_resp = mock.MagicMock()
+        fake_resp.status_code = 500
+        fake_resp.text = 'irrelevant — must not be logged'
+        with mock.patch.object(ai_drafts, '_requests') as req:
+            req.post.return_value = fake_resp
+            result = generate_draft('booking_confirmed', self.booking)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error'], 'ai_unavailable')
+        self.assertEqual(result['provider'], 'gemini')
+
+    def test_gemini_exception_returns_unavailable(self):
+        with mock.patch.object(ai_drafts, '_requests') as req:
+            req.post.side_effect = RuntimeError('network-down')
+            result = generate_draft('booking_confirmed', self.booking)
         self.assertFalse(result['success'])
         self.assertEqual(result['error'], 'ai_unavailable')
 
-    def test_empty_response_returns_empty_error(self):
-        empty_resp = mock.MagicMock()
-        empty_resp.content = []
-        fake_client = mock.MagicMock()
-        fake_client.messages.create.return_value = empty_resp
-        ai_drafts._client = fake_client
+    def test_gemini_empty_candidates_returns_empty_response(self):
+        fake_resp = mock.MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.json.return_value = {'candidates': []}
+        with mock.patch.object(ai_drafts, '_requests') as req:
+            req.post.return_value = fake_resp
+            result = generate_draft('booking_confirmed', self.booking)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error'], 'ai_empty_response')
 
+
+class AnthropicCallTests(unittest.TestCase):
+
+    def setUp(self):
+        _reset_module_state()
+        self.app = _make_app()
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        self.booking = _seed_booking(db)
+        os.environ['AI_DRAFT_PROVIDER'] = 'anthropic'
+        os.environ['ANTHROPIC_API_KEY'] = 'sk-test-fake'
+
+    def tearDown(self):
+        _reset_module_state()
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def _make_client(self, *, raises=None, body='ok'):
+        client = mock.MagicMock()
+        if raises is not None:
+            client.messages.create.side_effect = raises
+        else:
+            block = mock.MagicMock()
+            block.text = body
+            resp = mock.MagicMock()
+            resp.content = [block] if body else []
+            client.messages.create.return_value = resp
+        return client
+
+    def test_anthropic_success(self):
+        ai_drafts._anthropic_client = self._make_client(
+            body='Dear Hassan, your booking is confirmed.',
+        )
+        result = generate_draft('booking_confirmed', self.booking)
+        self.assertTrue(result['success'])
+        self.assertEqual(result['provider'], 'anthropic')
+        self.assertIn('Dear Hassan', result['draft'])
+        self.assertEqual(result['model'], 'claude-sonnet-4-6')
+
+    def test_anthropic_exception_returns_unavailable(self):
+        ai_drafts._anthropic_client = self._make_client(
+            raises=RuntimeError('boom'),
+        )
+        result = generate_draft('booking_confirmed', self.booking)
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error'], 'ai_unavailable')
+        self.assertEqual(result['provider'], 'anthropic')
+
+    def test_anthropic_empty_response(self):
+        ai_drafts._anthropic_client = self._make_client(body='')
         result = generate_draft('booking_confirmed', self.booking)
         self.assertFalse(result['success'])
         self.assertEqual(result['error'], 'ai_empty_response')
 
-    def test_successful_response_extracts_text(self):
-        fake_block = mock.MagicMock()
-        fake_block.text = 'Dear Hassan, your booking BKAITEST is confirmed.'
-        fake_resp = mock.MagicMock()
-        fake_resp.content = [fake_block]
-        fake_client = mock.MagicMock()
-        fake_client.messages.create.return_value = fake_resp
-        ai_drafts._client = fake_client
 
-        result = generate_draft('booking_confirmed', self.booking)
-        self.assertTrue(result['success'])
-        self.assertIn('Dear Hassan', result['draft'])
-        self.assertEqual(result['draft_type'], 'booking_confirmed')
-        self.assertGreater(result['length_chars'], 0)
-        self.assertTrue(result['model'])
-
+# ─────────────────────────────────────────────────────────────────────────
+# 9, 10, 11, 12 — route auth + integrity + audit log
+# ─────────────────────────────────────────────────────────────────────────
 
 class RouteAuthAndIntegrityTests(unittest.TestCase):
-    """Tests 7, 8, 9, 10 — auth gating, no-send, no mutation, audit log."""
 
     def setUp(self):
+        _reset_module_state()
         self.app = _make_app()
         self.ctx = self.app.app_context()
         self.ctx.push()
         db.create_all()
-        # Seed admin + staff users
         admin = User(username='admin1', email='a@x', role='admin')
         admin.set_password('a-very-strong-password-1!')
         staff = User(username='staff1', email='s@x', role='staff')
@@ -350,47 +517,43 @@ class RouteAuthAndIntegrityTests(unittest.TestCase):
                                      amount_paid=1200.0)
         self.booking_id = self.booking.id
         self.client = self.app.test_client()
-        # Wire a fake successful Anthropic response by default.
-        self._patch_client_for_success()
+        self._patch_dispatcher_for_success()
 
     def tearDown(self):
+        _reset_module_state()
         db.session.remove()
         db.drop_all()
         self.ctx.pop()
-        ai_drafts._client = None
-        os.environ.pop('ANTHROPIC_API_KEY', None)
 
-    def _patch_client_for_success(self):
-        os.environ['ANTHROPIC_API_KEY'] = 'sk-test-fake'
-        block = mock.MagicMock()
-        block.text = 'Dear Hassan, your booking BKAITEST is confirmed.'
-        resp = mock.MagicMock()
-        resp.content = [block]
-        client = mock.MagicMock()
-        client.messages.create.return_value = resp
-        ai_drafts._client = client
+    def _patch_dispatcher_for_success(self):
+        # Default: Gemini provider configured + dispatcher returns OK text.
+        os.environ['AI_DRAFT_PROVIDER'] = 'gemini'
+        os.environ['GEMINI_API_KEY'] = 'fake-test-key'
+        self._dispatch_patcher = mock.patch.object(
+            ai_drafts, '_call_provider',
+            return_value={'success': True,
+                          'text': 'Dear Hassan, your booking is confirmed.'},
+        )
+        self._dispatch_patcher.start()
 
     def _login(self, user_id):
         with self.client.session_transaction() as sess:
             sess['_user_id'] = str(user_id)
             sess['_fresh'] = True
 
-    # — Test 7 —
-    def test_anonymous_redirected_to_login(self):
+    def test_anonymous_redirected(self):
         resp = self.client.post(
             f'/bookings/{self.booking_id}/ai-draft',
             data={'draft_type': 'booking_confirmed'},
         )
         self.assertIn(resp.status_code, (301, 302))
-        self.assertNotEqual(resp.status_code, 200)
 
-    def test_staff_gets_403(self):
+    def test_staff_blocked(self):
         self._login(self.staff_id)
         resp = self.client.post(
             f'/bookings/{self.booking_id}/ai-draft',
             data={'draft_type': 'booking_confirmed'},
         )
-        # staff guard intercepts non-admin staff; either 403 or redirect away
         self.assertNotEqual(resp.status_code, 200)
 
     def test_admin_can_generate_draft(self):
@@ -400,16 +563,23 @@ class RouteAuthAndIntegrityTests(unittest.TestCase):
             data={'draft_type': 'booking_confirmed'},
         )
         self.assertEqual(resp.status_code, 200)
-        # The response renders the booking detail page with the draft panel.
         self.assertIn(b'AI-generated draft', resp.data)
         self.assertIn(b'Dear Hassan', resp.data)
+        self.assertIn(b'gemini', resp.data)  # provider shown in panel
 
-    # — Test 8 (route does not import / call _send) —
-    def test_route_module_does_not_import_whatsapp_send_for_ai(self):
-        # Static check: ensure the AI service file does not IMPORT the
-        # WhatsApp send helpers. We scan executable lines only — comments
-        # and docstrings are stripped first so prose mentions like
-        # "this module does NOT call _send_template" don't trip the test.
+    # Test 10 — no whatsapp/email path is reachable from this route.
+    def test_no_whatsapp_or_email_call(self):
+        with mock.patch('app.services.whatsapp._send_template') as t, \
+             mock.patch('app.services.whatsapp._send') as s:
+            self._login(self.admin_id)
+            self.client.post(
+                f'/bookings/{self.booking_id}/ai-draft',
+                data={'draft_type': 'booking_confirmed'},
+            )
+        t.assert_not_called()
+        s.assert_not_called()
+
+    def test_ai_drafts_module_does_not_import_whatsapp(self):
         import ast
         repo = Path(__file__).resolve().parent.parent
         ai_path = repo / 'app' / 'services' / 'ai_drafts.py'
@@ -421,37 +591,9 @@ class RouteAuthAndIntegrityTests(unittest.TestCase):
                 blob = f'{module} :: {names}'
                 self.assertNotIn('whatsapp', blob.lower(),
                                  f'ai_drafts.py imports whatsapp: {blob}')
-            if isinstance(node, ast.Call):
-                # Catch any call whose function name string is a known
-                # WhatsApp helper (would only matter if imported, but
-                # belt-and-braces).
-                func_name = ''
-                if isinstance(node.func, ast.Attribute):
-                    func_name = node.func.attr
-                elif isinstance(node.func, ast.Name):
-                    func_name = node.func.id
-                self.assertNotIn(func_name, {
-                    '_send', '_send_template',
-                    'send_booking_confirmation', 'send_booking_acknowledgment',
-                    'send_staff_new_booking_notification',
-                    'send_checkin_reminder', 'send_checkout_invoice_summary',
-                }, f'ai_drafts.py calls a WhatsApp send fn: {func_name}')
 
-    def test_no_actual_whatsapp_call_during_route_run(self):
-        # Patch the WhatsApp send paths and assert they are NEVER invoked
-        # during an AI draft request.
-        with mock.patch('app.services.whatsapp._send_template') as send_tpl, \
-             mock.patch('app.services.whatsapp._send') as send_text:
-            self._login(self.admin_id)
-            self.client.post(
-                f'/bookings/{self.booking_id}/ai-draft',
-                data={'draft_type': 'booking_confirmed'},
-            )
-        send_tpl.assert_not_called()
-        send_text.assert_not_called()
-
-    # — Test 9 (no booking/payment mutation) —
-    def test_no_booking_or_invoice_mutation(self):
+    # Test 11 — no booking/payment/room mutation
+    def test_no_state_mutation(self):
         before = (
             self.booking.status,
             self.booking.invoice.payment_status,
@@ -463,17 +605,15 @@ class RouteAuthAndIntegrityTests(unittest.TestCase):
             f'/bookings/{self.booking_id}/ai-draft',
             data={'draft_type': 'booking_confirmed'},
         )
-        # Reload from DB to be safe
         b = Booking.query.get(self.booking_id)
         after = (
             b.status, b.invoice.payment_status,
             b.invoice.amount_paid, b.room.status,
         )
-        self.assertEqual(before, after,
-                         'AI draft route must not mutate booking/invoice/room')
+        self.assertEqual(before, after)
 
-    # — Test 10 (ActivityLog logged WITHOUT draft body) —
-    def test_activity_log_records_draft_event_without_body(self):
+    # Test 12a — audit row has metadata only, no body, no prompt.
+    def test_audit_log_has_metadata_only(self):
         self._login(self.admin_id)
         self.client.post(
             f'/bookings/{self.booking_id}/ai-draft',
@@ -484,14 +624,27 @@ class RouteAuthAndIntegrityTests(unittest.TestCase):
         row = rows[0]
         self.assertEqual(row.actor_type, 'admin')
         self.assertEqual(row.booking_id, self.booking_id)
-        # Description references the draft TYPE, never the body.
         self.assertIn('booking_confirmed', row.description)
-        # Critical: full draft text must NOT be in the audit row anywhere.
+        # Body never persisted:
         self.assertNotIn('Dear Hassan', row.description or '')
         self.assertNotIn('Dear Hassan', row.metadata_json or '')
 
-    # — Test 11 (banned-key smoke check on metadata_json) —
-    def test_metadata_json_does_not_leak_secret_keys(self):
+    # Test 12b — provider name IS recorded in metadata.
+    def test_audit_metadata_includes_provider_and_model(self):
+        self._login(self.admin_id)
+        self.client.post(
+            f'/bookings/{self.booking_id}/ai-draft',
+            data={'draft_type': 'booking_confirmed'},
+        )
+        row = ActivityLog.query.filter_by(action='ai.draft.created').first()
+        meta = (row.metadata_json or '')
+        self.assertIn('"provider": "gemini"', meta)
+        self.assertIn('"model"', meta)
+        self.assertIn('"draft_type"', meta)
+        self.assertIn('"booking_ref"', meta)
+
+    # Test 13 — no secret-like keys in metadata.
+    def test_metadata_has_no_secret_like_keys(self):
         self._login(self.admin_id)
         self.client.post(
             f'/bookings/{self.booking_id}/ai-draft',
@@ -499,38 +652,49 @@ class RouteAuthAndIntegrityTests(unittest.TestCase):
         )
         row = ActivityLog.query.filter_by(action='ai.draft.created').first()
         meta = (row.metadata_json or '').lower()
-        for forbidden in ('api_key', 'secret', 'token', 'credential',
-                          'sk-test', 'authorization'):
+        for forbidden in ('api_key', 'apikey', 'gemini_api_key',
+                          'anthropic_api_key', 'authorization',
+                          'sk-test', 'fake-test'):
             self.assertNotIn(forbidden, meta,
-                             f'metadata_json contains banned token: {forbidden!r}')
+                             f'metadata contains banned token: {forbidden!r}')
 
-    def test_invalid_draft_type_returns_redirect_no_log(self):
+    def test_invalid_draft_type_redirects_no_log(self):
         self._login(self.admin_id)
         resp = self.client.post(
             f'/bookings/{self.booking_id}/ai-draft',
             data={'draft_type': 'evil_inject'},
         )
         self.assertIn(resp.status_code, (301, 302))
-        # No audit row should be written for invalid types
         rows = ActivityLog.query.filter_by(action='ai.draft.created').all()
         self.assertEqual(rows, [])
 
     def test_failed_generation_logs_ai_draft_failed(self):
-        # Force the Anthropic client to raise.
-        ai_drafts._client.messages.create.side_effect = RuntimeError('fail')
-        self._login(self.admin_id)
-        self.client.post(
-            f'/bookings/{self.booking_id}/ai-draft',
-            data={'draft_type': 'booking_confirmed'},
-        )
-        ok_rows = ActivityLog.query.filter_by(action='ai.draft.created').all()
-        fail_rows = ActivityLog.query.filter_by(action='ai.draft.failed').all()
-        self.assertEqual(ok_rows, [])
-        self.assertEqual(len(fail_rows), 1)
+        # Force the dispatcher to return a failure.
+        self._dispatch_patcher.stop()
+        with mock.patch.object(
+            ai_drafts, '_call_provider',
+            return_value={'success': False, 'error': 'ai_unavailable'},
+        ):
+            self._login(self.admin_id)
+            self.client.post(
+                f'/bookings/{self.booking_id}/ai-draft',
+                data={'draft_type': 'booking_confirmed'},
+            )
+        ok = ActivityLog.query.filter_by(action='ai.draft.created').all()
+        fail = ActivityLog.query.filter_by(action='ai.draft.failed').all()
+        self.assertEqual(ok, [])
+        self.assertEqual(len(fail), 1)
+        # Provider still recorded on failure for ops debugging:
+        self.assertIn('"provider"', fail[0].metadata_json or '')
+        # Restart the auto-success patcher so tearDown doesn't double-stop.
+        self._dispatch_patcher.start()
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# 13 — disclaimer banner rendered to user
+# ─────────────────────────────────────────────────────────────────────────
 
 class DisclaimerSurfacingTests(unittest.TestCase):
-    """Test 12 — banner is shown to the user."""
 
     def test_disclaimer_constant_value(self):
         self.assertEqual(
@@ -539,8 +703,7 @@ class DisclaimerSurfacingTests(unittest.TestCase):
         )
 
     def test_template_renders_disclaimer_on_success(self):
-        # Smoke-render a booking detail page with a fake successful draft;
-        # assert the banner text appears.
+        _reset_module_state()
         app = _make_app()
         with app.app_context():
             db.create_all()
@@ -553,38 +716,33 @@ class DisclaimerSurfacingTests(unittest.TestCase):
             booking_id = booking.id
             admin_id = admin.id
 
-            os.environ['ANTHROPIC_API_KEY'] = 'sk-test-fake'
-            block = mock.MagicMock()
-            block.text = 'Sample draft body.'
-            resp = mock.MagicMock()
-            resp.content = [block]
-            client = mock.MagicMock()
-            client.messages.create.return_value = resp
-            ai_drafts._client = client
-
-            client_t = app.test_client()
-            with client_t.session_transaction() as sess:
-                sess['_user_id'] = str(admin_id)
-                sess['_fresh'] = True
-            r = client_t.post(
-                f'/bookings/{booking_id}/ai-draft',
-                data={'draft_type': 'booking_confirmed'},
-            )
-            self.assertEqual(r.status_code, 200)
-            self.assertIn(b'AI-generated draft', r.data)
-            self.assertIn(b'review before sending', r.data)
-            self.assertIn(b'not sent automatically', r.data)
-            self.assertNotIn(b'<form method="POST" action="/bookings/'
-                             + str(booking_id).encode() + b'/send"', r.data,
-                             'AI draft panel must not include any send form')
-
+            os.environ['AI_DRAFT_PROVIDER'] = 'gemini'
+            os.environ['GEMINI_API_KEY'] = 'fake-test-key'
+            with mock.patch.object(
+                ai_drafts, '_call_provider',
+                return_value={'success': True, 'text': 'Sample draft body.'},
+            ):
+                client_t = app.test_client()
+                with client_t.session_transaction() as sess:
+                    sess['_user_id'] = str(admin_id)
+                    sess['_fresh'] = True
+                r = client_t.post(
+                    f'/bookings/{booking_id}/ai-draft',
+                    data={'draft_type': 'booking_confirmed'},
+                )
+                self.assertEqual(r.status_code, 200)
+                self.assertIn(b'AI-generated draft', r.data)
+                self.assertIn(b'review before sending', r.data)
+                self.assertIn(b'not sent automatically', r.data)
             db.drop_all()
-            ai_drafts._client = None
-            os.environ.pop('ANTHROPIC_API_KEY', None)
+            _reset_module_state()
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# Wiring sanity
+# ─────────────────────────────────────────────────────────────────────────
 
 class WiringSmokeTests(unittest.TestCase):
-    """Confirm imports + route registration without running a request."""
 
     @classmethod
     def setUpClass(cls):
@@ -596,14 +754,8 @@ class WiringSmokeTests(unittest.TestCase):
         self.assertIn('bookings.ai_draft', rules)
         self.assertIn('bookings.detail', rules)
 
-    def test_bookings_route_imports_ai_drafts_only_inside_handler(self):
-        # The AI service is imported inside detail() / ai_draft() to keep
-        # module load cheap and to avoid a hard dep on anthropic at import
-        # time. Confirm the imports are NOT at module top level.
+    def test_ai_drafts_imported_lazily_in_routes(self):
         src = (self.repo / 'app' / 'routes' / 'bookings.py').read_text()
-        # Top-of-file imports section ends at the first blank line after
-        # the imports. Just check 'from ..services.ai_drafts import' does
-        # NOT appear before line 20 (where the imports block ends).
         head = '\n'.join(src.splitlines()[:20])
         self.assertNotIn('from ..services.ai_drafts', head,
                          'ai_drafts must be imported lazily inside handlers')

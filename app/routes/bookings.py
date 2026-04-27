@@ -256,12 +256,12 @@ def ai_draft(booking_id):
             booking=booking, invoice=booking.invoice,
             description=f'Admin generated AI draft (type: {draft_type}).',
             metadata={
-                'draft_type': draft_type,
+                'draft_type':  draft_type,
                 'booking_ref': booking.booking_ref,
-                'model': result.get('model'),
+                'provider':    result.get('provider'),
+                'model':       result.get('model'),
                 'length_chars': result.get('length_chars'),
-                'has_phone': bool(getattr(booking.guest, 'phone', None)),
-                'success': True,
+                'success':     True,
             },
         )
     else:
@@ -270,10 +270,11 @@ def ai_draft(booking_id):
             booking=booking, invoice=booking.invoice,
             description=f'AI draft generation failed (type: {draft_type}).',
             metadata={
-                'draft_type': draft_type,
+                'draft_type':  draft_type,
                 'booking_ref': booking.booking_ref,
-                'error': result.get('error', 'unknown'),
-                'success': False,
+                'provider':    result.get('provider'),
+                'error':       result.get('error', 'unknown'),
+                'success':     False,
             },
         )
     db.session.commit()
