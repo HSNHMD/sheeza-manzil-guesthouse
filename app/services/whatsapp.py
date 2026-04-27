@@ -14,8 +14,9 @@ Templates used (all language: en_US):
 Pending-approval templates fail gracefully: the booking flow is never blocked.
 """
 
-import os
+import json
 import logging
+import os
 
 try:
     import requests as _requests
@@ -297,3 +298,143 @@ def send_checkout_invoice_summary(booking, invoice) -> bool:
         f"We hope to see you again soon at Sheeza Manzil Guesthouse! 🌟"
     )
     return _send(phone, text)['success']
+
+
+# ── V2: Admin-approved free-form text send ─────────────────────────────────
+#
+# Used by the AI Draft Approval workflow on the booking detail page. Wraps
+# the existing `_send()` with three safety improvements over calling _send
+# directly from a route handler:
+#
+#   1. Validates phone + body lengths BEFORE the HTTP call, so obviously
+#      bad input never reaches Meta.
+#   2. Returns a normalized result dict that strips the raw Meta response
+#      and carries only a short symbolic error_class. The caller is
+#      therefore safe to log the entire return value to ActivityLog
+#      without any chance of leaking phone numbers or token-bearing
+#      headers from Meta's echo.
+#   3. Parses the wamid.… message_id out of the success body so the
+#      audit log can correlate sent messages with Meta's records.
+#
+# WhatsApp 24-hour free-form window (binding):
+#   Meta only allows free-form text to numbers that have messaged the
+#   business within the last 24 hours. Outside that window, Meta returns
+#   error 131047 ("re-engagement") and we map it to error_class
+#   'meta_window_closed'. The caller's UI should suggest using the
+#   existing wa.me deeplink as a fallback rather than inventing template
+#   names — this module deliberately does NOT auto-fall-back to a
+#   template, because that would silently change the message content.
+
+_ADMIN_TEXT_MIN_LEN = 1
+_ADMIN_TEXT_MAX_LEN = 1500
+
+
+def _classify_send_error(raw: dict) -> str:
+    """Map a raw `_send()` failure result to a short symbolic error class.
+
+    The caller logs only the returned string, never `raw`, so this
+    function fully controls what reaches the audit log.
+    """
+    err  = (raw.get('error') or '').lower()
+    body = (raw.get('response_body') or '').lower()
+    code = raw.get('status_code')
+
+    # Config-side problems surface here as Python-side errors from
+    # _check_config() — they predate any HTTP call.
+    if 'is not true' in err and 'whatsapp_enabled' in err.lower() + body:
+        return 'config_disabled'
+    # _check_config returns one of these literal strings on failure:
+    if err.startswith('whatsapp_enabled is not true'):
+        return 'config_disabled'
+    if err.startswith('whatsapp_token is not set') or err.startswith('whatsapp_phone'):
+        return 'config_invalid'
+    if err.startswith('requests library'):
+        return 'config_invalid'
+
+    # Meta API errors — match by code first, then known error-code substrings
+    # in the body. Body is matched lowercased; values like '131047' are
+    # never reflected to the audit log.
+    if code == 401 or '132018' in body or 'invalid token' in body:
+        return 'meta_token_invalid'
+    if code == 400 and (
+        '131047' in body
+        or 're-engagement' in body
+        or '24-hour' in body
+        or '24 hour' in body
+    ):
+        return 'meta_window_closed'
+    if code is not None and 400 <= code < 600:
+        return 'meta_other'
+
+    # No status code + an exception string usually means network failure.
+    if raw.get('error') and code is None:
+        return 'network_error'
+
+    return 'unknown'
+
+
+def send_text_message(to_phone, body: str) -> dict:
+    """V2 admin-approved free-form text send.
+
+    Args:
+        to_phone: phone string (any format; will be normalized by `_clean_phone`).
+        body:     message text. Whitespace is stripped before validation.
+
+    Returns a normalized result dict that is SAFE TO LOG IN FULL:
+        {'success': True,  'message_id': str | None, 'error_class': None}
+        {'success': False, 'message_id': None,       'error_class': str}
+
+    The return value never includes:
+      * the raw Meta response body (may contain echoed phone metadata)
+      * the full destination phone (caller decides what to log)
+      * any header / token string
+
+    Validation error_class values:
+        'validation_phone'    — phone empty or missing
+        'validation_body'     — body empty after strip
+        'validation_too_long' — body > 1500 chars
+
+    Send-path error_class values:
+        'config_disabled'    — WHATSAPP_ENABLED is not true
+        'config_invalid'     — token / phone-id / requests lib missing
+        'meta_token_invalid' — Meta 401 / token rejected (rotate)
+        'meta_window_closed' — Meta 131047, outside 24-hour reply window
+        'meta_other'         — any other Meta 4xx/5xx
+        'network_error'      — exception inside the HTTP call
+        'unknown'            — defensive default
+    """
+    # ── Input validation (cheap; runs before any HTTP call) ──
+    if not to_phone or not str(to_phone).strip():
+        return {'success': False, 'message_id': None,
+                'error_class': 'validation_phone'}
+
+    text = (body or '').strip()
+    if len(text) < _ADMIN_TEXT_MIN_LEN:
+        return {'success': False, 'message_id': None,
+                'error_class': 'validation_body'}
+    if len(text) > _ADMIN_TEXT_MAX_LEN:
+        return {'success': False, 'message_id': None,
+                'error_class': 'validation_too_long'}
+
+    # ── Delegate to internal _send (which handles config + HTTP) ──
+    raw = _send(to_phone, text)
+
+    if raw.get('success'):
+        # Parse out the wamid.… message_id from the JSON envelope.
+        # Anything unexpected leaves message_id as None — never raises.
+        msg_id = None
+        try:
+            parsed = json.loads(raw.get('response_body') or '{}')
+            messages = parsed.get('messages') or []
+            if messages and isinstance(messages, list):
+                first = messages[0] or {}
+                msg_id = first.get('id') if isinstance(first, dict) else None
+        except Exception:
+            pass
+        return {'success': True, 'message_id': msg_id, 'error_class': None}
+
+    return {
+        'success': False,
+        'message_id': None,
+        'error_class': _classify_send_error(raw),
+    }

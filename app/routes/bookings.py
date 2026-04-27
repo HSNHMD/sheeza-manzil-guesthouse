@@ -299,6 +299,177 @@ def ai_draft(booking_id):
     )
 
 
+@bookings_bp.route('/<int:booking_id>/ai-draft/send-whatsapp', methods=['POST'])
+@login_required
+@admin_required
+def ai_draft_send_whatsapp(booking_id):
+    """Admin-approved send of an EDITED AI draft via WhatsApp.
+
+    The admin saw the AI-generated draft on the booking detail page,
+    edited it in a textarea, and clicked "Send via WhatsApp". This
+    handler receives the EDITED `message_body` and dispatches it via
+    the existing free-form WhatsApp transport (`send_text_message`).
+
+    Hard rules enforced here:
+      • No booking.status / invoice.payment_status / room.status mutation
+      • No Gemini call (this handler does NOT import ai_drafts)
+      • No email send (no SMTP integration exists in the codebase)
+      • Audit metadata is a strict whitelist:
+          booking_ref, draft_type, provider='whatsapp',
+          recipient_phone_last4, message_length,
+          whatsapp_message_id (success only),
+          error_class (failure only)
+        Body and full phone are NEVER logged.
+      • Two audit rows per click: an `attempt` BEFORE the API call, and
+        a `sent` or `failed` AFTER. This makes "did the send actually
+        happen?" a trivial DB query.
+      • WhatsApp's 24-hour free-form window: if Meta returns 131047 the
+        wrapper maps it to error_class='meta_window_closed' and we show
+        a friendly message suggesting the wa.me deeplink fallback. We
+        never auto-substitute an approved template, because that would
+        silently change the message content.
+    """
+    import re
+    from ..services.whatsapp import send_text_message
+
+    booking = Booking.query.get_or_404(booking_id)
+    message_body = (request.form.get('message_body') or '').strip()
+    draft_type = (request.form.get('draft_type') or '').strip() or None
+
+    phone = (booking.guest.phone or '').strip()
+    phone_last4 = re.sub(r'\D', '', phone)[-4:] if phone else None
+
+    # ── Validation: fail fast WITHOUT auditing or calling the API ──
+    if not phone:
+        flash('Cannot send: guest has no phone number on file.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    if not message_body:
+        flash('Cannot send: message is empty.', 'error')
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    # Reject drafts that still contain AI placeholder markers like
+    # "[admin: please paste current bank details]" — these should be
+    # filled in by the admin BEFORE sending.
+    if '[admin:' in message_body.lower():
+        flash(
+            'Cannot send: draft still contains "[admin: …]" placeholder text. '
+            'Please replace the placeholders with real values before sending.',
+            'error',
+        )
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    if len(message_body) > 1500:
+        flash(
+            f'Cannot send: message is {len(message_body)} characters; '
+            f'the limit is 1500. Trim the message and try again.',
+            'error',
+        )
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    # ── Audit attempt BEFORE the API call ──
+    log_activity(
+        'ai.draft.whatsapp_send_attempt',
+        booking=booking, invoice=booking.invoice,
+        description=f'Admin attempting WhatsApp send (type: {draft_type or "—"}).',
+        metadata={
+            'booking_ref': booking.booking_ref,
+            'draft_type': draft_type,
+            'provider': 'whatsapp',
+            'recipient_phone_last4': phone_last4,
+            'message_length': len(message_body),
+        },
+    )
+    db.session.commit()
+
+    # ── The actual send (mocked in tests; never hits real Meta API) ──
+    result = send_text_message(phone, message_body)
+
+    # ── Audit outcome ──
+    if result.get('success'):
+        log_activity(
+            'ai.draft.whatsapp_sent',
+            booking=booking, invoice=booking.invoice,
+            description=(
+                f'WhatsApp message delivered to guest '
+                f'(type: {draft_type or "—"}).'
+            ),
+            metadata={
+                'booking_ref': booking.booking_ref,
+                'draft_type': draft_type,
+                'provider': 'whatsapp',
+                'recipient_phone_last4': phone_last4,
+                'message_length': len(message_body),
+                'whatsapp_message_id': result.get('message_id'),
+                'success': True,
+            },
+        )
+        db.session.commit()
+        flash(
+            f'Message sent to guest WhatsApp ending in {phone_last4}.',
+            'success',
+        )
+        return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+    # Failure path — map error_class to friendly UX message.
+    error_class = result.get('error_class') or 'unknown'
+    log_activity(
+        'ai.draft.whatsapp_failed',
+        booking=booking, invoice=booking.invoice,
+        description=(
+            f'WhatsApp send failed '
+            f'(type: {draft_type or "—"}; error_class: {error_class}).'
+        ),
+        metadata={
+            'booking_ref': booking.booking_ref,
+            'draft_type': draft_type,
+            'provider': 'whatsapp',
+            'recipient_phone_last4': phone_last4,
+            'message_length': len(message_body),
+            'error_class': error_class,
+            'success': False,
+        },
+    )
+    db.session.commit()
+
+    msg_by_class = {
+        'config_disabled': (
+            'WhatsApp sending is not enabled in server config '
+            '(WHATSAPP_ENABLED=true required).'
+        ),
+        'config_invalid': (
+            'WhatsApp config is incomplete on the server '
+            '(missing token or phone number ID).'
+        ),
+        'meta_token_invalid': (
+            'WhatsApp authentication failed — the access token may have '
+            'expired or been revoked. Ask the operator to rotate WHATSAPP_TOKEN.'
+        ),
+        'meta_window_closed': (
+            "WhatsApp would not deliver: the guest hasn't messaged us in "
+            "the last 24 hours, so Meta blocks free-form replies. Use the "
+            '"Open in WhatsApp" deeplink below to send manually, or wait '
+            'for the guest to message first.'
+        ),
+        'meta_other': (
+            'WhatsApp returned an error. Try again, or use the '
+            '"Open in WhatsApp" deeplink as a fallback.'
+        ),
+        'network_error': (
+            'Network error reaching WhatsApp. Try again in a moment.'
+        ),
+    }
+    flash(
+        msg_by_class.get(
+            error_class,
+            'WhatsApp send failed. Try again, or use the "Open in WhatsApp" '
+            'deeplink as a fallback.',
+        ),
+        'error',
+    )
+    return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+
 @bookings_bp.route('/<int:booking_id>/checkin', methods=['POST'])
 @login_required
 @admin_required

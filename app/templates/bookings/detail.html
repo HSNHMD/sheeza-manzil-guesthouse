@@ -350,6 +350,9 @@
 
     {% if ai_draft is defined and ai_draft is not none %}
       {% if ai_draft.success %}
+      {# Compute phone-last4 once for the confirm dialog and the Send button. #}
+      {% set _phone_digits = (booking.guest.phone or '') | replace('+','') | replace(' ','') | replace('-','') %}
+      {% set _phone_last4 = _phone_digits[-4:] if _phone_digits else '' %}
       <div class="mt-4 border border-yellow-300 bg-yellow-50 rounded-lg p-4">
         <div class="flex items-center justify-between mb-2">
           <p class="text-xs font-bold uppercase tracking-wider text-yellow-800">
@@ -359,36 +362,55 @@
             {{ ai_draft.draft_type }} · {{ ai_draft.provider }} · {{ ai_draft.length_chars }} chars
           </span>
         </div>
-        <textarea id="ai-draft-text" readonly rows="8"
-                  class="w-full text-sm font-sans text-gray-800 bg-white border border-yellow-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-400">{{ ai_draft.draft }}</textarea>
-        <p class="text-[11px] text-yellow-700 mt-2">
-          This draft is not sent automatically. Copy the text and review it
-          before sharing with the guest.
-        </p>
-        <div class="flex flex-wrap gap-2 mt-3">
-          <button type="button"
-                  onclick="
-                    var t=document.getElementById('ai-draft-text');
-                    t.select();t.setSelectionRange(0,99999);
-                    navigator.clipboard&&navigator.clipboard.writeText(t.value);
-                    this.textContent='Copied ✓';
-                    setTimeout(function(){this.textContent='📋 Copy draft'}.bind(this),2000);
-                  "
-                  class="px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium rounded-lg transition-colors">
-            📋 Copy draft
-          </button>
-          {% if booking.guest.phone %}
-          <a href="https://wa.me/{{ booking.guest.phone | replace('+','') | replace(' ','') }}?text={{ ai_draft.draft | urlencode }}"
-             target="_blank"
-             class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors">
-            📱 Open in WhatsApp
-          </a>
-          {% else %}
-          <span class="px-3 py-1.5 bg-gray-100 text-gray-400 text-xs rounded-lg">
-            No guest phone on file
-          </span>
-          {% endif %}
-        </div>
+        {# The textarea + Send button are wrapped in a server-side POST form.
+           The textarea is editable: the admin reviews the AI draft, edits it,
+           then clicks Send. The route receives `message_body` (the EDITED
+           text) and `draft_type` for the audit metadata. #}
+        <form method="POST"
+              action="{{ url_for('bookings.ai_draft_send_whatsapp', booking_id=booking.id) }}"
+              onsubmit="var b=this.querySelector('button[name=do_send]');if(b){b.disabled=true;b.textContent='Sending…';}">
+          <input type="hidden" name="draft_type" value="{{ ai_draft.draft_type }}">
+          <textarea id="ai-draft-text" name="message_body"
+                    rows="8" required minlength="1" maxlength="1500"
+                    class="w-full text-sm font-sans text-gray-800 bg-white border border-yellow-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-400">{{ ai_draft.draft }}</textarea>
+          <p class="text-[11px] text-yellow-700 mt-2">
+            ⚠ This will send the <strong>edited</strong> text above to the guest's
+            WhatsApp number. Replace any <code>[admin: …]</code> placeholders before sending.
+            <br>
+            Free-form WhatsApp replies require the guest to have messaged us
+            within the last 24 hours; if Meta blocks the send, use the
+            “Open in WhatsApp” deeplink below as a fallback.
+          </p>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button type="button"
+                    onclick="
+                      var t=document.getElementById('ai-draft-text');
+                      t.select();t.setSelectionRange(0,99999);
+                      navigator.clipboard&&navigator.clipboard.writeText(t.value);
+                      this.textContent='Copied ✓';
+                      setTimeout(function(){this.textContent='📋 Copy draft'}.bind(this),2000);
+                    "
+                    class="px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium rounded-lg transition-colors">
+              📋 Copy draft
+            </button>
+            {% if booking.guest.phone %}
+            <button type="submit" name="do_send" value="1"
+                    onclick="if (!confirm('Send the EDITED draft to the guest WhatsApp number ending in {{ _phone_last4 }}?\n\nThis will deliver the text above as a real message.')) return false;"
+                    class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors">
+              📤 Send this draft by WhatsApp
+            </button>
+            <a href="https://wa.me/{{ booking.guest.phone | replace('+','') | replace(' ','') }}?text={{ ai_draft.draft | urlencode }}"
+               target="_blank"
+               class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors">
+              📱 Open in WhatsApp instead (manual)
+            </a>
+            {% else %}
+            <span class="px-3 py-1.5 bg-gray-100 text-gray-400 text-xs rounded-lg">
+              No guest phone on file — sending disabled
+            </span>
+            {% endif %}
+          </div>
+        </form>
       </div>
       {% else %}
       <div class="mt-4 border border-gray-300 bg-gray-50 rounded-lg p-3">
