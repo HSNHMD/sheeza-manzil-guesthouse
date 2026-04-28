@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Optional
 
 # Anthropic SDK is optional — only required when provider == 'anthropic'.
@@ -596,4 +597,273 @@ def generate_draft(draft_type: str, booking) -> dict:
         'model': model,
         'length_chars': len(body),
         'draft_type': draft_type,
+    }
+
+
+# ── Inbound reply drafts (V2) ────────────────────────────────────────────
+#
+# Used by the admin-only WhatsApp inbox blueprint. Generates a reply draft
+# from an inbound WhatsAppMessage row plus its linked Booking (if any).
+# The function below is a SIBLING to `generate_draft()` — it reuses every
+# provider, model, and prompt-building helper above, but assembles a
+# different user-prompt because the input is a guest's free-text message
+# rather than a curated draft type.
+#
+# Privacy contract (binding, mirrored from V1 of inbound webhook):
+#   - The full inbound body is passed to the AI prompt only, never logged.
+#   - The AI output is returned to the route, never persisted.
+#   - The route logs only metadata (provider, model, length_chars, etc).
+#   - The route NEVER passes the AI draft body to log_activity().
+
+INBOUND_REPLY_DRAFT_TYPE = 'inbound_reply'
+
+# Payment-related substrings that, when found in the inbound body (case-
+# insensitive, word-bounded), cause the prompt builder to embed the bank
+# transfer block. NOT an LLM decision — this is server-side regex so we
+# can predict deterministically when the block is shown.
+_PAYMENT_KEYWORD_RE = re.compile(
+    r'\b(payment|pay|paid|paying|transfer|transferred|bank|account|'
+    r'deposit|invoice|bill|receipt|slip)\b',
+    re.IGNORECASE,
+)
+
+_INBOUND_BODY_MAX_CHARS = 1000
+
+_INBOUND_REPLY_SYSTEM_CLAUSES = (
+    '\n'
+    '9. The guest\'s inbound message appears below. Use it ONLY to '
+    'understand what they\'re asking. Do NOT echo the message verbatim. '
+    'Do NOT quote whole sentences from the guest. Reference specific '
+    'words from their message only when essential (e.g., a booking_ref '
+    'they typed).\n'
+    '10. If the inbound message is abusive, threatening, or off-topic, '
+    'output ONLY a polite acknowledgment such as '
+    '"Thank you for reaching out — our team will follow up shortly." '
+    'Do NOT engage with the content.\n'
+    '11. If the inbound message_type is NOT \'text\', acknowledge receipt '
+    'of the media without describing what it shows. Example: '
+    '"Thanks for sending the photo — we\'ll review it and get back to '
+    'you shortly."\n'
+    '12. If no booking context is provided, write a short polite reply '
+    'asking the guest to share their booking_ref so the team can help. '
+    'Do NOT invent booking facts. Note that the admin should still '
+    'verify guest identity before acting on the message.\n'
+)
+
+
+def _truncate_inbound_body(body):
+    """Return inbound body trimmed to _INBOUND_BODY_MAX_CHARS, preserving None."""
+    if body is None:
+        return None
+    text = str(body)
+    if len(text) <= _INBOUND_BODY_MAX_CHARS:
+        return text
+    return text[:_INBOUND_BODY_MAX_CHARS] + '…'
+
+
+def inbound_reply_should_embed_payment_block(wa_message) -> bool:
+    """Server-side decision (NOT an LLM call) for whether to embed the
+    official bank-transfer block in the inbound reply prompt.
+
+    Rules:
+      - Inbound body must contain a payment-related keyword (case-insensitive)
+      - Linked booking exists and its invoice payment_status is NOT
+        already 'verified' / 'paid' / 'fully_paid'
+      - If unlinked, the keyword alone is enough — the admin still gets the
+        bank block since most unlinked-payment questions are pre-booking
+    """
+    body = getattr(wa_message, 'body_text', None)
+    if not body:
+        return False
+    if not _PAYMENT_KEYWORD_RE.search(body):
+        return False
+
+    booking = getattr(wa_message, 'booking', None)
+    if booking is None:
+        return True
+    inv = getattr(booking, 'invoice', None)
+    if inv is None:
+        return True
+    ps = (getattr(inv, 'payment_status', '') or '').strip().lower()
+    if ps in ('verified', 'paid', 'fully_paid'):
+        return False
+    return True
+
+
+def build_inbound_reply_prompt(wa_message) -> str:
+    """Construct the user-message prompt for an inbound reply.
+
+    Pure function. Never raises on a well-formed WhatsAppMessage.
+    """
+    msg_type = getattr(wa_message, 'message_type', 'text') or 'text'
+    profile_name = getattr(wa_message, 'profile_name', None)
+    raw_body = getattr(wa_message, 'body_text', None)
+    body = _truncate_inbound_body(raw_body)
+
+    # Inbound-message section — always included.
+    if msg_type == 'text' and body:
+        body_repr = body
+    elif msg_type == 'text':
+        body_repr = '[empty text]'
+    else:
+        body_repr = f'[non-text message type: {msg_type} — no body]'
+
+    inbound_section = (
+        '────────────────────────────────────────\n'
+        'INBOUND MESSAGE (from guest):\n'
+        '────────────────────────────────────────\n'
+        f'type:         {msg_type}\n'
+        f'profile_name: {_missing(profile_name)}\n'
+        f'body:         {body_repr}\n'
+        '────────────────────────────────────────'
+    )
+
+    booking = getattr(wa_message, 'booking', None)
+    has_booking = booking is not None
+
+    if has_booking:
+        instruction = (
+            'Draft a short, polite WhatsApp reply to the guest. Use the '
+            'BOOKING CONTEXT below if the guest\'s question references it. '
+            'Do not invent facts not in the booking context.'
+        )
+        booking_section = (
+            '\n────────────────────────────────────────\n'
+            'BOOKING CONTEXT (use ONLY these — guess nothing):\n'
+            '────────────────────────────────────────\n'
+            f'{_booking_facts(booking)}\n'
+            '────────────────────────────────────────'
+        )
+    else:
+        instruction = (
+            'Draft a short, polite WhatsApp reply asking the guest for '
+            'their booking_ref so the team can help. Do not assume any '
+            'booking exists or invent any details.'
+        )
+        booking_section = (
+            '\n────────────────────────────────────────\n'
+            'BOOKING CONTEXT: (none — message is not linked to a booking)\n'
+            'Note: admin will verify guest identity before acting.\n'
+            '────────────────────────────────────────'
+        )
+
+    payment_section = ''
+    if inbound_reply_should_embed_payment_block(wa_message):
+        payment_section = (
+            '\n────────────────────────────────────────\n'
+            'OFFICIAL PAYMENT INSTRUCTION BLOCK\n'
+            '(include this EXACT text verbatim where appropriate; do NOT\n'
+            'invent, paraphrase, or alter the account name or number; do\n'
+            'NOT write "[admin: …]" placeholders for any bank or payment\n'
+            'detail — the block below contains everything needed):\n'
+            '────────────────────────────────────────\n'
+            f'{get_payment_instruction_block()}\n'
+            '────────────────────────────────────────'
+        )
+
+    return (
+        f'{instruction}\n\n'
+        f'{inbound_section}'
+        f'{booking_section}'
+        f'{payment_section}\n\n'
+        'Output the reply now. No preamble. No commentary.'
+    )
+
+
+def generate_inbound_reply_draft(wa_message) -> dict:
+    """Generate an admin-reviewed reply draft for an inbound WhatsApp message.
+
+    Returns the same result-dict shape as ``generate_draft()``:
+
+        {'success': True,  'draft': str, 'provider': str, 'model': str,
+         'length_chars': int, 'draft_type': 'inbound_reply',
+         'has_booking_context': bool, 'payment_instructions_used': bool,
+         'inbound_body_length': int}
+
+        {'success': False, 'error': '...', 'provider': str, 'message': str,
+         'has_booking_context': bool, 'payment_instructions_used': False,
+         'inbound_body_length': int}
+    """
+    raw_body = getattr(wa_message, 'body_text', None) or ''
+    inbound_body_length = len(raw_body)
+    has_booking_context = getattr(wa_message, 'booking', None) is not None
+    payment_used = inbound_reply_should_embed_payment_block(wa_message)
+
+    raw_provider = (os.environ.get('AI_DRAFT_PROVIDER') or '').strip().lower()
+    if raw_provider and raw_provider not in PROVIDERS:
+        return {
+            'success': False,
+            'error': 'invalid_provider',
+            'provider': raw_provider,
+            'message': (f'Configured AI provider {raw_provider!r} is not '
+                        f'supported. Allowed: {", ".join(PROVIDERS)}.'),
+            'has_booking_context': has_booking_context,
+            'payment_instructions_used': payment_used,
+            'inbound_body_length': inbound_body_length,
+        }
+
+    provider = _get_provider()
+    model = _resolve_model(provider)
+
+    if not _is_provider_configured(provider):
+        return {
+            'success': False,
+            'error': 'ai_not_configured',
+            'provider': provider,
+            'message': 'AI draft assistant is not configured.',
+            'has_booking_context': has_booking_context,
+            'payment_instructions_used': payment_used,
+            'inbound_body_length': inbound_body_length,
+        }
+
+    try:
+        user_prompt = build_inbound_reply_prompt(wa_message)
+    except Exception as exc:
+        logger.warning('AI drafts: inbound prompt build failed (%s)',
+                       type(exc).__name__)
+        return {
+            'success': False,
+            'error': 'prompt_build_failed',
+            'provider': provider,
+            'message': 'AI draft generation failed.',
+            'has_booking_context': has_booking_context,
+            'payment_instructions_used': payment_used,
+            'inbound_body_length': inbound_body_length,
+        }
+
+    extended_system = _SYSTEM_PROMPT + _INBOUND_REPLY_SYSTEM_CLAUSES
+
+    result = _call_provider(provider, extended_system, user_prompt, model)
+
+    if not result.get('success'):
+        err = result.get('error', 'ai_unavailable')
+        msg_by_err = {
+            'ai_not_configured':
+                'AI draft assistant is not configured.',
+            'ai_unavailable':
+                'AI draft service is temporarily unavailable.',
+            'ai_empty_response':
+                'AI draft service returned an empty response.',
+        }
+        return {
+            'success': False,
+            'error': err,
+            'provider': provider,
+            'message': msg_by_err.get(err, 'AI draft generation failed.'),
+            'has_booking_context': has_booking_context,
+            'payment_instructions_used': payment_used,
+            'inbound_body_length': inbound_body_length,
+        }
+
+    body = result['text']
+    return {
+        'success': True,
+        'draft': body,
+        'provider': provider,
+        'model': model,
+        'length_chars': len(body),
+        'draft_type': INBOUND_REPLY_DRAFT_TYPE,
+        'has_booking_context': has_booking_context,
+        'payment_instructions_used': payment_used,
+        'inbound_body_length': inbound_body_length,
     }

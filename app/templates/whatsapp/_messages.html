@@ -6,9 +6,13 @@
      show_links       — bool; render booking_ref as a link (default True)
      show_full_body   — bool; render full body_text instead of preview
                         (default True; admin-gated views only)
+     show_reply_link  — bool; render "View / Reply" link to the per-message
+                        detail page where the AI draft assistant lives
+                        (default False; opt-in for admin views)
 #}
-{% set show_links     = show_links     if show_links     is defined else True %}
-{% set show_full_body = show_full_body if show_full_body is defined else True %}
+{% set show_links      = show_links      if show_links      is defined else True %}
+{% set show_full_body  = show_full_body  if show_full_body  is defined else True %}
+{% set show_reply_link = show_reply_link if show_reply_link is defined else False %}
 
 {% if messages %}
 <ol class="space-y-3">
@@ -53,6 +57,14 @@
     </p>
     {% elif not m.booking_id %}
     <p class="text-[11px] text-gray-400 mt-0.5">Unlinked</p>
+    {% endif %}
+    {% if show_reply_link and m.direction == 'inbound' %}
+    <p class="text-[11px] mt-1">
+      <a href="{{ url_for('whatsapp_inbox.message_detail', message_id=m.id) }}"
+         class="text-blue-600 hover:text-blue-800 hover:underline">
+        View / Reply with AI draft →
+      </a>
+    </p>
     {% endif %}
   </li>
   {% endfor %}

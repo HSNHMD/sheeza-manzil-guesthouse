@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% block title %}WhatsApp Message #{{ wa_message.id }}{% endblock %}
+{% block content %}
+<div class="space-y-5 max-w-4xl">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-xl font-bold text-gray-800">WhatsApp Message Detail</h1>
+      <p class="text-xs text-gray-500 mt-1">
+        Inbound message from a guest. AI can suggest a draft reply, but the
+        admin must review, edit, and click Send. There is no auto-reply.
+      </p>
+    </div>
+    <a href="{{ url_for('whatsapp.inbox') }}"
+       class="text-sm text-gray-500 hover:text-gray-800">
+      ← Back to inbox
+    </a>
+  </div>
+
+  <!-- Inbound message card -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+      <span class="font-mono text-gray-500">
+        {{ wa_message.created_at.strftime('%Y-%m-%d %H:%M UTC') }}
+      </span>
+      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">
+        inbound
+      </span>
+      {% if wa_message.profile_name %}
+        <span class="text-gray-700 font-medium">{{ wa_message.profile_name }}</span>
+      {% endif %}
+      {% if wa_message.from_phone_last4 %}
+        <span class="text-gray-400">…{{ wa_message.from_phone_last4 }}</span>
+      {% endif %}
+      <span class="text-gray-500">type: {{ wa_message.message_type }}</span>
+      {% if wa_message.status and wa_message.status != 'received' %}
+        <span class="text-gray-500">status: {{ wa_message.status }}</span>
+      {% endif %}
+    </div>
+
+    {% if wa_message.message_type == 'text' and wa_message.body_text %}
+      <p class="text-sm text-gray-800 whitespace-pre-wrap">{{ wa_message.body_text }}</p>
+    {% elif wa_message.message_type != 'text' %}
+      <p class="text-xs text-gray-500 italic">
+        [non-text message — type: {{ wa_message.message_type }}; no preview available]
+      </p>
+    {% else %}
+      <p class="text-xs text-gray-400 italic">[empty body]</p>
+    {% endif %}
+
+    <!-- Linked booking -->
+    {% if wa_message.booking %}
+      <div class="border-t border-gray-100 pt-3 text-xs text-gray-600">
+        <p>
+          Linked to booking
+          <a href="{{ url_for('bookings.detail', booking_id=wa_message.booking_id) }}"
+             class="hover:text-blue-600 hover:underline font-mono">
+            {{ wa_message.booking.booking_ref }}
+          </a>
+          — {{ wa_message.booking.check_in_date }} → {{ wa_message.booking.check_out_date }},
+          room {{ wa_message.booking.room.number }},
+          status {{ wa_message.booking.status }}.
+        </p>
+      </div>
+    {% else %}
+      <div class="border-t border-gray-100 pt-3 text-xs text-amber-700 bg-amber-50 -mx-5 px-5 py-2">
+        <p>
+          ⚠ This message is <strong>not linked</strong> to a known booking or guest.
+          Verify guest identity manually before replying.
+        </p>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- AI Reply Draft assistant -->
+  <div class="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 class="font-semibold text-gray-700">AI Reply Draft Assistant</h2>
+      <p class="text-[11px] text-gray-400">
+        AI-generated reply draft — review before sending. No auto-reply.
+      </p>
+    </div>
+
+    {% if wa_message.guest_id is none %}
+      <!-- Unlinked: refuse to draft (no recipient phone) -->
+      <div class="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3">
+        <p>
+          AI reply drafting is disabled for unlinked messages. We only have the
+          last 4 digits of the sender's phone in storage, so we cannot safely
+          auto-fill a recipient. Please verify the guest's identity manually,
+          attach the booking if appropriate, then return here.
+        </p>
+      </div>
+    {% else %}
+      <!-- Generate Draft form -->
+      <form method="POST"
+            action="{{ url_for('whatsapp_inbox.ai_reply_draft', message_id=wa_message.id) }}"
+            class="flex flex-wrap items-center gap-2">
+        <button type="submit"
+                class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+          Generate AI Reply Draft
+        </button>
+        <p class="text-[11px] text-gray-400">
+          Uses inbound message + linked booking context. Does not send.
+        </p>
+      </form>
+    {% endif %}
+
+    {% if ai_draft %}
+      <div class="border-t border-gray-100 pt-4 space-y-3">
+        {% if ai_draft.success %}
+          <div class="flex flex-wrap items-baseline gap-2 text-[11px] text-gray-500">
+            <span class="font-medium text-gray-700">Generated draft:</span>
+            <span>provider {{ ai_draft.provider }}</span>
+            <span>model {{ ai_draft.model }}</span>
+            <span>{{ ai_draft.length_chars }} chars</span>
+            {% if ai_draft.has_booking_context %}
+              <span class="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded">booking context</span>
+            {% else %}
+              <span class="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded">no booking context</span>
+            {% endif %}
+            {% if ai_draft.payment_instructions_used %}
+              <span class="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded">payment block embedded</span>
+            {% endif %}
+          </div>
+
+          <p class="text-[11px] text-gray-500">
+            <strong>AI-generated reply draft — review before sending.</strong>
+            Edit freely below. The sender phone is fixed server-side
+            (ending in …{{ wa_message.guest.phone[-4:] if wa_message.guest and wa_message.guest.phone else '????' }}).
+          </p>
+
+          <!-- Send form: recipient phone is NEVER in this form. -->
+          <form method="POST"
+                action="{{ url_for('whatsapp_inbox.send_reply', message_id=wa_message.id) }}"
+                onsubmit="this.querySelector('button[type=submit]').disabled=true; this.querySelector('button[type=submit]').innerText='Sending…';"
+                class="space-y-3">
+            <textarea name="message_body"
+                      rows="8"
+                      maxlength="1500"
+                      class="w-full border border-gray-300 rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Edit the AI draft here before sending…"
+                      required>{{ prefilled_body or '' }}</textarea>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                ⚠ This sends the edited reply to the guest's WhatsApp number
+                ending in …{{ wa_message.guest.phone[-4:] if wa_message.guest and wa_message.guest.phone else '????' }}.
+                There is no undo.
+              </p>
+              <button type="submit"
+                      onclick="return confirm('Send this WhatsApp reply to the guest?');"
+                      class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
+                Send WhatsApp Reply
+              </button>
+            </div>
+          </form>
+        {% else %}
+          <!-- Generation failed -->
+          <div class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+            <p class="font-medium">AI draft generation failed.</p>
+            <p class="text-xs mt-1">
+              {{ ai_draft.message or ai_draft.error or 'Unknown error.' }}
+            </p>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

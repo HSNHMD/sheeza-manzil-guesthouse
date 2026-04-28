@@ -6,8 +6,9 @@
     <div>
       <h1 class="text-xl font-bold text-gray-800">WhatsApp Inbox</h1>
       <p class="text-xs text-gray-500 mt-1">
-        Inbound messages from guests. Showing newest 100. Replies must be
-        composed manually — there is no auto-reply.
+        Inbound messages from guests. Showing newest 100.
+        Click <strong>Generate AI Reply Draft</strong> on a message to draft a reply —
+        replies are never sent automatically.
       </p>
     </div>
   </div>
@@ -47,7 +48,8 @@
 
   <!-- Results -->
   <div class="bg-white rounded-xl border border-gray-200 p-5">
-    {% set show_full_body = True %}
+    {% set show_full_body  = True %}
+    {% set show_reply_link = True %}
     {% include 'whatsapp/_messages.html' %}
   </div>
 </div>
