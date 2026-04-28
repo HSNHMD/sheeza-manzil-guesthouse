@@ -328,3 +328,126 @@ class WhatsAppMessage(db.Model):
     def __repr__(self):
         return (f'<WhatsAppMessage id={self.id} '
                 f'direction={self.direction} type={self.message_type}>')
+
+
+# ── Guest Folio (V1) ─────────────────────────────────────────────────────
+#
+# A FolioItem is a single line on a booking's running account. The folio
+# is the per-stay ledger of charges, credits, payments, and adjustments.
+#
+# Privacy / accounting contract (binding):
+#   - V1 is ADDITIVE — it does NOT auto-post room nights. Booking.total_amount
+#     remains the source of truth for room revenue. Folio is for EXTRAS only
+#     (laundry, restaurant, transfer, fee, discount, payment, adjustment, …).
+#     Avoids double-counting room revenue.
+#   - total_amount is stored SIGNED. Charges are positive; payments and
+#     discounts are negative. The sign is applied server-side at post time
+#     (forms accept positive amounts only).
+#   - Items are NEVER hard-deleted. Voiding marks status='voided' and
+#     populates voided_at, voided_by_user_id, void_reason.
+#   - Float (not Numeric) is used for amount columns to match the existing
+#     Booking/Invoice precedent. A future migration to Numeric is tracked
+#     in docs/guest_folio_accounting_pos_roadmap.md.
+class FolioItem(db.Model):
+    __tablename__ = 'folio_items'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    # ── Foreign keys ─────────────────────────────────────────────
+    # booking_id is required (V1 binds every folio item to a booking).
+    # guest_id is denormalized for portfolio queries (sum across bookings).
+    # invoice_id is set when the item is rolled into a closed invoice
+    # (status transitions open → invoiced).
+    booking_id = db.Column(db.Integer,
+                           db.ForeignKey('bookings.id', ondelete='CASCADE'),
+                           nullable=False)
+    guest_id   = db.Column(db.Integer,
+                           db.ForeignKey('guests.id', ondelete='SET NULL'),
+                           nullable=True)
+    invoice_id = db.Column(db.Integer,
+                           db.ForeignKey('invoices.id', ondelete='SET NULL'),
+                           nullable=True)
+
+    # ── Type taxonomy ────────────────────────────────────────────
+    # See app/services/folio.ITEM_TYPES for the canonical enum + labels.
+    item_type   = db.Column(db.String(30), nullable=False)
+
+    description = db.Column(db.String(255), nullable=False)
+    quantity    = db.Column(db.Float, nullable=False, default=1.0)
+    unit_price  = db.Column(db.Float, nullable=False, default=0.0)
+    amount      = db.Column(db.Float, nullable=False, default=0.0)
+    tax_amount  = db.Column(db.Float, nullable=False, default=0.0)
+    service_charge_amount = db.Column(db.Float, nullable=False, default=0.0)
+    total_amount = db.Column(db.Float, nullable=False, default=0.0)
+
+    # ── Lifecycle ────────────────────────────────────────────────
+    # 'open'     — posted, not yet invoiced
+    # 'invoiced' — rolled into a closed invoice (Phase 4 territory)
+    # 'paid'     — invoiced + payment matched (Phase 4 territory)
+    # 'voided'   — voided by admin; excluded from balances
+    status        = db.Column(db.String(20), nullable=False, default='open')
+
+    # ── Provenance ───────────────────────────────────────────────
+    # 'manual'     — admin form post
+    # 'booking'    — system-posted from booking flow (V1 unused)
+    # 'accounting' — bulk import / accounting tool (V1 unused)
+    # 'pos'        — restaurant POS (Phase 6+)
+    # 'system'     — internal automation (V1 unused)
+    source_module = db.Column(db.String(20), nullable=False, default='manual')
+
+    posted_by_user_id = db.Column(db.Integer,
+                                  db.ForeignKey('users.id', ondelete='SET NULL'),
+                                  nullable=True)
+
+    # ── Void tracking ────────────────────────────────────────────
+    voided_at         = db.Column(db.DateTime, nullable=True)
+    voided_by_user_id = db.Column(db.Integer,
+                                  db.ForeignKey('users.id', ondelete='SET NULL'),
+                                  nullable=True)
+    void_reason       = db.Column(db.String(255), nullable=True)
+
+    # ── Free-form metadata ───────────────────────────────────────
+    # Used by future POS / accounting modules to attach refs without
+    # schema changes. NEVER write secrets, IDs, or guest documents here.
+    metadata_json     = db.Column(db.Text, nullable=True)
+
+    # ── Relationships ────────────────────────────────────────────
+    booking = db.relationship(
+        'Booking',
+        foreign_keys=[booking_id],
+        backref=db.backref('folio_items',
+                           lazy='dynamic',
+                           order_by='FolioItem.created_at'),
+    )
+    guest   = db.relationship('Guest',   foreign_keys=[guest_id])
+    invoice = db.relationship('Invoice', foreign_keys=[invoice_id])
+    posted_by = db.relationship('User', foreign_keys=[posted_by_user_id])
+    voided_by = db.relationship('User', foreign_keys=[voided_by_user_id])
+
+    __table_args__ = (
+        db.Index('ix_folio_items_booking_created',
+                 'booking_id', 'created_at'),
+        db.Index('ix_folio_items_guest_created',
+                 'guest_id', 'created_at'),
+        db.Index('ix_folio_items_invoice',
+                 'invoice_id'),
+        db.Index('ix_folio_items_status',
+                 'status'),
+    )
+
+    @property
+    def is_voided(self) -> bool:
+        return self.status == 'voided'
+
+    @property
+    def is_open(self) -> bool:
+        return self.status == 'open'
+
+    def __repr__(self):
+        return (f'<FolioItem id={self.id} booking_id={self.booking_id} '
+                f'type={self.item_type} status={self.status} '
+                f'total={self.total_amount}>')
