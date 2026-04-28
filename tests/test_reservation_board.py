@@ -348,6 +348,147 @@ class BoardRouteRenderingTests(_RouteBase):
         self.assertTrue(any(v.get('ref') == 'BKJSON' for v in data.values()))
 
 
+class GroupingDensityTests(_RouteBase):
+
+    def setUp(self):
+        super().setUp()
+        self._login(self.admin_id)
+
+    def _seed_two_floor_rooms(self):
+        rooms = [
+            Room(number='101', name='F0a', room_type='Deluxe',
+                 floor=0, capacity=2, price_per_night=600.0),
+            Room(number='102', name='F0b', room_type='Twin',
+                 floor=0, capacity=2, price_per_night=600.0),
+            Room(number='201', name='F1a', room_type='Deluxe',
+                 floor=1, capacity=2, price_per_night=600.0),
+            Room(number='202', name='F1b', room_type='Suite',
+                 floor=1, capacity=2, price_per_night=600.0),
+        ]
+        db.session.add_all(rooms)
+        db.session.commit()
+        return rooms
+
+    def test_default_no_grouping(self):
+        self._seed_two_floor_rooms()
+        r = self.client.get('/board')
+        self.assertEqual(r.status_code, 200)
+        # No "Floor 0" header label rendered when grouping=none
+        self.assertNotIn(b'class="group-header"', r.data)
+
+    def test_group_by_floor_renders_headers(self):
+        self._seed_two_floor_rooms()
+        r = self.client.get('/board?group=floor')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'class="group-header"', r.data)
+        self.assertIn(b'Floor 0', r.data)
+        self.assertIn(b'Floor 1', r.data)
+
+    def test_group_by_room_type_renders_type_headers(self):
+        self._seed_two_floor_rooms()
+        r = self.client.get('/board?group=room_type')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'class="group-header"', r.data)
+        self.assertIn(b'Deluxe', r.data)
+        self.assertIn(b'Suite', r.data)
+
+    def test_invalid_group_falls_back_to_none(self):
+        self._seed_two_floor_rooms()
+        r = self.client.get('/board?group=garbage')
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b'class="group-header"', r.data)
+
+    def test_density_compact_emits_attr(self):
+        _seed_room('99')
+        r = self.client.get('/board?density=compact')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'data-density="compact"', r.data)
+
+    def test_density_default_standard(self):
+        _seed_room('99')
+        r = self.client.get('/board')
+        self.assertIn(b'data-density="standard"', r.data)
+
+    def test_grouping_preserved_in_view_toggle_links(self):
+        self._seed_two_floor_rooms()
+        r = self.client.get('/board?view=14d&group=floor&density=compact')
+        # The 7d view link should preserve group=floor + density=compact
+        # in its query string.
+        self.assertIn(b'group=floor', r.data)
+        self.assertIn(b'density=compact', r.data)
+
+
+class DrawerActionTests(_RouteBase):
+
+    def setUp(self):
+        super().setUp()
+        self._login(self.admin_id)
+
+    def test_drawer_data_includes_guest_id_and_phone(self):
+        import json
+        import re
+        room = _seed_room('77')
+        today = date.today()
+        _seed_booking(room,
+                      ci=today, co=today + timedelta(days=2),
+                      status='confirmed', ref='BKDRAWER')
+        r = self.client.get('/board')
+        match = re.search(
+            rb'<script id="board-bookings-data"[^>]*>(.*?)</script>',
+            r.data, re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        data = json.loads(match.group(1).decode('utf-8'))
+        # Find the BKDRAWER booking in the dict
+        booking = None
+        for v in data.values():
+            if v.get('ref') == 'BKDRAWER':
+                booking = v
+                break
+        self.assertIsNotNone(booking)
+        self.assertIn('guestId', booking)
+        self.assertIn('phoneDigits', booking)
+        # The synthetic guest phone +9607000001 → digits-only "9607000001"
+        self.assertEqual(booking['phoneDigits'], '9607000001')
+
+
+class FilterStateTests(_RouteBase):
+
+    def setUp(self):
+        super().setUp()
+        self._login(self.admin_id)
+
+    def test_filter_summary_empty_when_no_filters(self):
+        _seed_room('77')
+        r = self.client.get('/board')
+        # Reset chip should NOT appear when no filters active
+        self.assertNotIn(b'Reset', r.data[:r.data.find(b'<form')])
+
+    def test_filter_summary_visible_when_floor_active(self):
+        _seed_room('77')
+        r = self.client.get('/board?floor=0')
+        self.assertIn(b'Reset', r.data)
+        # Active count chip should show "1"
+        self.assertIn(b'active', r.data)
+
+
+class MobileFallbackTests(_RouteBase):
+
+    def setUp(self):
+        super().setUp()
+        self._login(self.admin_id)
+
+    def test_mobile_arrivals_list_appears_when_arrivals_exist(self):
+        room = _seed_room('77')
+        today = date.today()
+        _seed_booking(room,
+                      ci=today, co=today + timedelta(days=2),
+                      status='confirmed', ref='BKMOBA')
+        r = self.client.get('/board')
+        self.assertIn(b'mobile-arrivals', r.data)
+        self.assertIn(b'BKMOBA', r.data)
+
+
 class BoardRouteSafetyTests(_RouteBase):
 
     def setUp(self):

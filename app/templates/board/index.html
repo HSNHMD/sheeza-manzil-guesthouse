@@ -228,7 +228,9 @@
       repeat({{ span }}, var(--day-w));
     grid-template-rows:
       [head] var(--header-h)
-      repeat({{ rooms|length if rooms else 1 }}, var(--row-h));
+      {%- for entry in row_plan %}
+      {%- if entry.type == 'group' %} 30px {%- else %} var(--row-h) {%- endif %}
+      {%- endfor %};
   }
 
   /* Sticky corner */
@@ -477,6 +479,49 @@
   .board-grid[data-view="day"] .bar { padding: 8px 14px; }
   .board-grid[data-view="day"] .bar .bar-name { font-size: 13px; }
 
+  /* Density toggle (cumulative with view) */
+  .board-grid[data-density="compact"] { --row-h: 36px; --header-h: 50px; }
+  .board-grid[data-density="compact"] .room-cell { padding: 0 10px; gap: 8px; }
+  .board-grid[data-density="compact"] .room-cell .room-num { font-size: 12px; }
+  .board-grid[data-density="compact"] .room-cell .meta-line-1 { font-size: 10px; }
+  .board-grid[data-density="compact"] .room-cell .meta-line-2 { font-size: 9px; }
+  .board-grid[data-density="compact"] .bar { margin: 3px 2px; padding: 3px 8px; }
+  .board-grid[data-density="compact"] .bar .bar-name { font-size: 11px; }
+  .board-grid[data-density="compact"] .bar .bar-meta { font-size: 9px; }
+  .board-grid[data-density="compact"] .day-head { padding: 4px 0; }
+  .board-grid[data-density="compact"] .day-head .num { font-size: 13px; }
+
+  /* Group headers — sticky-left, span all day columns visually */
+  .group-header {
+    grid-column: 1 / -1;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    background: linear-gradient(180deg, var(--surface-muted), var(--surface-page));
+    border-bottom: 1px solid var(--line-mid);
+    border-top: 1px solid var(--line-soft);
+    position: sticky;
+    left: 0;
+    z-index: 22;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: var(--ink-muted);
+    font-weight: 700;
+  }
+  .group-header .group-count {
+    font-size: 9px;
+    background: var(--surface-card);
+    color: var(--ink-soft);
+    padding: 2px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--line-mid);
+    letter-spacing: 0.04em;
+  }
+  .board-grid[data-density="compact"] .group-header { height: 24px; font-size: 9px; }
+
   /* Empty-state */
   .empty-state {
     grid-column: 1 / -1;
@@ -549,6 +594,43 @@
   body.drawer-open .drawer-overlay { opacity: 1; pointer-events: auto; }
   body.drawer-open .drawer { transform: translateX(0); }
 
+  /* Drawer action buttons (secondary CTAs) */
+  .drawer-action {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line-mid);
+    border-radius: 9px;
+    background: var(--surface-card);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.12s ease, border-color 0.12s ease,
+                transform 0.10s ease, box-shadow 0.12s ease;
+  }
+  .drawer-action:hover {
+    background: var(--surface-zebra);
+    border-color: var(--line-strong);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px -6px rgba(15,23,42,0.18);
+  }
+  .drawer-action.is-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .drawer-action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    flex-shrink: 0;
+  }
+  .drawer-action-label { flex: 1; font-size: 13px; }
+
   /* ─────────────────────────────────────────────────────────────────
      RESPONSIVE
      ───────────────────────────────────────────────────────────────── */
@@ -583,16 +665,37 @@
         </p>
       </div>
 
-      <!-- View toggle -->
-      <div class="seg" role="tablist" aria-label="View span">
-        {% for v, label in [('day','Day'),('7d','7 days'),('14d','14 days'),('30d','30 days')] %}
-          <a href="{{ url_for('board.index', view=v, start=start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
-             class="{% if view == v %}is-active{% endif %}"
-             role="tab"
-             aria-selected="{{ 'true' if view == v else 'false' }}">
-            {{ label }}
-          </a>
-        {% endfor %}
+      <!-- View + density + grouping cluster -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="seg" role="tablist" aria-label="View span">
+          {% for v, label in [('day','Day'),('7d','7 days'),('14d','14 days'),('30d','30 days')] %}
+            <a href="{{ url_for('board.index', view=v, start=start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search, group=grouping, density=density) }}"
+               class="{% if view == v %}is-active{% endif %}"
+               role="tab"
+               aria-selected="{{ 'true' if view == v else 'false' }}">
+              {{ label }}
+            </a>
+          {% endfor %}
+        </div>
+
+        <div class="seg" role="tablist" aria-label="Group rooms by">
+          {% for g, label in [('none','No groups'),('floor','Floor'),('room_type','Type')] %}
+            <a href="{{ url_for('board.index', view=view, start=start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search, group=g, density=density) }}"
+               class="{% if grouping == g %}is-active{% endif %}"
+               title="Group by {{ label }}">
+              {{ label }}
+            </a>
+          {% endfor %}
+        </div>
+
+        <div class="seg" role="tablist" aria-label="Density">
+          {% for dn, label in [('standard','Standard'),('compact','Compact')] %}
+            <a href="{{ url_for('board.index', view=view, start=start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search, group=grouping, density=dn) }}"
+               class="{% if density == dn %}is-active{% endif %}">
+              {{ label }}
+            </a>
+          {% endfor %}
+        </div>
       </div>
     </div>
 
@@ -606,16 +709,26 @@
       </div>
 
       <div class="flex items-center gap-1.5">
-        <a href="{{ url_for('board.index', view=view, start=prev_start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
+        {% if filter_summary.count > 0 %}
+        <span class="chip" style="background: rgba(13,148,136,0.08); border-color: rgba(13,148,136,0.20); color: var(--accent-strong);">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+          <strong>{{ filter_summary.count }}</strong>&nbsp;active
+        </span>
+        <a href="{{ url_for('board.index', view=view, start=start.isoformat(), group=grouping, density=density) }}"
+           class="nav-btn" title="Reset filters">
+          Reset
+        </a>
+        {% endif %}
+        <a href="{{ url_for('board.index', view=view, start=prev_start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search, group=grouping, density=density) }}"
            class="nav-btn" title="Previous {{ span }} days" aria-label="Previous">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
         </a>
-        <a href="{{ url_for('board.index', view=view, floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
+        <a href="{{ url_for('board.index', view=view, floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search, group=grouping, density=density) }}"
            class="nav-btn is-primary">
           <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Today
         </a>
-        <a href="{{ url_for('board.index', view=view, start=next_start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
+        <a href="{{ url_for('board.index', view=view, start=next_start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search, group=grouping, density=density) }}"
            class="nav-btn" title="Next {{ span }} days" aria-label="Next">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
         </a>
@@ -626,6 +739,8 @@
     <form method="GET" class="filt-row">
       <input type="hidden" name="view" value="{{ view }}">
       <input type="hidden" name="start" value="{{ start.isoformat() }}">
+      <input type="hidden" name="group" value="{{ grouping }}">
+      <input type="hidden" name="density" value="{{ density }}">
 
       <div>
         <label class="filt-label">Floor</label>
@@ -672,8 +787,8 @@
       </div>
       <div class="flex items-center gap-2">
         <button type="submit" class="nav-btn is-primary" style="height: 34px;">Apply</button>
-        {% if floor or room_type or booking_status or payment_status or search %}
-        <a href="{{ url_for('board.index', view=view, start=start.isoformat()) }}" class="filt-clear">Clear</a>
+        {% if filter_summary.count > 0 %}
+        <a href="{{ url_for('board.index', view=view, start=start.isoformat(), group=grouping, density=density) }}" class="filt-clear">Clear filters</a>
         {% endif %}
       </div>
     </form>
@@ -682,7 +797,7 @@
   <!-- ── Desktop board ─────────────────────────────────────────── -->
   <div class="desktop-board">
     <div class="board-scroll">
-      <div class="board-grid" data-view="{{ view }}">
+      <div class="board-grid" data-view="{{ view }}" data-density="{{ density }}">
         <!-- Top-left corner -->
         <div class="head-corner">Room</div>
 
@@ -699,63 +814,69 @@
           </div>
         {% endfor %}
 
-        {# Body rows — every cell EXPLICITLY placed by grid-row + grid-column.
-           Eliminates auto-flow drift; every room row is exactly --row-h tall. #}
-        {% for r in rooms %}
-          {% set row_idx = loop.index0 %}
-          {% set row_n = row_idx + 2 %}        {# grid row 1 = head, row 2 = first room #}
-          {% set zebra = (row_idx % 2 == 1) %}
-          {% set badge = badges[r.id] %}
+        {# Body — iterate the pre-computed row_plan (group headers + rooms). #}
+        {% for entry in row_plan %}
+          {% if entry.type == 'group' %}
+            <div class="group-header" style="grid-row: {{ entry.row_n }};">
+              <span>{{ entry.label }}</span>
+              <span class="group-count">{{ entry.count }} room{{ 's' if entry.count != 1 else '' }}</span>
+            </div>
+          {% else %}
+            {% set r = entry.room %}
+            {% set row_n = entry.row_n %}
+            {% set zebra = entry.zebra %}
+            {% set badge = entry.badge %}
 
-          <div class="room-cell {% if zebra %}is-zebra{% endif %}"
-               style="grid-row: {{ row_n }};">
-            <div class="room-num">#{{ r.number }}</div>
-            <div class="room-meta">
-              <div class="meta-line-1">{{ r.room_type }}</div>
-              <div class="meta-line-2">
-                <span class="status-dot {{ badge.dot_class }}" title="{{ badge.label }}"></span>
-                <span>F{{ r.floor }}</span>
-                <span style="opacity:.45;">·</span>
-                <span class="{{ badge.text_class }}">{{ badge.label }}</span>
+            <div class="room-cell {% if zebra %}is-zebra{% endif %}"
+                 style="grid-row: {{ row_n }};">
+              <div class="room-num">#{{ r.number }}</div>
+              <div class="room-meta">
+                <div class="meta-line-1">{{ r.room_type }}</div>
+                <div class="meta-line-2">
+                  <span class="status-dot {{ badge.dot_class }}" title="{{ badge.label }}"></span>
+                  <span>F{{ r.floor }}</span>
+                  <span style="opacity:.45;">·</span>
+                  <span class="{{ badge.text_class }}">{{ badge.label }}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {# Day-cell backdrop, one per day, explicit row + column #}
-          {% for d in days %}
-            {% set is_today   = (d == today) %}
-            {% set is_weekend = (d.weekday() >= 5) %}
-            {% set classes = [] %}
-            {% if is_today %}{% set _ = classes.append('is-today') %}{% endif %}
-            {% if not is_today and is_weekend %}{% set _ = classes.append('is-weekend') %}{% endif %}
-            {% if not is_today and not is_weekend and zebra %}{% set _ = classes.append('is-zebra') %}{% endif %}
-            <div class="day-cell {{ classes|join(' ') }}"
-                 style="grid-row: {{ row_n }}; grid-column: {{ loop.index + 1 }};"></div>
-          {% endfor %}
+            {# Day-cell backdrop, one per day, explicit row + column #}
+            {% for d in days %}
+              {% set is_today   = (d == today) %}
+              {% set is_weekend = (d.weekday() >= 5) %}
+              {% set classes = [] %}
+              {% if is_today %}{% set _ = classes.append('is-today') %}{% endif %}
+              {% if not is_today and is_weekend %}{% set _ = classes.append('is-weekend') %}{% endif %}
+              {% if not is_today and not is_weekend and zebra %}{% set _ = classes.append('is-zebra') %}{% endif %}
+              <div class="day-cell {{ classes|join(' ') }}"
+                   style="grid-row: {{ row_n }}; grid-column: {{ loop.index + 1 }};"></div>
+            {% endfor %}
 
-          {# Booking bars on this row, layered above day cells #}
-          {% for bar in bars_by_room[r.id] %}
-            <a class="bar s-{{ bar.booking_status if bar.booking_status in ('new_request','pending_payment','payment_uploaded','payment_verified','confirmed','checked_in','checked_out','cancelled','rejected') else 'fallback' }} {% if not bar.starts_in_range %}cuts-left{% endif %} {% if not bar.ends_in_range %}cuts-right{% endif %}"
-               style="grid-row: {{ row_n }};
-                      grid-column: {{ bar.grid_col_start }} / span {{ bar.grid_col_span }};"
-               data-booking-id="{{ bar.booking_id }}"
-               href="{{ url_for('bookings.detail', booking_id=bar.booking_id) }}"
-               onclick="return openDrawer(event, {{ bar.booking_id }});"
-               title="{{ bar.guest_name }} · {{ bar.booking_ref }} · {{ bar.nights }} night{{ 's' if bar.nights != 1 else '' }}">
-              {% if bar.payment_status in ('verified','pending_review','mismatch','rejected') %}
-                <span class="pay-dot p-{{ bar.payment_status }}"
-                      title="Payment: {{ bar.payment_status.replace('_',' ') }}"></span>
-              {% endif %}
-              <span class="bar-name">{{ bar.short_label }}</span>
-              <span class="bar-meta">
-                <span>{{ bar.booking_ref }}</span>
-                <span class="dot"></span>
-                <span>{{ bar.nights }}n</span>
-                <span class="dot"></span>
-                <span>{{ bar.num_guests }}g</span>
-              </span>
-            </a>
-          {% endfor %}
+            {# Booking bars on this row #}
+            {% for bar in entry.bars %}
+              <a class="bar s-{{ bar.booking_status if bar.booking_status in ('new_request','pending_payment','payment_uploaded','payment_verified','confirmed','checked_in','checked_out','cancelled','rejected') else 'fallback' }} {% if not bar.starts_in_range %}cuts-left{% endif %} {% if not bar.ends_in_range %}cuts-right{% endif %}"
+                 style="grid-row: {{ row_n }};
+                        grid-column: {{ bar.grid_col_start }} / span {{ bar.grid_col_span }};"
+                 data-booking-id="{{ bar.booking_id }}"
+                 href="{{ url_for('bookings.detail', booking_id=bar.booking_id) }}"
+                 onclick="return openDrawer(event, {{ bar.booking_id }});"
+                 title="{{ bar.guest_name }} · {{ bar.booking_ref }} · {{ bar.nights }} night{{ 's' if bar.nights != 1 else '' }}">
+                {% if bar.payment_status in ('verified','pending_review','mismatch','rejected') %}
+                  <span class="pay-dot p-{{ bar.payment_status }}"
+                        title="Payment: {{ bar.payment_status.replace('_',' ') }}"></span>
+                {% endif %}
+                <span class="bar-name">{{ bar.short_label }}</span>
+                <span class="bar-meta">
+                  <span>{{ bar.booking_ref }}</span>
+                  <span class="dot"></span>
+                  <span>{{ bar.nights }}n</span>
+                  <span class="dot"></span>
+                  <span>{{ bar.num_guests }}g</span>
+                </span>
+              </a>
+            {% endfor %}
+          {% endif %}
         {% endfor %}
 
         {% if not rooms %}
@@ -784,27 +905,93 @@
 
   <!-- ── Mobile / narrow operations view ─────────────────────────── -->
   <div class="mobile-ops space-y-3">
+
+    <!-- Stat cards -->
     <div class="grid grid-cols-2 gap-2">
-      <a href="{{ url_for('bookings.index') }}?status=arrivals_today" class="panel panel-pad hover:bg-emerald-50 transition">
+      <a href="#mobile-arrivals" class="panel panel-pad hover:bg-emerald-50 transition">
         <div class="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold">Arrivals today</div>
         <div class="text-2xl font-bold text-emerald-800 mt-1">{{ stats.arrivals_today }}</div>
       </a>
-      <a href="{{ url_for('bookings.index') }}?status=departures_today" class="panel panel-pad hover:bg-sky-50 transition">
+      <a href="#mobile-departures" class="panel panel-pad hover:bg-sky-50 transition">
         <div class="text-[10px] uppercase tracking-wider text-sky-700 font-semibold">Departures today</div>
         <div class="text-2xl font-bold text-sky-800 mt-1">{{ stats.departures_today }}</div>
       </a>
-      <a href="{{ url_for('bookings.index') }}?status=checked_in" class="panel panel-pad hover:bg-blue-50 transition">
+      <a href="{{ url_for('bookings.index') }}" class="panel panel-pad hover:bg-blue-50 transition">
         <div class="text-[10px] uppercase tracking-wider text-blue-700 font-semibold">In house</div>
         <div class="text-2xl font-bold text-blue-800 mt-1">{{ stats.in_house_today }}</div>
       </a>
-      <a href="{{ url_for('bookings.index') }}?status=pending_payment" class="panel panel-pad hover:bg-amber-50 transition">
+      <a href="{{ url_for('bookings.index') }}" class="panel panel-pad hover:bg-amber-50 transition">
         <div class="text-[10px] uppercase tracking-wider text-amber-700 font-semibold">Pending payment</div>
         <div class="text-2xl font-bold text-amber-800 mt-1">{{ stats.pending_payment }}</div>
       </a>
     </div>
-    <div class="panel panel-pad text-xs text-slate-500">
-      The full reservation board is optimized for desktop / tablet landscape.
-      Rotate your device or visit on a wider screen for the timeline view.
+
+    <!-- Search room / guest -->
+    <form method="GET" class="panel panel-pad">
+      <input type="hidden" name="view" value="{{ view }}">
+      <input type="hidden" name="start" value="{{ start.isoformat() }}">
+      <input type="hidden" name="group" value="{{ grouping }}">
+      <input type="hidden" name="density" value="{{ density }}">
+      <label class="filt-label">Search</label>
+      <div class="filt-search">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="top: 50%;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/></svg>
+        <input type="text" name="search" value="{{ search }}"
+               placeholder="Guest name, booking ref, or room…"
+               class="filt-input">
+      </div>
+    </form>
+
+    {% if mobile_arrivals %}
+    <div class="panel" id="mobile-arrivals">
+      <div class="px-4 pt-3 flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900">Arrivals today</h2>
+        <span class="text-[11px] text-emerald-700 font-semibold">{{ mobile_arrivals|length }}</span>
+      </div>
+      <ul class="divide-y divide-slate-100">
+        {% for b in mobile_arrivals %}
+        <li>
+          <a href="{{ url_for('bookings.detail', booking_id=b.id) }}"
+             class="flex items-center gap-3 px-4 py-3 hover:bg-emerald-50/50">
+            <span class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs flex-shrink-0">{{ b.room.number }}</span>
+            <span class="flex-1 min-w-0">
+              <span class="block text-sm font-semibold text-slate-900 truncate">{{ b.guest.first_name }} {{ b.guest.last_name }}</span>
+              <span class="block text-xs text-slate-500 truncate">{{ b.booking_ref }} · {{ b.num_guests }}g · {{ (b.check_out_date - b.check_in_date).days }}n</span>
+            </span>
+            <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if mobile_departures %}
+    <div class="panel" id="mobile-departures">
+      <div class="px-4 pt-3 flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900">Departures today</h2>
+        <span class="text-[11px] text-sky-700 font-semibold">{{ mobile_departures|length }}</span>
+      </div>
+      <ul class="divide-y divide-slate-100">
+        {% for b in mobile_departures %}
+        <li>
+          <a href="{{ url_for('bookings.detail', booking_id=b.id) }}"
+             class="flex items-center gap-3 px-4 py-3 hover:bg-sky-50/50">
+            <span class="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs flex-shrink-0">{{ b.room.number }}</span>
+            <span class="flex-1 min-w-0">
+              <span class="block text-sm font-semibold text-slate-900 truncate">{{ b.guest.first_name }} {{ b.guest.last_name }}</span>
+              <span class="block text-xs text-slate-500 truncate">{{ b.booking_ref }} · {{ b.num_guests }}g</span>
+            </span>
+            <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="panel panel-pad text-[11px] text-slate-500 leading-relaxed">
+      The full timeline board is optimized for desktop / tablet landscape.
+      Rotate to landscape or open on a wider screen for the tape-chart view.
     </div>
   </div>
 </div>
@@ -829,32 +1016,13 @@
 </aside>
 
 <!-- Bookings JSON for client-side drawer hydration -->
-<script id="board-bookings-data" type="application/json">
-{
-{% for r in rooms %}{% for bar in bars_by_room[r.id] %}
-"{{ bar.booking_id }}": {
-  "id": {{ bar.booking_id }},
-  "ref": {{ bar.booking_ref|tojson }},
-  "guest": {{ bar.guest_name|tojson }},
-  "guests": {{ bar.num_guests }},
-  "nights": {{ bar.nights }},
-  "checkIn": {{ bar.check_in.isoformat()|tojson }},
-  "checkOut": {{ bar.check_out.isoformat()|tojson }},
-  "room": {{ r.number|tojson }},
-  "roomType": {{ r.room_type|tojson }},
-  "status": {{ bar.booking_status|tojson }},
-  "paymentStatus": {{ bar.payment_status|tojson }}
-}{% if not loop.last %},{% endif %}
-{% endfor %}{% if not loop.last and bars_by_room[r.id] %},{% endif %}{% endfor %}
-}
-</script>
+<script id="board-bookings-data" type="application/json">{{ drawer_data|tojson }}</script>
 
 <script>
   (function() {
     var rawData = document.getElementById('board-bookings-data').textContent;
-    rawData = rawData.replace(/,\s*}/g, '}').replace(/,\s*\]/g, ']');
     var BOOKINGS = {};
-    try { BOOKINGS = JSON.parse(rawData); } catch (e) { console.warn('board: bookings JSON parse failed', e); }
+    try { BOOKINGS = JSON.parse(rawData) || {}; } catch (e) { console.warn('board: bookings JSON parse failed', e); }
 
     var statusLabels = {
       'new_request':       'New request',
@@ -916,6 +1084,55 @@
       var checkOut = new Date(b.checkOut + 'T00:00:00');
       var fmt = function(d) { return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' }); };
 
+      // ── Action button row ──
+      var actions = [];
+      // Compose AI draft → jumps to the AI draft section on booking detail
+      actions.push(
+        '<a href="/bookings/' + b.id + '#ai-draft-text"' +
+        ' class="drawer-action">' +
+          '<span class="drawer-action-icon" style="background:#eef2ff;color:#4338ca;">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2m-1-1v18m-7-7l4-4-4-4m14 8l-4-4 4-4"/></svg>' +
+          '</span>' +
+          '<span class="drawer-action-label">Compose AI draft</span>' +
+          '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 text-slate-400 ml-auto"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>' +
+        '</a>'
+      );
+      // Edit guest profile (only route currently exposed for guests)
+      if (b.guestId) {
+        actions.push(
+          '<a href="/guests/' + b.guestId + '/edit"' +
+          ' class="drawer-action">' +
+            '<span class="drawer-action-icon" style="background:#fef3c7;color:#a16207;">' +
+              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label">Edit guest profile</span>' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 text-slate-400 ml-auto"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>' +
+          '</a>'
+        );
+      }
+      // WhatsApp deeplink (browser-side; no server send) — staging-safe
+      if (b.phoneDigits && b.phoneDigits.length >= 6) {
+        actions.push(
+          '<a href="https://wa.me/' + escapeHtml(b.phoneDigits) + '" target="_blank" rel="noopener"' +
+          ' class="drawer-action">' +
+            '<span class="drawer-action-icon" style="background:#dcfce7;color:#15803d;">' +
+              '<svg fill="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label">Open WhatsApp <span class="text-[10px] text-slate-400 font-normal">(deeplink)</span></span>' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 text-slate-400 ml-auto"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7-7 7M3 12h18"/></svg>' +
+          '</a>'
+        );
+      } else {
+        actions.push(
+          '<div class="drawer-action is-disabled" aria-disabled="true">' +
+            '<span class="drawer-action-icon" style="background:#f1f5f9;color:#94a3b8;">' +
+              '<svg fill="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label text-slate-400">No phone on file</span>' +
+          '</div>'
+        );
+      }
+
       var html =
         '<div class="space-y-1">' +
           '<div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold">Guest</div>' +
@@ -934,7 +1151,10 @@
           '<div><div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-1">Room</div><div class="font-semibold text-slate-900">#' + escapeHtml(b.room) + ' · ' + escapeHtml(b.roomType) + '</div></div>' +
           '<div><div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-1">Booking ref</div><div class="font-mono text-slate-900 text-sm">' + escapeHtml(b.ref) + '</div></div>' +
         '</div>' +
-        '<div class="text-[11px] text-slate-400 pt-2 border-t border-slate-100">Open the full booking page for AI drafts, WhatsApp, folio, and history.</div>';
+        '<div class="pt-3 border-t border-slate-100">' +
+          '<div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-2">Quick actions</div>' +
+          '<div class="space-y-1.5">' + actions.join('') + '</div>' +
+        '</div>';
 
       document.getElementById('drawerBody').innerHTML = html;
       document.getElementById('drawerOpenLink').href = '/bookings/' + b.id;

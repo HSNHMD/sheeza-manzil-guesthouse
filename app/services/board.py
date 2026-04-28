@@ -39,6 +39,89 @@ VIEW_DAY_WIDTHS = {
     '30d':   44,
 }
 
+
+# ── Grouping + density toggles ───────────────────────────────────────
+
+GROUPING_OPTIONS = ('none', 'floor', 'room_type')
+DEFAULT_GROUPING = 'none'
+
+DENSITY_OPTIONS = ('standard', 'compact')
+DEFAULT_DENSITY = 'standard'
+
+
+def normalize_grouping(value) -> str:
+    if value in GROUPING_OPTIONS:
+        return value
+    return DEFAULT_GROUPING
+
+
+def normalize_density(value) -> str:
+    if value in DENSITY_OPTIONS:
+        return value
+    return DEFAULT_DENSITY
+
+
+def group_label_for(room, grouping: str) -> str:
+    """Return the human-readable group label for a room under ``grouping``."""
+    if grouping == 'floor':
+        floor = getattr(room, 'floor', None)
+        if floor is None:
+            return 'Unassigned floor'
+        return f'Floor {floor}'
+    if grouping == 'room_type':
+        rt = (getattr(room, 'room_type', None) or '').strip()
+        return rt or 'Untyped'
+    return ''
+
+
+def group_rooms(rooms, grouping: str) -> list:
+    """Split a sorted list of rooms into [(label, [rooms]), …] groups.
+
+    For ``grouping='none'`` returns a single ('', rooms) tuple, which
+    the template handles as "no header rendered, single block".
+    Pure function — never raises on empty input.
+    """
+    if not rooms:
+        return []
+    if grouping not in ('floor', 'room_type'):
+        return [('', list(rooms))]
+    out = []
+    current_label = None
+    current_bucket = []
+    for r in rooms:
+        label = group_label_for(r, grouping)
+        if label != current_label:
+            if current_bucket:
+                out.append((current_label, current_bucket))
+            current_label = label
+            current_bucket = [r]
+        else:
+            current_bucket.append(r)
+    if current_bucket:
+        out.append((current_label, current_bucket))
+    return out
+
+
+def filter_state_summary(*, floor=None, room_type=None,
+                         booking_status=None, payment_status=None,
+                         search=None) -> dict:
+    """Return a small status summary describing how many filters are
+    active and a friendly label for each active one."""
+    active = []
+    if floor not in (None, ''):
+        active.append(('floor', f'Floor {floor}'))
+    if room_type:
+        active.append(('room_type', room_type))
+    if booking_status:
+        active.append(('booking_status',
+                       booking_status.replace('_', ' ').title()))
+    if payment_status:
+        active.append(('payment_status',
+                       payment_status.replace('_', ' ').title()))
+    if search:
+        active.append(('search', f'"{search}"'))
+    return {'active': active, 'count': len(active)}
+
 # Booking bar minimum readable width in pixels — below this, only the
 # room-letter / first initial is shown.
 MIN_BAR_TEXT_WIDTH = 60

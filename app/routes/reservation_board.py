@@ -27,8 +27,12 @@ from ..services.board import (
     VIEW_SPANS,
     BookingBar,
     date_range,
+    filter_state_summary,
+    group_rooms,
     in_house_today,
     make_booking_bar,
+    normalize_density,
+    normalize_grouping,
     normalize_view,
     parse_start_date,
     pending_payment,
@@ -114,11 +118,19 @@ def index():
     booking_status = (request.args.get('booking_status') or '').strip() or None
     payment_filter = (request.args.get('payment_status') or '').strip() or None
     search         = (request.args.get('search') or '').strip() or None
+    grouping       = normalize_grouping(request.args.get('group'))
+    density        = normalize_density(request.args.get('density'))
 
-    # ── Rooms ──
+    # ── Rooms (sort order depends on grouping) ──
     rooms_q = Room.query
     rooms_q = _filter_rooms(rooms_q, floor=floor, room_type=room_type)
-    rooms = rooms_q.order_by(Room.floor.asc(), Room.number.asc()).all()
+    if grouping == 'room_type':
+        rooms_q = rooms_q.order_by(Room.room_type.asc(),
+                                   Room.number.asc())
+    else:
+        rooms_q = rooms_q.order_by(Room.floor.asc(),
+                                   Room.number.asc())
+    rooms = rooms_q.all()
     room_ids = {r.id for r in rooms}
 
     # ── Bookings overlapping the window ──
@@ -144,11 +156,33 @@ def index():
         ]
 
     # ── Convert to grid bars per room ──
+    import re as _re
     bars_by_room = {r.id: [] for r in rooms}
+    drawer_data = {}     # booking_id → JSON-safe dict for the drawer JS
+    rooms_by_id = {r.id: r for r in rooms}
     for b in bookings:
         bar = make_booking_bar(b, start, end)
         if bar is not None and b.room_id in bars_by_room:
             bars_by_room[b.room_id].append(bar)
+            phone_digits = ''
+            if b.guest and b.guest.phone:
+                phone_digits = _re.sub(r'\D', '', b.guest.phone)
+            r_for_b = rooms_by_id.get(b.room_id)
+            drawer_data[b.id] = {
+                'id':            b.id,
+                'ref':           bar.booking_ref,
+                'guest':         bar.guest_name,
+                'guestId':       (b.guest.id if b.guest else None),
+                'phoneDigits':   phone_digits,
+                'guests':        bar.num_guests,
+                'nights':        bar.nights,
+                'checkIn':       bar.check_in.isoformat(),
+                'checkOut':      bar.check_out.isoformat(),
+                'room':          (r_for_b.number if r_for_b else ''),
+                'roomType':      (r_for_b.room_type if r_for_b else ''),
+                'status':        bar.booking_status,
+                'paymentStatus': bar.payment_status,
+            }
     for r in rooms:
         bars_by_room[r.id].sort(key=lambda x: x.grid_col_start)
 
@@ -172,13 +206,25 @@ def index():
             Booking.check_out_date == today),
     ).all() if room_ids else []
 
+    arrivals_list   = todays_arrivals(all_today_bookings, today)
+    departures_list = todays_departures(all_today_bookings, today)
+    inhouse_list    = in_house_today(all_today_bookings, today)
     stats = {
-        'arrivals_today':   len({b.id for b in todays_arrivals(all_today_bookings, today)}),
-        'departures_today': len({b.id for b in todays_departures(all_today_bookings, today)}),
-        'in_house_today':   len({b.id for b in in_house_today(all_today_bookings, today)}),
+        'arrivals_today':   len({b.id for b in arrivals_list}),
+        'departures_today': len({b.id for b in departures_list}),
+        'in_house_today':   len({b.id for b in inhouse_list}),
         'pending_payment':  len({b.id for b in pending_payment(all_window_bookings)}),
         'rooms_total':      len(rooms),
     }
+    # De-duplicate by id since today_bookings + match-on-date can overlap
+    def _uniq(seq):
+        seen = set(); out = []
+        for x in seq:
+            if x.id not in seen:
+                seen.add(x.id); out.append(x)
+        return out
+    mobile_arrivals   = _uniq(arrivals_list)
+    mobile_departures = _uniq(departures_list)
 
     # ── Distinct values for filter dropdowns ──
     floors_available = sorted({r.floor for r in Room.query.all()
@@ -189,6 +235,42 @@ def index():
     # ── Prev / next start dates for nav arrows ──
     prev_start = shift_range(start, span, -1)
     next_start = shift_range(start, span, 1)
+
+    # ── Build the row-plan: ordered list of group headers + rooms,
+    #    each carrying its grid-row index. Row 1 = day header, body
+    #    starts at row 2.
+    groups = group_rooms(rooms, grouping)
+    row_plan = []
+    row_n = 2
+    room_index = 0  # for zebra striping (resets per room only)
+    for group_label, group_rooms_list in groups:
+        if grouping != 'none' and group_label:
+            row_plan.append({
+                'type':       'group',
+                'label':      group_label,
+                'count':      len(group_rooms_list),
+                'row_n':      row_n,
+            })
+            row_n += 1
+        for r in group_rooms_list:
+            row_plan.append({
+                'type':       'room',
+                'room':       r,
+                'row_n':      row_n,
+                'badge':      badges[r.id],
+                'bars':       bars_by_room.get(r.id, []),
+                'zebra':      (room_index % 2 == 1),
+            })
+            row_n += 1
+            room_index += 1
+    total_body_rows = row_n - 2  # excluding day header
+
+    # ── Active filters summary (for "clear all" affordance) ──
+    filter_summary = filter_state_summary(
+        floor=floor, room_type=room_type,
+        booking_status=booking_status,
+        payment_status=payment_filter, search=search,
+    )
 
     return render_template(
         'board/index.html',
@@ -206,6 +288,15 @@ def index():
         stats=stats,
         floors_available=floors_available,
         types_available=types_available,
+        # Layout state
+        grouping=grouping,
+        density=density,
+        row_plan=row_plan,
+        total_body_rows=total_body_rows,
+        filter_summary=filter_summary,
+        drawer_data=drawer_data,
+        mobile_arrivals=mobile_arrivals,
+        mobile_departures=mobile_departures,
         # Form-state echo
         floor=floor,
         room_type=room_type,
