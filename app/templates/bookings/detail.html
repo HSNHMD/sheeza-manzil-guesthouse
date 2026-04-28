@@ -290,7 +290,7 @@
     {% if booking.status == 'confirmed' and booking.guest.phone %}
       {% set inv = booking.invoice %}
       {% set paid_amount = inv.amount_paid if inv else 0 %}
-      {% set wa_msg = "Dear " ~ booking.guest.full_name ~ ", your booking at Sheeza Manzil Guesthouse has been confirmed! 🏨\n\nBooking Reference: " ~ booking.booking_ref ~ "\nRoom: " ~ booking.room.number ~ " — " ~ booking.room.room_type ~ "\nCheck-in: " ~ booking.check_in_date.strftime('%A, %b %d, %Y') ~ "\nCheck-out: " ~ booking.check_out_date.strftime('%A, %b %d, %Y') ~ "\nNights: " ~ booking.nights ~ "\nTotal Paid: MVR " ~ '%.0f'|format(paid_amount) ~ "\n\nWe look forward to welcoming you! For any queries call +960 737 5797." %}
+      {% set wa_msg = "Dear " ~ booking.guest.full_name ~ ", your booking at " ~ brand.name ~ " has been confirmed! 🏨\n\nBooking Reference: " ~ booking.booking_ref ~ "\nRoom: " ~ booking.room.number ~ " — " ~ booking.room.room_type ~ "\nCheck-in: " ~ booking.check_in_date.strftime('%A, %b %d, %Y') ~ "\nCheck-out: " ~ booking.check_out_date.strftime('%A, %b %d, %Y') ~ "\nNights: " ~ booking.nights ~ "\nTotal Paid: MVR " ~ '%.0f'|format(paid_amount) ~ "\n\nWe look forward to welcoming you!" %}
     <a href="https://wa.me/{{ booking.guest.phone | replace('+','') | replace(' ','') }}?text={{ wa_msg | urlencode }}"
       target="_blank"
       class="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg text-sm transition-colors">
@@ -330,7 +330,7 @@
       <span class="text-[11px] text-gray-400">Drafts only — not sent automatically</span>
     </div>
     <p class="text-[11px] text-gray-500 mb-3">
-      Payment drafts use the configured Sheeza Manzil bank transfer details.
+      Payment drafts use the configured {{ brand.short_name }} bank transfer details.
     </p>
 
     <form method="POST" action="{{ url_for('bookings.ai_draft', booking_id=booking.id) }}"

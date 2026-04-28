@@ -1,6 +1,6 @@
 {% extends 'staff/base.html' %}
 
-{% block title %}Staff Login — Sheeza Manzil{% endblock %}
+{% block title %}Staff Login — {{ brand.short_name }}{% endblock %}
 
 {% block head_extra %}
 <style>
@@ -102,7 +102,7 @@
 <div class="login-outer">
   <div class="login-card">
     <h1 class="login-title">Staff Login</h1>
-    <p class="login-subtitle">Sheeza Manzil · Staff Portal</p>
+    <p class="login-subtitle">{{ brand.short_name }} · Staff Portal</p>
 
     <form method="POST" action="{{ url_for('auth.console_login') }}">
       <div class="lform-group">

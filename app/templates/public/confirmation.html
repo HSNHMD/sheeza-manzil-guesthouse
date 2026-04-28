@@ -1,5 +1,5 @@
 {% extends 'public/base.html' %}
-{% block title %}Booking Confirmed — Sheeza Manzil Guesthouse{% endblock %}
+{% block title %}Booking Confirmed — {{ brand.name }}{% endblock %}
 {% block content %}
 <div class="text-center mb-8">
   {% if booking.status == 'pending_verification' %}

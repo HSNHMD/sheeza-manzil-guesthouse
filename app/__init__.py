@@ -90,6 +90,13 @@ def create_app(config_class=Config):
     from .booking_lifecycle import register_jinja_helpers
     register_jinja_helpers(app)
 
+    # Register the brand context processor so templates can read
+    # {{ brand.name }} / {{ brand.short_name }} / etc. without explicit
+    # passthrough. Defaults to Sheeza Manzil values; staging/demo
+    # environments override via BRAND_* env vars. See app/services/branding.py.
+    from .services.branding import register_context_processor as _register_brand_ctx
+    _register_brand_ctx(app)
+
     with app.app_context():
         import os
         upload_dir = os.path.join(app.root_path, 'uploads')

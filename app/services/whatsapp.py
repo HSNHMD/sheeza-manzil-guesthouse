@@ -288,6 +288,8 @@ def send_checkout_invoice_summary(booking, invoice) -> bool:
         if invoice.payment_status == 'paid'
         else f"Balance Due: MVR {invoice.balance_due:.0f} ⚠️"
     )
+    from .branding import get_brand
+    _brand_name = get_brand()['name']
     text = (
         f"Thank you for staying with us, {booking.guest.full_name}! 🙏\n\n"
         f"Invoice: {invoice.invoice_number}\n"
@@ -295,7 +297,7 @@ def send_checkout_invoice_summary(booking, invoice) -> bool:
         f"night{'s' if booking.nights != 1 else ''}\n"
         f"Total: MVR {invoice.total_amount:.0f}\n"
         f"{balance_line}\n\n"
-        f"We hope to see you again soon at Sheeza Manzil Guesthouse! 🌟"
+        f"We hope to see you again soon at {_brand_name}! 🌟"
     )
     return _send(phone, text)['success']
 

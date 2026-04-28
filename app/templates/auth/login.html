@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
-{% block title %}Login — Sheeza Manzil Guesthouse{% endblock %}
+{% block title %}Login — {{ brand.name }}{% endblock %}
 {% block login_content %}
 <div class="w-full max-w-sm mx-auto">
   <div class="bg-white rounded-2xl shadow-lg p-8">
     <div class="text-center mb-8">
       <div class="text-4xl mb-3">🏨</div>
-      <h1 class="text-2xl font-bold text-gray-800">Sheeza Manzil Guesthouse</h1>
+      <h1 class="text-2xl font-bold text-gray-800">{{ brand.name }}</h1>
       <p class="text-gray-500 text-sm mt-1">Sign in to your account</p>
     </div>
 

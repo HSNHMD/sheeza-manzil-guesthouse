@@ -230,6 +230,32 @@ _SYSTEM_PROMPT = (
     'no "Here is the draft:" prefix.\n'
 )
 
+# Tokens swapped at runtime when BRAND_NAME / BRAND_SHORT_NAME differ
+# from the historical Sheeza values. Matches the literal strings inside
+# _SYSTEM_PROMPT above. Keep this list in sync with the prompt text.
+_BRAND_PROMPT_TOKENS = (
+    ('Sheeza Manzil Guesthouse', 'name'),
+    ('Sheeza Manzil',           'short_name'),
+)
+
+
+def _get_system_prompt() -> str:
+    """Return the system prompt with brand-name tokens swapped to match
+    the active branding (env-driven via app/services/branding.py).
+
+    When BRAND_NAME is unset (production default), this returns the
+    `_SYSTEM_PROMPT` constant unchanged — preserving Sheeza branding.
+    Tests that read `_SYSTEM_PROMPT` directly continue to pass.
+    """
+    from .branding import get_brand
+    brand = get_brand()
+    prompt = _SYSTEM_PROMPT
+    for token, key in _BRAND_PROMPT_TOKENS:
+        replacement = brand.get(key) or token
+        if replacement != token:
+            prompt = prompt.replace(token, replacement)
+    return prompt
+
 
 def _missing(value) -> str:
     if value is None or value == '' or value == 0:
@@ -567,7 +593,7 @@ def generate_draft(draft_type: str, booking) -> dict:
             'provider': provider,
         }
 
-    result = _call_provider(provider, _SYSTEM_PROMPT, prompt, model)
+    result = _call_provider(provider, _get_system_prompt(), prompt, model)
 
     if not result.get('success'):
         # Pass through whatever short error the provider returned, but add

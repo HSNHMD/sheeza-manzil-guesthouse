@@ -3,18 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
-  <title>{% block title %}Book a Room — Sheeza Manzil Guesthouse{% endblock %}</title>
+  <link rel="icon" href="{{ brand.logo_path }}">
+  <title>{% block title %}Book a Room — {{ brand.name }}{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
 
 <header class="bg-white border-b border-gray-200">
   <div class="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Sheeza Manzil" class="h-16 w-auto">
+    <img src="{{ brand.logo_path }}" alt="{{ brand.short_name }}" class="h-16 w-auto">
     <div style="margin-left:-2px;">
-      <p class="font-serif font-bold text-xl tracking-wide leading-tight" style="color:#7B3F00;">Sheeza Manzil</p>
+      <p class="font-serif font-bold text-xl tracking-wide leading-tight" style="color:{{ brand.primary_color }};">{{ brand.short_name }}</p>
+      {% if brand.tagline %}
+      <p class="text-xs text-gray-500">{{ brand.tagline }}</p>
+      {% else %}
       <p class="text-xs text-gray-500">Maaveyo Magu, Hdh. Hanimaadhoo, Maldives · Tel: +960 737 5797</p>
+      {% endif %}
     </div>
   </div>
 </header>

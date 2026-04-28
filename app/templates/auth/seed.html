@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Seed Database — Sheeza Manzil Guesthouse{% endblock %}
+{% block title %}Seed Database — {{ brand.name }}{% endblock %}
 {% block content %}
 <div class="max-w-lg mx-auto space-y-5">
   <div class="flex items-center gap-3">
@@ -15,7 +15,7 @@
         🏨
       </div>
       <div>
-        <p class="font-semibold text-gray-800">Sheeza Manzil Guesthouse — Room Setup</p>
+        <p class="font-semibold text-gray-800">{{ brand.name }} — Room Setup</p>
         <p class="text-sm text-gray-500">Currently <strong>{{ existing }}</strong> room(s) in the database.</p>
       </div>
     </div>

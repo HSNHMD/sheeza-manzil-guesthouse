@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Maakanaa Village Hotel">
+  <title>Maakanaa Village Hotel</title>
+
+  <!-- Sky / sun gradient circle background -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%"  stop-color="#FFE2A8"/>
+      <stop offset="55%" stop-color="#FFC979"/>
+      <stop offset="100%" stop-color="#F08C3A"/>
+    </radialGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#1FA6A6"/>
+      <stop offset="100%" stop-color="#0D6E78"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#2F8C4F"/>
+      <stop offset="100%" stop-color="#185F36"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sun disc -->
+  <circle cx="100" cy="92" r="78" fill="url(#bg)"/>
+
+  <!-- Sea: bottom 35% of the circle, clipped to the disc -->
+  <clipPath id="discClip">
+    <circle cx="100" cy="92" r="78"/>
+  </clipPath>
+  <g clip-path="url(#discClip)">
+    <path d="M0,118
+             Q50,108 100,118
+             T200,118
+             L200,180 L0,180 Z"
+          fill="url(#sea)" opacity="0.95"/>
+    <path d="M0,128
+             Q50,138 100,128
+             T200,128"
+          fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="1.5"/>
+  </g>
+
+  <!-- Palm trunk -->
+  <path d="M104,118
+           C100,98 96,80 94,62"
+        fill="none" stroke="#5A3A1E" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Palm fronds — stylized 5-leaf cluster -->
+  <g fill="url(#leaf)" stroke="#0F3D20" stroke-width="0.6" stroke-linejoin="round">
+    <path d="M94,62 C88,52 76,46 60,46 Q78,52 90,62 Z"/>
+    <path d="M94,62 C92,50 88,38 78,30 Q88,42 94,62 Z"/>
+    <path d="M94,62 C100,52 112,46 128,46 Q110,52 98,62 Z"/>
+    <path d="M94,62 C100,52 108,42 120,38 Q106,46 96,62 Z"/>
+    <path d="M94,62 C90,52 88,40 92,28 Q94,42 96,62 Z"/>
+  </g>
+
+  <!-- Coconut accents -->
+  <circle cx="91" cy="60"  r="2.4" fill="#3E2814"/>
+  <circle cx="97" cy="62"  r="2.0" fill="#3E2814"/>
+
+  <!-- Word mark -->
+  <text x="100" y="180" text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="14" font-weight="700" fill="#1B3F52"
+        letter-spacing="1.5">
+    MAAKANAA VILLAGE
+  </text>
+  <text x="100" y="194" text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="9" font-style="italic" fill="#1B3F52"
+        letter-spacing="2.5">
+    HOTEL
+  </text>
+</svg>
