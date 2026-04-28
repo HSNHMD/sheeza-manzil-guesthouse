@@ -20,7 +20,7 @@ from flask import Blueprint, render_template, request
 from flask_login import login_required
 from sqlalchemy import or_
 
-from ..models import Room, Booking
+from ..models import Room, Booking, ActivityLog
 from ..decorators import admin_required
 from ..services.board import (
     DEFAULT_VIEW,
@@ -168,6 +168,20 @@ def index():
             if b.guest and b.guest.phone:
                 phone_digits = _re.sub(r'\D', '', b.guest.phone)
             r_for_b = rooms_by_id.get(b.room_id)
+
+            # Invoice summary (None-safe — many test bookings have no invoice)
+            inv = getattr(b, 'invoice', None)
+            invoice_data = None
+            if inv is not None:
+                total = float(getattr(inv, 'total_amount', 0.0) or 0.0)
+                paid  = float(getattr(inv, 'amount_paid',   0.0) or 0.0)
+                invoice_data = {
+                    'total':     round(total, 2),
+                    'paid':      round(paid,  2),
+                    'balance':   round(total - paid, 2),
+                    'number':    getattr(inv, 'invoice_number', None) or '',
+                }
+
             drawer_data[b.id] = {
                 'id':            b.id,
                 'ref':           bar.booking_ref,
@@ -180,11 +194,42 @@ def index():
                 'checkOut':      bar.check_out.isoformat(),
                 'room':          (r_for_b.number if r_for_b else ''),
                 'roomType':      (r_for_b.room_type if r_for_b else ''),
+                'floor':         (r_for_b.floor if r_for_b else None),
+                'totalAmount':   float(getattr(b, 'total_amount', 0.0) or 0.0),
                 'status':        bar.booking_status,
                 'paymentStatus': bar.payment_status,
+                'invoice':       invoice_data,
+                'activity':      [],   # populated below in a single batched query
             }
     for r in rooms:
         bars_by_room[r.id].sort(key=lambda x: x.grid_col_start)
+
+    # ── Recent activity (batched) ──
+    # Fetch up to ~3 audit rows per booking for the drawer "Recent
+    # activity" section. One query covers the whole window.
+    if drawer_data:
+        booking_ids = list(drawer_data.keys())
+        recent_rows = (
+            ActivityLog.query
+            .filter(ActivityLog.booking_id.in_(booking_ids))
+            .order_by(ActivityLog.created_at.desc())
+            .limit(max(50, len(booking_ids) * 4))
+            .all()
+        )
+        per_booking_count = {bid: 0 for bid in booking_ids}
+        for row in recent_rows:
+            bid = row.booking_id
+            if bid not in drawer_data:
+                continue
+            if per_booking_count.get(bid, 0) >= 3:
+                continue
+            per_booking_count[bid] += 1
+            drawer_data[bid]['activity'].append({
+                'action':      row.action or '',
+                'description': (row.description or '')[:140],
+                'createdAt':   row.created_at.isoformat() if row.created_at else None,
+                'actor':       row.actor_type or 'system',
+            })
 
     # ── Room status badges (clean / dirty / occupied / etc.) ──
     # Compute against ALL of the room's bookings today (not just window-clipped),

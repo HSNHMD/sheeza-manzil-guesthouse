@@ -424,32 +424,106 @@ class DrawerActionTests(_RouteBase):
         super().setUp()
         self._login(self.admin_id)
 
-    def test_drawer_data_includes_guest_id_and_phone(self):
+    def _drawer_data(self):
         import json
         import re
-        room = _seed_room('77')
-        today = date.today()
-        _seed_booking(room,
-                      ci=today, co=today + timedelta(days=2),
-                      status='confirmed', ref='BKDRAWER')
         r = self.client.get('/board')
         match = re.search(
             rb'<script id="board-bookings-data"[^>]*>(.*?)</script>',
             r.data, re.DOTALL,
         )
         self.assertIsNotNone(match)
-        data = json.loads(match.group(1).decode('utf-8'))
-        # Find the BKDRAWER booking in the dict
-        booking = None
-        for v in data.values():
-            if v.get('ref') == 'BKDRAWER':
-                booking = v
-                break
+        return json.loads(match.group(1).decode('utf-8'))
+
+    def test_drawer_data_includes_guest_id_and_phone(self):
+        room = _seed_room('77')
+        today = date.today()
+        _seed_booking(room,
+                      ci=today, co=today + timedelta(days=2),
+                      status='confirmed', ref='BKDRAWER')
+        data = self._drawer_data()
+        booking = next((v for v in data.values() if v.get('ref') == 'BKDRAWER'), None)
         self.assertIsNotNone(booking)
         self.assertIn('guestId', booking)
         self.assertIn('phoneDigits', booking)
-        # The synthetic guest phone +9607000001 → digits-only "9607000001"
+        # Synthetic guest phone +9607000001 → digits-only "9607000001"
         self.assertEqual(booking['phoneDigits'], '9607000001')
+
+    def test_drawer_data_includes_invoice_summary(self):
+        room = _seed_room('77')
+        today = date.today()
+        b = _seed_booking(room,
+                          ci=today, co=today + timedelta(days=2),
+                          status='confirmed', ref='BKINV')
+        # Attach an invoice with paid balance
+        inv = Invoice(
+            booking_id=b.id,
+            invoice_number='INV-BKINV',
+            total_amount=2400.0,
+            payment_status='verified',
+            amount_paid=1200.0,
+        )
+        db.session.add(inv)
+        db.session.commit()
+
+        data = self._drawer_data()
+        booking = next((v for v in data.values() if v.get('ref') == 'BKINV'), None)
+        self.assertIsNotNone(booking)
+        self.assertIn('invoice', booking)
+        self.assertIsNotNone(booking['invoice'])
+        self.assertEqual(booking['invoice']['total'], 2400.0)
+        self.assertEqual(booking['invoice']['paid'], 1200.0)
+        self.assertEqual(booking['invoice']['balance'], 1200.0)
+        self.assertEqual(booking['invoice']['number'], 'INV-BKINV')
+
+    def test_drawer_data_includes_activity_array(self):
+        from app.models import ActivityLog
+        room = _seed_room('77')
+        today = date.today()
+        b = _seed_booking(room,
+                          ci=today, co=today + timedelta(days=2),
+                          status='confirmed', ref='BKACT')
+        # Insert a few audit rows for this booking
+        for action in ('booking.created', 'booking.confirmed'):
+            db.session.add(ActivityLog(
+                action=action, actor_type='admin',
+                booking_id=b.id, description='test row',
+            ))
+        db.session.commit()
+
+        data = self._drawer_data()
+        booking = next((v for v in data.values() if v.get('ref') == 'BKACT'), None)
+        self.assertIsNotNone(booking)
+        self.assertIn('activity', booking)
+        self.assertIsInstance(booking['activity'], list)
+        # Should contain both audit rows we added (newest first)
+        actions = [r['action'] for r in booking['activity']]
+        self.assertIn('booking.created', actions)
+        self.assertIn('booking.confirmed', actions)
+        # Each row has the canonical fields
+        for row in booking['activity']:
+            self.assertIn('action', row)
+            self.assertIn('description', row)
+            self.assertIn('createdAt', row)
+            self.assertIn('actor', row)
+
+    def test_drawer_data_activity_capped_at_three(self):
+        from app.models import ActivityLog
+        room = _seed_room('77')
+        today = date.today()
+        b = _seed_booking(room,
+                          ci=today, co=today + timedelta(days=2),
+                          status='confirmed', ref='BKMANY')
+        for i in range(7):
+            db.session.add(ActivityLog(
+                action='ai.draft.created', actor_type='admin',
+                booking_id=b.id, description=f'row {i}',
+            ))
+        db.session.commit()
+        data = self._drawer_data()
+        booking = next((v for v in data.values() if v.get('ref') == 'BKMANY'), None)
+        self.assertIsNotNone(booking)
+        self.assertLessEqual(len(booking['activity']), 3)
 
 
 class FilterStateTests(_RouteBase):

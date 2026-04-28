@@ -627,15 +627,53 @@
     flex-shrink: 0;
   }
   .drawer-header {
-    padding: 16px 20px;
+    padding: 18px 20px 14px;
     border-bottom: 1px solid rgba(15, 23, 42, 0.08);
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .drawer-header .drawer-titlerow {
+    display: flex;
+    align-items: flex-start;
     justify-content: space-between;
+    gap: 12px;
+  }
+  .drawer-header .drawer-eyebrow {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .drawer-header .drawer-guest {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .drawer-header .drawer-meta {
+    font-size: 12px;
+    color: #475569;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .drawer-header .drawer-meta .dot {
+    width: 3px; height: 3px; border-radius: 999px;
+    background: #94a3b8; opacity: 0.7;
+  }
+  .drawer-header .drawer-chiprow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
   }
   .drawer-body {
     background-color: #ffffff;
-    padding: 20px;
+    padding: 0;            /* sections add their own padding */
     color: #0f172a;
     flex: 1;
     overflow-y: auto;
@@ -644,6 +682,188 @@
   .drawer-footer {
     padding: 14px 20px;
     border-top: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 -4px 14px -8px rgba(15, 23, 42, 0.10);
+  }
+
+  /* Drawer sections — each is its own delineated card-like block,
+     stacked with thin dividers between them. */
+  .d-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    background-color: #ffffff;
+  }
+  .d-section:last-child { border-bottom: 0; }
+  .d-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: #94a3b8;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .d-section-title svg { width: 12px; height: 12px; opacity: 0.7; }
+
+  /* Stay block — large two-column dates */
+  .d-dates {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .d-date-cell .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .d-date-cell .day {
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.05;
+    font-feature-settings: "tnum" on;
+    letter-spacing: -0.02em;
+  }
+  .d-date-cell .full {
+    font-size: 11px;
+    color: #475569;
+    margin-top: 2px;
+  }
+  .d-stay-meta {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    font-size: 12px;
+    color: #475569;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .d-stay-meta strong { color: #0f172a; font-weight: 700; }
+
+  /* Payment block — 3-col total/paid/balance + optional banner */
+  .d-money {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .d-money-cell {
+    background-color: #fafbfc;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    border-radius: 10px;
+    padding: 10px;
+  }
+  .d-money-cell .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .d-money-cell .num {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    font-feature-settings: "tnum" on;
+    letter-spacing: -0.01em;
+  }
+  .d-money-cell.is-balance.has-due { background-color: #fff7ed; border-color: #fed7aa; }
+  .d-money-cell.is-balance.has-due .num { color: #9a3412; }
+  .d-money-cell.is-balance.is-clear { background-color: #ecfdf5; border-color: #a7f3d0; }
+  .d-money-cell.is-balance.is-clear .num { color: #065f46; }
+
+  .d-banner {
+    margin-top: 12px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+  }
+  .d-banner.warn {
+    background-color: #fff7ed;
+    color: #9a3412;
+    border: 1px solid #fed7aa;
+  }
+  .d-banner.alert {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+  .d-banner.ok {
+    background-color: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+
+  /* Activity feed */
+  .d-activity {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .d-activity li {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .d-activity li:not(:last-child) {
+    border-bottom: 1px dashed rgba(15, 23, 42, 0.05);
+  }
+  .d-activity .a-bullet {
+    flex-shrink: 0;
+    width: 6px; height: 6px;
+    margin-top: 7px;
+    border-radius: 999px;
+    background: #cbd5e1;
+  }
+  .d-activity .a-text { flex: 1; min-width: 0; color: #334155; }
+  .d-activity .a-text .a-action {
+    font-weight: 600;
+    color: #0f172a;
+    margin-right: 4px;
+  }
+  .d-activity .a-when {
+    color: #94a3b8;
+    font-size: 11px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .d-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 4px 0;
+  }
+
+  /* Status / payment chips inside the drawer — bigger and bolder
+     than the toolbar chips so they read at a glance. */
+  .d-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+  }
+  .d-chip .d-chip-dot {
+    width: 6px; height: 6px; border-radius: 999px;
+    background: currentColor;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.6);
   }
   .drawer-footer .footer-cta {
     display: block;
@@ -1093,21 +1313,32 @@
   </div>
 </div>
 
-<!-- ── Drawer ────────────────────────────────────────────────────── -->
+<!-- ── Drawer (operational control panel) ─────────────────────────── -->
 <div class="drawer-overlay" onclick="closeDrawer();"></div>
 <aside class="drawer" id="boardDrawer" aria-hidden="true" aria-labelledby="drawerTitle">
-  <div class="drawer-header">
-    <h2 id="drawerTitle" class="text-base font-semibold" style="color:#0f172a;">Booking</h2>
-    <button type="button" onclick="closeDrawer();" class="drawer-close" aria-label="Close drawer">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-    </button>
+  <header class="drawer-header" id="drawerHeader">
+    <div class="drawer-titlerow">
+      <div style="min-width:0; flex:1;">
+        <div class="drawer-eyebrow" id="drawerEyebrow">Booking</div>
+        <div class="drawer-guest" id="drawerGuest">Select a booking…</div>
+        <div class="drawer-meta" id="drawerMeta"></div>
+      </div>
+      <button type="button" onclick="closeDrawer();" class="drawer-close" aria-label="Close drawer">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-chiprow" id="drawerChips"></div>
+  </header>
+
+  <div id="drawerBody" class="drawer-body" aria-live="polite">
+    <div class="d-section">
+      <p class="d-empty">Click any booking on the board to see its details here.</p>
+    </div>
   </div>
-  <div id="drawerBody" class="drawer-body space-y-4 text-sm">
-    <p class="italic" style="color:#94a3b8;">Select a booking…</p>
-  </div>
-  <div class="drawer-footer">
+
+  <footer class="drawer-footer">
     <a id="drawerOpenLink" href="#" class="footer-cta">Open full booking →</a>
-  </div>
+  </footer>
 </aside>
 
 <!-- Bookings JSON for client-side drawer hydration -->
@@ -1130,16 +1361,17 @@
       'cancelled':         'Cancelled',
       'rejected':          'Rejected'
     };
-    var statusBadge = {
-      'new_request':       'bg-violet-50 text-violet-700 border-violet-200',
-      'pending_payment':   'bg-amber-50 text-amber-700 border-amber-200',
-      'payment_uploaded':  'bg-yellow-50 text-yellow-700 border-yellow-200',
-      'payment_verified':  'bg-sky-50 text-sky-700 border-sky-200',
-      'confirmed':         'bg-blue-50 text-blue-700 border-blue-200',
-      'checked_in':        'bg-emerald-50 text-emerald-700 border-emerald-200',
-      'checked_out':       'bg-slate-100 text-slate-700 border-slate-200',
-      'cancelled':         'bg-rose-50 text-rose-700 border-rose-200',
-      'rejected':          'bg-rose-50 text-rose-700 border-rose-200'
+    // Bigger, premium drawer chips (not the toolbar utility chains)
+    var statusChip = {
+      'new_request':       'background:#f5f3ff;border-color:#c4b5fd;color:#5b21b6;',
+      'pending_payment':   'background:#fffbeb;border-color:#fcd34d;color:#92400e;',
+      'payment_uploaded':  'background:#fefce8;border-color:#facc15;color:#854d0e;',
+      'payment_verified':  'background:#f0f9ff;border-color:#7dd3fc;color:#075985;',
+      'confirmed':         'background:#eff6ff;border-color:#93c5fd;color:#1e40af;',
+      'checked_in':        'background:#ecfdf5;border-color:#6ee7b7;color:#065f46;',
+      'checked_out':       'background:#f8fafc;border-color:#cbd5e1;color:#475569;',
+      'cancelled':         'background:#fff1f2;border-color:#fecdd3;color:#9f1239;',
+      'rejected':          'background:#fff1f2;border-color:#fecdd3;color:#9f1239;'
     };
     var paymentLabels = {
       'not_received':   'Not received',
@@ -1148,12 +1380,27 @@
       'rejected':       'Rejected',
       'mismatch':       'Mismatch'
     };
-    var paymentBadge = {
-      'not_received':   'bg-slate-100 text-slate-700 border-slate-200',
-      'pending_review': 'bg-amber-50 text-amber-700 border-amber-200',
-      'verified':       'bg-emerald-50 text-emerald-700 border-emerald-200',
-      'rejected':       'bg-rose-50 text-rose-700 border-rose-200',
-      'mismatch':       'bg-rose-50 text-rose-700 border-rose-200'
+    var paymentChip = {
+      'not_received':   'background:#f8fafc;border-color:#cbd5e1;color:#475569;',
+      'pending_review': 'background:#fffbeb;border-color:#fcd34d;color:#92400e;',
+      'verified':       'background:#ecfdf5;border-color:#6ee7b7;color:#065f46;',
+      'rejected':       'background:#fff1f2;border-color:#fecdd3;color:#9f1239;',
+      'mismatch':       'background:#fff1f2;border-color:#fecdd3;color:#9f1239;'
+    };
+
+    var actionLabels = {
+      'booking.created':                'Booking created',
+      'booking.confirmed':              'Confirmed',
+      'booking.cancelled':              'Cancelled',
+      'booking.checked_in':             'Checked in',
+      'booking.checked_out':            'Checked out',
+      'payment.recorded':               'Payment recorded',
+      'payment.verified':               'Payment verified',
+      'payment.rejected':               'Payment rejected',
+      'ai.draft.created':               'AI draft created',
+      'ai.draft.whatsapp_sent':         'WhatsApp sent',
+      'whatsapp.inbound.received':      'WhatsApp received',
+      'staging.seed.completed':         'Staging seeded'
     };
 
     function escapeHtml(s) {
@@ -1163,8 +1410,229 @@
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
-    function badge(text, cls) {
-      return '<span class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-semibold uppercase tracking-wider ' + cls + '">' + escapeHtml(text) + '</span>';
+    function chipHtml(text, styleStr) {
+      return '<span class="d-chip" style="' + styleStr + '">' +
+               '<span class="d-chip-dot"></span>' +
+               escapeHtml(text) +
+             '</span>';
+    }
+
+    function fmtMoney(n) {
+      if (n === null || n === undefined || isNaN(n)) return '—';
+      return 'MVR ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    function fmtRelative(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      var now = new Date();
+      var diffSec = Math.floor((now - d) / 1000);
+      if (diffSec < 60)        return 'just now';
+      if (diffSec < 3600)      return Math.floor(diffSec / 60) + 'm ago';
+      if (diffSec < 86400)     return Math.floor(diffSec / 3600) + 'h ago';
+      if (diffSec < 7 * 86400) return Math.floor(diffSec / 86400) + 'd ago';
+      return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
+    }
+
+    function fmtDateLong(d) {
+      return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+    }
+
+    function buildHeader(b) {
+      var headerEl = document.getElementById('drawerHeader');
+      document.getElementById('drawerEyebrow').textContent =
+        'Booking · ' + b.ref;
+      document.getElementById('drawerGuest').textContent = b.guest;
+
+      var meta = document.getElementById('drawerMeta');
+      meta.innerHTML =
+        '<span>Room #' + escapeHtml(b.room) + '</span>' +
+        '<span class="dot"></span>' +
+        '<span>' + escapeHtml(b.roomType) + '</span>' +
+        (b.floor !== null && b.floor !== undefined
+          ? '<span class="dot"></span><span>Floor ' + b.floor + '</span>'
+          : '');
+
+      var chips = document.getElementById('drawerChips');
+      chips.innerHTML =
+        chipHtml(statusLabels[b.status] || b.status,
+                 statusChip[b.status] || 'background:#f1f5f9;border-color:#cbd5e1;color:#475569;') +
+        chipHtml(paymentLabels[b.paymentStatus] || b.paymentStatus,
+                 paymentChip[b.paymentStatus] || 'background:#f1f5f9;border-color:#cbd5e1;color:#475569;');
+    }
+
+    function buildStaySection(b) {
+      var checkIn  = new Date(b.checkIn  + 'T00:00:00');
+      var checkOut = new Date(b.checkOut + 'T00:00:00');
+      return '' +
+        '<section class="d-section">' +
+          '<div class="d-section-title">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+            'Stay' +
+          '</div>' +
+          '<div class="d-dates">' +
+            '<div class="d-date-cell">' +
+              '<div class="label">Check-in</div>' +
+              '<div class="day">' + checkIn.getDate() + ' ' + checkIn.toLocaleDateString(undefined, { month:'short' }) + '</div>' +
+              '<div class="full">' + fmtDateLong(checkIn) + '</div>' +
+            '</div>' +
+            '<div class="d-date-cell">' +
+              '<div class="label">Check-out</div>' +
+              '<div class="day">' + checkOut.getDate() + ' ' + checkOut.toLocaleDateString(undefined, { month:'short' }) + '</div>' +
+              '<div class="full">' + fmtDateLong(checkOut) + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="d-stay-meta">' +
+            '<strong>' + b.nights + '</strong> night' + (b.nights === 1 ? '' : 's') +
+            '<span style="opacity:.4;">·</span>' +
+            '<strong>' + b.guests + '</strong> guest' + (b.guests === 1 ? '' : 's') +
+            (b.totalAmount ? '<span style="opacity:.4;">·</span><span>' + fmtMoney(b.totalAmount) + ' total</span>' : '') +
+          '</div>' +
+        '</section>';
+    }
+
+    function buildPaymentSection(b) {
+      var inv = b.invoice;
+      var total = inv ? inv.total : (b.totalAmount || 0);
+      var paid  = inv ? inv.paid  : 0;
+      var balance = inv ? inv.balance : total;
+      var balanceClass = balance > 0.01 ? 'has-due' : 'is-clear';
+
+      var bannerHtml = '';
+      if (b.paymentStatus === 'mismatch') {
+        bannerHtml =
+          '<div class="d-banner alert">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5 flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>' +
+            'Payment amount does not match invoice total.' +
+          '</div>';
+      } else if (b.paymentStatus === 'rejected') {
+        bannerHtml =
+          '<div class="d-banner alert">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5 flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>' +
+            'Payment was rejected — guest action required.' +
+          '</div>';
+      } else if (b.paymentStatus === 'pending_review') {
+        bannerHtml =
+          '<div class="d-banner warn">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5 flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+            'Payment slip uploaded — awaiting admin review.' +
+          '</div>';
+      } else if (b.paymentStatus === 'verified' && balance < 0.01) {
+        bannerHtml =
+          '<div class="d-banner ok">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5 flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+            'Payment verified — fully paid.' +
+          '</div>';
+      } else if (balance > 0.01 && b.paymentStatus === 'not_received') {
+        bannerHtml =
+          '<div class="d-banner warn">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5 flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+            'Awaiting payment from guest.' +
+          '</div>';
+      }
+
+      return '' +
+        '<section class="d-section">' +
+          '<div class="d-section-title">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h2M3 6h18M3 18h18a2 2 0 002-2V8a2 2 0 00-2-2H3a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>' +
+            'Payment' + (inv && inv.number ? ' · ' + escapeHtml(inv.number) : '') +
+          '</div>' +
+          '<div class="d-money">' +
+            '<div class="d-money-cell"><div class="label">Total</div><div class="num">' + fmtMoney(total) + '</div></div>' +
+            '<div class="d-money-cell"><div class="label">Paid</div><div class="num">' + fmtMoney(paid) + '</div></div>' +
+            '<div class="d-money-cell is-balance ' + balanceClass + '"><div class="label">Balance</div><div class="num">' + fmtMoney(balance) + '</div></div>' +
+          '</div>' +
+          bannerHtml +
+        '</section>';
+    }
+
+    function buildActionsSection(b) {
+      var actions = [];
+
+      actions.push(
+        '<a href="/bookings/' + b.id + '#ai-draft-text" class="drawer-action">' +
+          '<span class="drawer-action-icon" style="background:#eef2ff;color:#4338ca;">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2m-1-1v18m-7-7l4-4-4-4m14 8l-4-4 4-4"/></svg>' +
+          '</span>' +
+          '<span class="drawer-action-label">Compose AI draft</span>' +
+          '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 ml-auto" style="color:#94a3b8;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>' +
+        '</a>'
+      );
+
+      if (b.guestId) {
+        actions.push(
+          '<a href="/guests/' + b.guestId + '/edit" class="drawer-action">' +
+            '<span class="drawer-action-icon" style="background:#fef3c7;color:#a16207;">' +
+              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label">Edit guest profile</span>' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 ml-auto" style="color:#94a3b8;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>' +
+          '</a>'
+        );
+      }
+
+      if (b.phoneDigits && b.phoneDigits.length >= 6) {
+        actions.push(
+          '<a href="https://wa.me/' + escapeHtml(b.phoneDigits) + '" target="_blank" rel="noopener" class="drawer-action">' +
+            '<span class="drawer-action-icon" style="background:#dcfce7;color:#15803d;">' +
+              '<svg fill="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label">Open WhatsApp <span style="font-size:10px;color:#94a3b8;font-weight:normal;">(deeplink)</span></span>' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 ml-auto" style="color:#94a3b8;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7-7 7M3 12h18"/></svg>' +
+          '</a>'
+        );
+      } else {
+        actions.push(
+          '<div class="drawer-action is-disabled" aria-disabled="true">' +
+            '<span class="drawer-action-icon" style="background:#f1f5f9;color:#94a3b8;">' +
+              '<svg fill="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label" style="color:#94a3b8;">No phone on file</span>' +
+          '</div>'
+        );
+      }
+
+      return '' +
+        '<section class="d-section">' +
+          '<div class="d-section-title">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>' +
+            'Quick actions' +
+          '</div>' +
+          '<div style="display:flex; flex-direction:column; gap:6px;">' + actions.join('') + '</div>' +
+        '</section>';
+    }
+
+    function buildActivitySection(b) {
+      var rows = (b.activity && b.activity.length) ? b.activity : [];
+      if (!rows.length) {
+        return '' +
+          '<section class="d-section">' +
+            '<div class="d-section-title">' +
+              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+              'Recent activity' +
+            '</div>' +
+            '<p class="d-empty">No activity yet for this booking.</p>' +
+          '</section>';
+      }
+      var listHtml = rows.map(function(r) {
+        var label = actionLabels[r.action] || r.action.replace(/[._]/g, ' ');
+        return '<li>' +
+                 '<span class="a-bullet"></span>' +
+                 '<span class="a-text"><span class="a-action">' + escapeHtml(label) + '</span>' +
+                   (r.description ? escapeHtml(r.description) : '') +
+                 '</span>' +
+                 '<span class="a-when">' + escapeHtml(fmtRelative(r.createdAt)) + '</span>' +
+               '</li>';
+      }).join('');
+      return '' +
+        '<section class="d-section">' +
+          '<div class="d-section-title">' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+            'Recent activity' +
+          '</div>' +
+          '<ul class="d-activity">' + listHtml + '</ul>' +
+        '</section>';
     }
 
     window.openDrawer = function(evt, id) {
@@ -1175,83 +1643,18 @@
       if (!b) return true;
       if (evt) evt.preventDefault();
 
-      var checkIn  = new Date(b.checkIn  + 'T00:00:00');
-      var checkOut = new Date(b.checkOut + 'T00:00:00');
-      var fmt = function(d) { return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' }); };
+      buildHeader(b);
 
-      // ── Action button row ──
-      var actions = [];
-      // Compose AI draft → jumps to the AI draft section on booking detail
-      actions.push(
-        '<a href="/bookings/' + b.id + '#ai-draft-text"' +
-        ' class="drawer-action">' +
-          '<span class="drawer-action-icon" style="background:#eef2ff;color:#4338ca;">' +
-            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2m-1-1v18m-7-7l4-4-4-4m14 8l-4-4 4-4"/></svg>' +
-          '</span>' +
-          '<span class="drawer-action-label">Compose AI draft</span>' +
-          '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 text-slate-400 ml-auto"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>' +
-        '</a>'
-      );
-      // Edit guest profile (only route currently exposed for guests)
-      if (b.guestId) {
-        actions.push(
-          '<a href="/guests/' + b.guestId + '/edit"' +
-          ' class="drawer-action">' +
-            '<span class="drawer-action-icon" style="background:#fef3c7;color:#a16207;">' +
-              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' +
-            '</span>' +
-            '<span class="drawer-action-label">Edit guest profile</span>' +
-            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 text-slate-400 ml-auto"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>' +
-          '</a>'
-        );
-      }
-      // WhatsApp deeplink (browser-side; no server send) — staging-safe
-      if (b.phoneDigits && b.phoneDigits.length >= 6) {
-        actions.push(
-          '<a href="https://wa.me/' + escapeHtml(b.phoneDigits) + '" target="_blank" rel="noopener"' +
-          ' class="drawer-action">' +
-            '<span class="drawer-action-icon" style="background:#dcfce7;color:#15803d;">' +
-              '<svg fill="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>' +
-            '</span>' +
-            '<span class="drawer-action-label">Open WhatsApp <span class="text-[10px] text-slate-400 font-normal">(deeplink)</span></span>' +
-            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 text-slate-400 ml-auto"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7-7 7M3 12h18"/></svg>' +
-          '</a>'
-        );
-      } else {
-        actions.push(
-          '<div class="drawer-action is-disabled" aria-disabled="true">' +
-            '<span class="drawer-action-icon" style="background:#f1f5f9;color:#94a3b8;">' +
-              '<svg fill="currentColor" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/></svg>' +
-            '</span>' +
-            '<span class="drawer-action-label text-slate-400">No phone on file</span>' +
-          '</div>'
-        );
-      }
+      var bodyHtml =
+        buildStaySection(b) +
+        buildPaymentSection(b) +
+        buildActionsSection(b) +
+        buildActivitySection(b);
 
-      var html =
-        '<div class="space-y-1">' +
-          '<div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold">Guest</div>' +
-          '<div class="text-lg font-bold text-slate-900 leading-tight">' + escapeHtml(b.guest) + '</div>' +
-          '<div class="text-xs text-slate-500">' + b.guests + ' guest' + (b.guests === 1 ? '' : 's') + ' · ' + b.nights + ' night' + (b.nights === 1 ? '' : 's') + '</div>' +
-        '</div>' +
-        '<div class="flex flex-wrap gap-1.5">' +
-          badge(statusLabels[b.status] || b.status, statusBadge[b.status] || 'bg-slate-100 text-slate-700 border-slate-200') +
-          badge(paymentLabels[b.paymentStatus] || b.paymentStatus, paymentBadge[b.paymentStatus] || 'bg-slate-100 text-slate-700 border-slate-200') +
-        '</div>' +
-        '<div class="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">' +
-          '<div><div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-1">Check-in</div><div class="font-semibold text-slate-900">' + fmt(checkIn) + '</div></div>' +
-          '<div><div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-1">Check-out</div><div class="font-semibold text-slate-900">' + fmt(checkOut) + '</div></div>' +
-        '</div>' +
-        '<div class="grid grid-cols-2 gap-3">' +
-          '<div><div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-1">Room</div><div class="font-semibold text-slate-900">#' + escapeHtml(b.room) + ' · ' + escapeHtml(b.roomType) + '</div></div>' +
-          '<div><div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-1">Booking ref</div><div class="font-mono text-slate-900 text-sm">' + escapeHtml(b.ref) + '</div></div>' +
-        '</div>' +
-        '<div class="pt-3 border-t border-slate-100">' +
-          '<div class="text-[10px] uppercase tracking-[0.08em] text-slate-400 font-semibold mb-2">Quick actions</div>' +
-          '<div class="space-y-1.5">' + actions.join('') + '</div>' +
-        '</div>';
+      var bodyEl = document.getElementById('drawerBody');
+      bodyEl.innerHTML = bodyHtml;
+      bodyEl.scrollTop = 0;
 
-      document.getElementById('drawerBody').innerHTML = html;
       document.getElementById('drawerOpenLink').href = '/bookings/' + b.id;
       document.body.classList.add('drawer-open');
       document.getElementById('boardDrawer').setAttribute('aria-hidden', 'false');
