@@ -4,24 +4,24 @@
 {% block head_extra %}
 <style>
   /* ─────────────────────────────────────────────────────────────────
-     PALETTE
+     PALETTE — defined at :root so the drawer (which lives OUTSIDE
+     .board-shell) can read these tokens too. Previously scoped to
+     .board-shell, which left the drawer transparent because
+     var(--surface-card) resolved to nothing in that subtree.
      ───────────────────────────────────────────────────────────────── */
-  .board-shell {
-    --day-w: {{ day_width_px }}px;
-    --room-w: 232px;
-    --row-h: 48px;
-    --header-h: 60px;
-
+  :root {
     /* Surfaces */
     --surface-page:    #f7f8fa;
     --surface-card:    #ffffff;
     --surface-muted:   #f3f5f8;
     --surface-zebra:   #fbfcfd;
+    --surface-tint:    #fcfcfb;   /* warm-white drawer accent surface */
 
     /* Lines */
     --line-soft:       #eef0f3;
     --line-mid:        #e3e6eb;
     --line-strong:     #d1d5dc;
+    --line-hairline:   rgba(15, 23, 42, 0.08);  /* drawer outer edge */
 
     /* Type */
     --ink:             #0f172a;
@@ -35,6 +35,13 @@
     --weekend-tint:    #f5f7fa;
     --today-bg:        rgba(13, 148, 136, 0.07);
     --today-edge:      rgba(13, 148, 136, 0.55);
+  }
+
+  .board-shell {
+    --day-w: {{ day_width_px }}px;
+    --room-w: 232px;
+    --row-h: 48px;
+    --header-h: 60px;
 
     background: var(--surface-page);
     color: var(--ink);
@@ -569,67 +576,157 @@
   .ls-cancelled        { background: #ffe4e6; border-color: #fecdd3; color: #fb7185; }
 
   /* ─────────────────────────────────────────────────────────────────
-     SIDE DRAWER
+     SIDE DRAWER — solid, opaque, premium.
+     Page backdrop is lightly dimmed; the drawer itself is fully
+     opaque white with a crisp hairline border + soft drop shadow.
+     Bumped z-index range so the drawer sits decisively above any
+     toolbar / sticky element on the board.
      ───────────────────────────────────────────────────────────────── */
   .drawer-overlay {
     position: fixed; inset: 0;
-    background: rgba(15,23,42,0.32);
+    background-color: rgba(15, 23, 42, 0.18);
     opacity: 0; pointer-events: none;
     transition: opacity 0.18s ease;
-    z-index: 50;
-    backdrop-filter: blur(2px);
+    z-index: 95;
+    /* No blur on the overlay — keeps the underlying page legible
+       and avoids stacking-context surprises that some browsers
+       trigger when backdrop-filter is in play. */
   }
   .drawer {
     position: fixed; top: 0; right: 0; bottom: 0;
     width: min(440px, 100vw);
-    background: var(--surface-card);
-    box-shadow: -10px 0 40px -10px rgba(15,23,42,0.25);
+
+    /* Solid white surface — the most important fix. Explicit
+       background-color so even if the cascade fails, the panel
+       is never see-through. */
+    background-color: #ffffff;
+    color: #0f172a;
+
+    /* Crisp left edge + premium shadow */
+    border-left: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow:
+      -1px 0 0 rgba(15, 23, 42, 0.04),         /* subtle inner edge */
+      -16px 0 50px -12px rgba(15, 23, 42, 0.22),
+      -4px 0 14px -6px rgba(15, 23, 42, 0.12);
+
     transform: translateX(100%);
     transition: transform 0.22s cubic-bezier(0.32, 0.72, 0.0, 1.0);
-    z-index: 60;
-    overflow-y: auto;
+    z-index: 100;
+    overflow: hidden;        /* inner body scrolls instead */
     display: flex;
     flex-direction: column;
+    isolation: isolate;       /* hard stacking context — no bleed-through */
   }
   body.drawer-open .drawer-overlay { opacity: 1; pointer-events: auto; }
   body.drawer-open .drawer { transform: translateX(0); }
 
-  /* Drawer action buttons (secondary CTAs) */
+  /* Inner drawer surfaces — every section is explicitly solid. */
+  .drawer-header,
+  .drawer-footer {
+    background-color: #ffffff;
+    flex-shrink: 0;
+  }
+  .drawer-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .drawer-body {
+    background-color: #ffffff;
+    padding: 20px;
+    color: #0f172a;
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .drawer-footer {
+    padding: 14px 20px;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+  }
+  .drawer-footer .footer-cta {
+    display: block;
+    width: 100%;
+    text-align: center;
+    background-color: #0d9488;          /* teal-600, opaque */
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: background-color 0.14s ease, transform 0.10s ease,
+                box-shadow 0.14s ease;
+    box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06),
+                0 6px 14px -8px rgba(13, 148, 136, 0.55);
+  }
+  .drawer-footer .footer-cta:hover {
+    background-color: #0f766e;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px -8px rgba(13, 148, 136, 0.65);
+  }
+  .drawer-close {
+    background: transparent;
+    border: 0;
+    padding: 6px;
+    border-radius: 8px;
+    color: #475569;
+    cursor: pointer;
+    transition: background-color 0.10s ease, color 0.10s ease;
+  }
+  .drawer-close:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+  }
+
+  /* Secondary action buttons inside the drawer body — solid
+     surfaces, never translucent. */
   .drawer-action {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 10px;
-    border: 1px solid var(--line-mid);
-    border-radius: 9px;
-    background: var(--surface-card);
-    color: var(--ink);
+    padding: 9px 11px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 10px;
+    background-color: #fcfcfb;          /* warm-white tint */
+    color: #0f172a;
     font-size: 13px;
     font-weight: 500;
     text-decoration: none;
-    transition: background 0.12s ease, border-color 0.12s ease,
-                transform 0.10s ease, box-shadow 0.12s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease,
+                transform 0.10s ease, box-shadow 0.14s ease;
   }
   .drawer-action:hover {
-    background: var(--surface-zebra);
-    border-color: var(--line-strong);
+    background-color: #ffffff;
+    border-color: #d1d5dc;
     transform: translateY(-1px);
-    box-shadow: 0 4px 10px -6px rgba(15,23,42,0.18);
+    box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.22);
   }
   .drawer-action.is-disabled {
-    opacity: 0.55;
+    opacity: 0.65;
     cursor: not-allowed;
     pointer-events: none;
+    background-color: #f8fafc;
   }
   .drawer-action-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px; height: 26px;
-    border-radius: 7px;
+    width: 28px; height: 28px;
+    border-radius: 8px;
     flex-shrink: 0;
   }
-  .drawer-action-label { flex: 1; font-size: 13px; }
+  .drawer-action-label { flex: 1; font-size: 13px; color: #0f172a; }
+
+  /* Mobile / narrow: drawer goes full-width and the close button
+     stays reachable with a thumb. */
+  @media (max-width: 640px) {
+    .drawer { width: 100vw; box-shadow: none; border-left: 0; }
+    .drawer-header { padding: 14px 16px; }
+    .drawer-body   { padding: 16px; }
+    .drawer-footer { padding: 12px 16px; }
+  }
 
   /* ─────────────────────────────────────────────────────────────────
      RESPONSIVE
@@ -998,20 +1095,18 @@
 
 <!-- ── Drawer ────────────────────────────────────────────────────── -->
 <div class="drawer-overlay" onclick="closeDrawer();"></div>
-<aside class="drawer" id="boardDrawer" aria-hidden="true">
-  <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-    <h2 class="text-base font-semibold text-slate-900">Booking</h2>
-    <button onclick="closeDrawer();" class="p-1.5 rounded-md text-slate-500 hover:bg-slate-100" aria-label="Close drawer">
+<aside class="drawer" id="boardDrawer" aria-hidden="true" aria-labelledby="drawerTitle">
+  <div class="drawer-header">
+    <h2 id="drawerTitle" class="text-base font-semibold" style="color:#0f172a;">Booking</h2>
+    <button type="button" onclick="closeDrawer();" class="drawer-close" aria-label="Close drawer">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
     </button>
   </div>
-  <div id="drawerBody" class="p-5 text-sm text-slate-800 space-y-4 flex-1 overflow-y-auto">
-    <p class="text-slate-400 italic">Select a booking…</p>
+  <div id="drawerBody" class="drawer-body space-y-4 text-sm">
+    <p class="italic" style="color:#94a3b8;">Select a booking…</p>
   </div>
-  <div class="px-5 py-4 border-t border-slate-200 flex-shrink-0">
-    <a id="drawerOpenLink" href="#" class="block text-center bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition">
-      Open full booking →
-    </a>
+  <div class="drawer-footer">
+    <a id="drawerOpenLink" href="#" class="footer-cta">Open full booking →</a>
   </div>
 </aside>
 
