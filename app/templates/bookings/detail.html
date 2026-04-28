@@ -461,6 +461,157 @@
   </div>
   {% endif %}
 
+  <!-- Guest Folio (V1) — manual charges, discounts, payments, adjustments -->
+  {% if folio_items is defined %}
+  <div class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <h2 class="font-semibold text-gray-700">Guest Folio</h2>
+      <p class="text-[11px] text-gray-400">
+        Guest Folio V1 is for manual charges. POS / restaurant posting will come later.
+      </p>
+    </div>
+
+    <!-- Totals summary -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-xs">
+      <div class="bg-gray-50 rounded-lg p-3">
+        <div class="text-gray-500">Charges</div>
+        <div class="font-mono text-gray-900 text-sm">{{ '%.2f'|format(folio_totals.total_charges) }}</div>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-3">
+        <div class="text-gray-500">Credits / Payments</div>
+        <div class="font-mono text-gray-900 text-sm">{{ '%.2f'|format(folio_totals.total_credits) }}</div>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-3">
+        <div class="text-gray-500">Adjustments</div>
+        <div class="font-mono text-gray-900 text-sm">{{ '%.2f'|format(folio_totals.total_adjustments) }}</div>
+      </div>
+      <div class="bg-blue-50 rounded-lg p-3">
+        <div class="text-blue-700">Folio balance (MVR)</div>
+        <div class="font-mono text-blue-900 font-bold text-sm">{{ '%.2f'|format(folio_totals.balance) }}</div>
+      </div>
+    </div>
+
+    <!-- Items table -->
+    {% if folio_items %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-xs">
+        <thead class="text-gray-500 uppercase">
+          <tr>
+            <th class="text-left py-2 pr-2">Date</th>
+            <th class="text-left py-2 pr-2">Type</th>
+            <th class="text-left py-2 pr-2">Description</th>
+            <th class="text-right py-2 pr-2">Qty</th>
+            <th class="text-right py-2 pr-2">Unit</th>
+            <th class="text-right py-2 pr-2">Total</th>
+            <th class="text-left py-2 pr-2">Status</th>
+            <th class="text-left py-2 pr-2">Posted by</th>
+            {% if current_user.is_admin %}<th class="py-2"></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody class="text-gray-800">
+          {% for it in folio_items %}
+          <tr class="border-t border-gray-100 {% if it.status == 'voided' %}text-gray-400 line-through{% endif %}">
+            <td class="py-1 pr-2 font-mono">{{ it.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="py-1 pr-2">{{ folio_item_label(it.item_type) }}</td>
+            <td class="py-1 pr-2">{{ it.description }}</td>
+            <td class="py-1 pr-2 text-right font-mono">{{ '%.2f'|format(it.quantity) }}</td>
+            <td class="py-1 pr-2 text-right font-mono">{{ '%.2f'|format(it.unit_price) }}</td>
+            <td class="py-1 pr-2 text-right font-mono {% if it.total_amount < 0 %}text-emerald-700{% endif %}">{{ '%.2f'|format(it.total_amount) }}</td>
+            <td class="py-1 pr-2">
+              <span class="px-1.5 py-0.5 rounded text-[10px]
+                {% if it.status == 'open' %}bg-blue-50 text-blue-700
+                {% elif it.status == 'voided' %}bg-gray-100 text-gray-500
+                {% else %}bg-gray-50 text-gray-700{% endif %}">{{ it.status }}</span>
+            </td>
+            <td class="py-1 pr-2 text-gray-500">
+              {% if it.posted_by %}{{ it.posted_by.username }}{% else %}—{% endif %}
+            </td>
+            {% if current_user.is_admin %}
+            <td class="py-1">
+              {% if it.status == 'open' %}
+              <form method="POST"
+                    action="{{ url_for('folios.void_item', booking_id=booking.id, item_id=it.id) }}"
+                    onsubmit="return confirm('Void this folio item? It will be excluded from the balance but kept for audit.');"
+                    class="inline">
+                <input type="hidden" name="void_reason" value="">
+                <button type="submit"
+                        class="text-[11px] text-red-600 hover:text-red-800 hover:underline">
+                  Void
+                </button>
+              </form>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-400 italic">No folio items yet for this booking.</p>
+    {% endif %}
+
+    <!-- Add folio item form (admin only) -->
+    {% if current_user.is_admin %}
+    <details class="mt-4 border border-gray-200 rounded-lg">
+      <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-t-lg">
+        + Add folio item (charge / discount / payment / adjustment)
+      </summary>
+      <form method="POST"
+            action="{{ url_for('folios.add_item', booking_id=booking.id) }}"
+            class="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="block text-gray-500 mb-1">Type</label>
+          <select name="item_type" required
+                  class="w-full border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+            {% for t in folio_item_types %}
+              {% if t != 'room_charge' %}
+              <option value="{{ t }}">{{ folio_item_labels[t] }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <p class="text-[10px] text-gray-400 mt-1">
+            Discount &amp; payment are auto-negated server-side.
+          </p>
+        </div>
+        <div>
+          <label class="block text-gray-500 mb-1">Description</label>
+          <input type="text" name="description" required maxlength="255"
+                 placeholder="e.g. Laundry — 3 shirts"
+                 class="w-full border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-gray-500 mb-1">Quantity</label>
+          <input type="number" name="quantity" value="1" min="0.01" step="0.01" required
+                 class="w-full border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-gray-500 mb-1">Unit price (MVR)</label>
+          <input type="number" name="unit_price" step="0.01" required
+                 class="w-full border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-gray-500 mb-1">Tax (MVR, optional)</label>
+          <input type="number" name="tax_amount" value="0" min="0" step="0.01"
+                 class="w-full border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-gray-500 mb-1">Service charge (MVR, optional)</label>
+          <input type="number" name="service_charge_amount" value="0" min="0" step="0.01"
+                 class="w-full border border-gray-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="sm:col-span-2 flex items-center justify-end gap-2 pt-1">
+          <button type="submit"
+                  class="bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-3 py-2 rounded-lg">
+            Add to folio
+          </button>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- Activity timeline (audit log, scoped to this booking) -->
   {% if activity_entries is defined %}
   <div class="bg-white rounded-xl border border-gray-200 p-5">

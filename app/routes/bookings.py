@@ -199,8 +199,12 @@ def new():
 @bookings_bp.route('/<int:booking_id>')
 @login_required
 def detail(booking_id):
-    from ..models import ActivityLog, WhatsAppMessage
+    from ..models import ActivityLog, WhatsAppMessage, FolioItem
     from ..services.ai_drafts import DRAFT_TYPES, DRAFT_LABELS, can_draft
+    from ..services.folio import (
+        ITEM_TYPES, ITEM_TYPE_LABELS,
+        calculate_folio_totals, display_folio_item_label,
+    )
     booking = Booking.query.get_or_404(booking_id)
     activity_entries = (
         ActivityLog.query
@@ -216,6 +220,13 @@ def detail(booking_id):
         .limit(50)
         .all()
     )
+    folio_items = (
+        FolioItem.query
+        .filter(FolioItem.booking_id == booking.id)
+        .order_by(FolioItem.created_at.asc())
+        .all()
+    )
+    folio_totals = calculate_folio_totals(booking)
     return render_template('bookings/detail.html',
                            booking=booking,
                            activity_entries=activity_entries,
@@ -223,7 +234,12 @@ def detail(booking_id):
                            ai_draft=None,
                            ai_draft_types=DRAFT_TYPES,
                            ai_draft_labels=DRAFT_LABELS,
-                           can_draft=can_draft)
+                           can_draft=can_draft,
+                           folio_items=folio_items,
+                           folio_totals=folio_totals,
+                           folio_item_types=ITEM_TYPES,
+                           folio_item_labels=ITEM_TYPE_LABELS,
+                           folio_item_label=display_folio_item_label)
 
 
 @bookings_bp.route('/<int:booking_id>/ai-draft', methods=['POST'])

@@ -44,6 +44,7 @@ def create_app(config_class=Config):
     from .routes.staff import staff_bp
     from .routes.activity import activity_bp
     from .routes.whatsapp_webhook import whatsapp_bp
+    from .routes.folios import folios_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -57,6 +58,7 @@ def create_app(config_class=Config):
     app.register_blueprint(staff_bp)
     app.register_blueprint(activity_bp)
     app.register_blueprint(whatsapp_bp)
+    app.register_blueprint(folios_bp)
 
     from flask import request, redirect
     from flask_login import current_user
