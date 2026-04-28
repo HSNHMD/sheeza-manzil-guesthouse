@@ -1,0 +1,582 @@
+{% extends 'base.html' %}
+{% block title %}Reservation Board — {{ brand.short_name }}{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* ── Tape-chart grid layout ─────────────────────────────────────── */
+  .board-shell {
+    --day-w: {{ day_width_px }}px;
+    --room-w: 220px;
+    --row-h: 56px;
+    --row-gap: 6px;
+    --header-h: 56px;
+    --color-grid: #e5e7eb;
+    --color-grid-strong: #d1d5db;
+    --color-weekend: #f9fafb;
+    --color-today: rgba(20, 184, 166, 0.10);
+    --color-bg: #fafbfc;
+    background: var(--color-bg);
+  }
+  .board-scroll {
+    overflow: auto;
+    max-height: calc(100vh - 220px);
+    border-radius: 14px;
+    border: 1px solid var(--color-grid);
+    background: white;
+  }
+  .board-grid {
+    display: grid;
+    grid-template-columns:
+      [room-col] var(--room-w)
+      repeat({{ span }}, var(--day-w));
+    grid-auto-rows: var(--row-h);
+  }
+
+  /* Sticky column + sticky header */
+  .board-grid > .room-cell,
+  .board-grid > .room-head {
+    position: sticky;
+    left: 0;
+    z-index: 30;
+    background: white;
+    border-right: 1px solid var(--color-grid-strong);
+  }
+  .board-grid > .day-head {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: white;
+    border-bottom: 1px solid var(--color-grid-strong);
+    height: var(--header-h);
+  }
+  .board-grid > .room-head {
+    z-index: 40; /* above day headers when scrolling both axes */
+    top: 0;
+    height: var(--header-h);
+    background: white;
+  }
+
+  .day-head {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-right: 1px solid var(--color-grid);
+    font-size: 11px;
+    color: #4b5563;
+  }
+  .day-head .dow { font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .day-head .num { font-size: 14px; color: #111827; font-weight: 700; }
+  .day-head.is-weekend { background: var(--color-weekend); }
+  .day-head.is-today {
+    background: var(--color-today);
+    color: #0f766e;
+  }
+  .day-head.is-today .num { color: #0f766e; }
+
+  /* Each row's day cells (grid background tracks) */
+  .day-cell {
+    border-right: 1px solid var(--color-grid);
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .day-cell.is-weekend { background: var(--color-weekend); }
+  .day-cell.is-today { background: var(--color-today); }
+
+  /* Room column */
+  .room-cell {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+  }
+  .room-cell .room-num {
+    font-weight: 700;
+    font-size: 14px;
+    color: #111827;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .room-cell .room-meta {
+    font-size: 11px;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    box-shadow: 0 0 0 2px rgba(255,255,255,1);
+  }
+
+  /* Booking bars — positioned via grid-column / grid-row */
+  .bar {
+    position: relative;
+    margin: 6px 4px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-style: solid;
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 1.2;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.10s ease, box-shadow 0.10s ease, filter 0.10s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    z-index: 5;
+  }
+  .bar:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px -6px rgba(15, 23, 42, 0.18);
+    z-index: 8;
+    filter: saturate(1.1);
+  }
+  .bar .bar-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .bar-meta { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Right edge accent for payment trouble */
+  .bar.has-accent::after {
+    content: '';
+    position: absolute;
+    top: 4px; right: 4px; bottom: 4px;
+    width: 3px;
+    border-radius: 999px;
+  }
+  .bar.has-accent { padding-right: 14px; }
+
+  /* Soft chevrons when bar continues outside the visible window */
+  .bar.cuts-left::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0; width: 6px;
+    background: linear-gradient(to right, currentColor 0, transparent 100%);
+    opacity: 0.25;
+  }
+  .bar.cuts-right::after {
+    /* shares pseudo with accent — only one of the two will be visible
+       at a time because cuts-right doesn't combine with has-accent.   */
+    content: '';
+    position: absolute;
+    right: 0; top: 0; bottom: 0; width: 6px;
+    background: linear-gradient(to left, currentColor 0, transparent 100%);
+    opacity: 0.25;
+  }
+
+  /* Today vertical line — drawn behind bars */
+  .today-line {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #14b8a6, #0d9488);
+    opacity: 0.55;
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* ── Side drawer ─────────────────────────────────────────────────── */
+  .drawer-overlay {
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.30);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.18s ease;
+    z-index: 50;
+  }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: min(420px, 100vw);
+    background: white;
+    box-shadow: -10px 0 30px -10px rgba(15, 23, 42, 0.20);
+    transform: translateX(100%);
+    transition: transform 0.20s ease;
+    z-index: 60;
+    overflow-y: auto;
+  }
+  body.drawer-open .drawer-overlay { opacity: 1; pointer-events: auto; }
+  body.drawer-open .drawer { transform: translateX(0); }
+
+  /* Compact mode for very narrow bars */
+  .board-grid[data-view="30d"] .bar { padding: 2px 6px; font-size: 11px; }
+  .board-grid[data-view="30d"] .bar .bar-meta { display: none; }
+
+  @media (max-width: 1024px) {
+    .desktop-board { display: none; }
+    .mobile-ops    { display: block; }
+  }
+  @media (min-width: 1025px) {
+    .desktop-board { display: block; }
+    .mobile-ops    { display: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  <!-- ── Toolbar ────────────────────────────────────────────────── -->
+  <div class="bg-white rounded-xl border border-gray-200 p-4 space-y-3 shadow-sm">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <span>Reservation Board</span>
+          <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">Prototype</span>
+        </h1>
+        <p class="text-xs text-gray-500 mt-0.5">
+          {{ start.strftime('%a %b %d, %Y') }} → {{ end_inclusive.strftime('%a %b %d, %Y') }}
+          · {{ stats.rooms_total }} rooms · {{ span }}-day window
+        </p>
+      </div>
+
+      <!-- View toggle -->
+      <div class="inline-flex rounded-lg border border-gray-300 p-0.5 text-xs font-medium bg-gray-50">
+        {% for v, label in [('day','Day'),('7d','7 days'),('14d','14 days'),('30d','30 days')] %}
+          <a href="{{ url_for('board.index', view=v, start=start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
+             class="px-3 py-1.5 rounded-md transition-colors {% if view == v %}bg-white shadow text-gray-900{% else %}text-gray-600 hover:bg-white/60{% endif %}">
+            {{ label }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Stats strip + nav arrows -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex flex-wrap gap-2 text-xs">
+        <span class="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-2.5 py-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          Arrivals today: <strong>{{ stats.arrivals_today }}</strong>
+        </span>
+        <span class="inline-flex items-center gap-1.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-md px-2.5 py-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+          Departures today: <strong>{{ stats.departures_today }}</strong>
+        </span>
+        <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md px-2.5 py-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+          In house: <strong>{{ stats.in_house_today }}</strong>
+        </span>
+        <span class="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md px-2.5 py-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+          Pending payment: <strong>{{ stats.pending_payment }}</strong>
+        </span>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <a href="{{ url_for('board.index', view=view, start=prev_start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
+           title="Previous {{ span }} days"
+           class="p-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+        </a>
+        <a href="{{ url_for('board.index', view=view, floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
+           class="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 text-xs font-medium">
+          Today
+        </a>
+        <a href="{{ url_for('board.index', view=view, start=next_start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search) }}"
+           title="Next {{ span }} days"
+           class="p-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <form method="GET" class="flex flex-wrap gap-2 items-end pt-2 border-t border-gray-100">
+      <input type="hidden" name="view" value="{{ view }}">
+      <input type="hidden" name="start" value="{{ start.isoformat() }}">
+
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 font-medium">Floor</label>
+        <select name="floor" class="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+          <option value="">All</option>
+          {% for f in floors_available %}
+            <option value="{{ f }}" {% if floor and floor|string == f|string %}selected{% endif %}>Floor {{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 font-medium">Room type</label>
+        <select name="room_type" class="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+          <option value="">All</option>
+          {% for t in types_available %}
+            <option value="{{ t }}" {% if room_type == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 font-medium">Booking status</label>
+        <select name="booking_status" class="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+          <option value="">All</option>
+          {% for s in all_booking_statuses %}
+            <option value="{{ s }}" {% if booking_status == s %}selected{% endif %}>{{ s.replace('_',' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 font-medium">Payment</label>
+        <select name="payment_status" class="text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+          <option value="">All</option>
+          {% for s in all_payment_statuses %}
+            <option value="{{ s }}" {% if payment_status == s %}selected{% endif %}>{{ s.replace('_',' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex-1 min-w-[180px]">
+        <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-1 font-medium">Search</label>
+        <input type="text" name="search" value="{{ search }}"
+               placeholder="Guest name, booking ref, or room number"
+               class="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500">
+      </div>
+      <button type="submit"
+              class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium px-3 py-1.5 rounded-md">
+        Apply
+      </button>
+      {% if floor or room_type or booking_status or payment_status or search %}
+      <a href="{{ url_for('board.index', view=view, start=start.isoformat()) }}"
+         class="text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5">
+        Clear
+      </a>
+      {% endif %}
+    </form>
+  </div>
+
+  <!-- ── Desktop board ─────────────────────────────────────────────── -->
+  <div class="desktop-board board-shell">
+    <div class="board-scroll">
+      <div class="board-grid" data-view="{{ view }}">
+        <!-- Top-left corner -->
+        <div class="room-head px-3 py-2 flex items-center text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+          Room
+        </div>
+        {# Header row: one cell per day #}
+        {% for d in days %}
+          {% set is_today = (d == today) %}
+          {% set is_weekend = (d.weekday() >= 5) %}
+          <div class="day-head {% if is_today %}is-today{% elif is_weekend %}is-weekend{% endif %}">
+            <span class="dow">{{ d.strftime('%a') }}</span>
+            <span class="num">{{ d.day }}</span>
+            <span class="text-[10px] text-gray-400">{{ d.strftime('%b') }}</span>
+          </div>
+        {% endfor %}
+
+        {# Body: one row per room #}
+        {% for r in rooms %}
+          {% set badge = badges[r.id] %}
+          <div class="room-cell">
+            <div class="room-num">
+              <span>#{{ r.number }}</span>
+              <span class="status-dot {{ badge.dot_class }}"
+                    title="{{ badge.label }}"></span>
+            </div>
+            <div class="room-meta">
+              <span>{{ r.room_type }}</span>
+              <span>·</span>
+              <span>F{{ r.floor }}</span>
+              <span>·</span>
+              <span class="{{ badge.text_class }}">{{ badge.label }}</span>
+            </div>
+          </div>
+
+          {# Empty day cells form the grid backdrop #}
+          {% for d in days %}
+            {% set is_today = (d == today) %}
+            {% set is_weekend = (d.weekday() >= 5) %}
+            <div class="day-cell {% if is_today %}is-today{% elif is_weekend %}is-weekend{% endif %}"></div>
+          {% endfor %}
+
+          {# Booking bars on this row — positioned via grid-column #}
+          {% for bar in bars_by_room[r.id] %}
+            <a class="bar {{ bar.bar_color_class }} {% if bar.accent_class %}has-accent{% endif %} {% if not bar.starts_in_range %}cuts-left{% endif %} {% if not bar.ends_in_range %}cuts-right{% endif %}"
+               style="grid-column: {{ bar.grid_col_start }} / span {{ bar.grid_col_span }};
+                      grid-row: {{ loop.index0 + 2 }};"
+               data-booking-id="{{ bar.booking_id }}"
+               href="{{ url_for('bookings.detail', booking_id=bar.booking_id) }}"
+               onclick="return openDrawer(event, {{ bar.booking_id }});">
+              {% if bar.accent_class %}
+                <style>.bar[data-booking-id="{{ bar.booking_id }}"]::after { background: var(--accent-{{ bar.booking_id }}, currentColor); }</style>
+              {% endif %}
+              <span class="bar-name">{{ bar.short_label }}</span>
+              <span class="bar-meta">
+                {{ bar.booking_ref }} · {{ bar.nights }}n · {{ bar.num_guests }}g
+              </span>
+            </a>
+          {% endfor %}
+        {% endfor %}
+
+        {% if not rooms %}
+        <div style="grid-column: 1 / -1;" class="p-8 text-center text-sm text-gray-400">
+          No rooms match the current filters.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
+      <span class="font-semibold uppercase tracking-wider text-gray-400">Booking status:</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-violet-200 border border-violet-300"></span>New request</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-amber-200 border border-amber-300"></span>Pending payment</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-yellow-200 border border-yellow-400"></span>Payment uploaded</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-200 border border-blue-400"></span>Confirmed</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-200 border border-emerald-400"></span>Checked in</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-gray-200 border border-gray-300"></span>Checked out</span>
+      <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-rose-100 border border-rose-200"></span>Cancelled / rejected</span>
+    </div>
+  </div>
+
+  <!-- ── Mobile / narrow operations view ─────────────────────────── -->
+  <div class="mobile-ops space-y-3">
+    <div class="grid grid-cols-2 gap-2">
+      <a href="{{ url_for('bookings.index') }}?status=arrivals_today" class="bg-white rounded-xl border border-emerald-200 p-3 hover:bg-emerald-50">
+        <div class="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold">Arrivals today</div>
+        <div class="text-2xl font-bold text-emerald-800 mt-1">{{ stats.arrivals_today }}</div>
+      </a>
+      <a href="{{ url_for('bookings.index') }}?status=departures_today" class="bg-white rounded-xl border border-sky-200 p-3 hover:bg-sky-50">
+        <div class="text-[10px] uppercase tracking-wider text-sky-700 font-semibold">Departures today</div>
+        <div class="text-2xl font-bold text-sky-800 mt-1">{{ stats.departures_today }}</div>
+      </a>
+      <a href="{{ url_for('bookings.index') }}?status=checked_in" class="bg-white rounded-xl border border-blue-200 p-3 hover:bg-blue-50">
+        <div class="text-[10px] uppercase tracking-wider text-blue-700 font-semibold">In house</div>
+        <div class="text-2xl font-bold text-blue-800 mt-1">{{ stats.in_house_today }}</div>
+      </a>
+      <a href="{{ url_for('bookings.index') }}?status=pending_payment" class="bg-white rounded-xl border border-amber-200 p-3 hover:bg-amber-50">
+        <div class="text-[10px] uppercase tracking-wider text-amber-700 font-semibold">Pending payment</div>
+        <div class="text-2xl font-bold text-amber-800 mt-1">{{ stats.pending_payment }}</div>
+      </a>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 p-3 text-xs text-gray-500">
+      The full reservation board is optimized for desktop / tablet landscape.
+      Rotate your device or visit on a wider screen for the timeline view.
+    </div>
+  </div>
+</div>
+
+<!-- ── Drawer (booking detail) ─────────────────────────────────────── -->
+<div class="drawer-overlay" onclick="closeDrawer();"></div>
+<aside class="drawer" id="boardDrawer" aria-hidden="true">
+  <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+    <h2 class="text-base font-semibold text-gray-900">Booking</h2>
+    <button onclick="closeDrawer();" class="p-1.5 rounded-md text-gray-500 hover:bg-gray-100" aria-label="Close drawer">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div id="drawerBody" class="p-5 text-sm text-gray-800 space-y-4">
+    <p class="text-gray-400 italic">Select a booking…</p>
+  </div>
+  <div class="px-5 py-4 border-t border-gray-200">
+    <a id="drawerOpenLink" href="#" class="block text-center bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium px-4 py-2 rounded-md">
+      Open full booking →
+    </a>
+  </div>
+</aside>
+
+<!-- Booking JSON for client-side drawer hydration -->
+<script id="board-bookings-data" type="application/json">
+{
+{% for r in rooms %}{% for bar in bars_by_room[r.id] %}
+"{{ bar.booking_id }}": {
+  "id": {{ bar.booking_id }},
+  "ref": {{ bar.booking_ref|tojson }},
+  "guest": {{ bar.guest_name|tojson }},
+  "guests": {{ bar.num_guests }},
+  "nights": {{ bar.nights }},
+  "checkIn": {{ bar.check_in.isoformat()|tojson }},
+  "checkOut": {{ bar.check_out.isoformat()|tojson }},
+  "room": {{ r.number|tojson }},
+  "roomType": {{ r.room_type|tojson }},
+  "status": {{ bar.booking_status|tojson }},
+  "paymentStatus": {{ bar.payment_status|tojson }}
+}{% if not loop.last %},{% endif %}
+{% endfor %}{% if not loop.last and bars_by_room[r.id] %},{% endif %}{% endfor %}
+}
+</script>
+
+<script>
+  (function() {
+    var rawData = document.getElementById('board-bookings-data').textContent;
+    // Strip trailing commas before } that template loops can produce in edge cases.
+    rawData = rawData.replace(/,\s*}/g, '}').replace(/,\s*\]/g, ']');
+    var BOOKINGS = {};
+    try { BOOKINGS = JSON.parse(rawData); } catch (e) { console.warn('board: bookings JSON parse failed', e); }
+
+    var statusLabels = {
+      'new_request':       'New request',
+      'pending_payment':   'Pending payment',
+      'payment_uploaded':  'Payment uploaded',
+      'payment_verified':  'Payment verified',
+      'confirmed':         'Confirmed',
+      'checked_in':        'Checked in',
+      'checked_out':       'Checked out',
+      'cancelled':         'Cancelled',
+      'rejected':          'Rejected'
+    };
+    var paymentLabels = {
+      'not_received':   'Not received',
+      'pending_review': 'Under review',
+      'verified':       'Verified',
+      'rejected':       'Rejected',
+      'mismatch':       'Mismatch'
+    };
+
+    window.openDrawer = function(evt, id) {
+      if (evt && (evt.metaKey || evt.ctrlKey || evt.shiftKey || evt.button === 1)) {
+        // Allow cmd/ctrl+click to open in new tab via the anchor href
+        return true;
+      }
+      var b = BOOKINGS[String(id)];
+      if (!b) return true;  // fall through to anchor
+      if (evt) evt.preventDefault();
+
+      var checkIn  = new Date(b.checkIn  + 'T00:00:00');
+      var checkOut = new Date(b.checkOut + 'T00:00:00');
+      var fmt = function(d) { return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' }); };
+
+      var html =
+        '<div class="space-y-1">' +
+          '<div class="text-[11px] uppercase tracking-wider text-gray-400">Guest</div>' +
+          '<div class="text-base font-semibold text-gray-900">' + escapeHtml(b.guest) + '</div>' +
+          '<div class="text-xs text-gray-500">Booking ' + escapeHtml(b.ref) + ' · ' + b.guests + ' guest' + (b.guests === 1 ? '' : 's') + '</div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div><div class="text-[11px] uppercase tracking-wider text-gray-400">Check-in</div><div class="font-medium">' + fmt(checkIn) + '</div></div>' +
+          '<div><div class="text-[11px] uppercase tracking-wider text-gray-400">Check-out</div><div class="font-medium">' + fmt(checkOut) + '</div></div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div><div class="text-[11px] uppercase tracking-wider text-gray-400">Room</div><div class="font-medium">#' + escapeHtml(b.room) + ' · ' + escapeHtml(b.roomType) + '</div></div>' +
+          '<div><div class="text-[11px] uppercase tracking-wider text-gray-400">Nights</div><div class="font-medium">' + b.nights + '</div></div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100">' +
+          '<div><div class="text-[11px] uppercase tracking-wider text-gray-400">Booking status</div><div class="font-medium">' + (statusLabels[b.status] || b.status) + '</div></div>' +
+          '<div><div class="text-[11px] uppercase tracking-wider text-gray-400">Payment status</div><div class="font-medium">' + (paymentLabels[b.paymentStatus] || b.paymentStatus) + '</div></div>' +
+        '</div>' +
+        '<div class="text-[11px] text-gray-400 pt-1">Click "Open full booking" for AI drafts, WhatsApp, folio, and history.</div>';
+
+      document.getElementById('drawerBody').innerHTML = html;
+      document.getElementById('drawerOpenLink').href = '/bookings/' + b.id;
+      document.body.classList.add('drawer-open');
+      document.getElementById('boardDrawer').setAttribute('aria-hidden', 'false');
+      return false;
+    };
+
+    window.closeDrawer = function() {
+      document.body.classList.remove('drawer-open');
+      document.getElementById('boardDrawer').setAttribute('aria-hidden', 'true');
+    };
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') window.closeDrawer();
+    });
+
+    // Tiny safe-text helper
+    function escapeHtml(s) {
+      if (s === null || s === undefined) return '';
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+  })();
+</script>
+{% endblock %}
