@@ -50,12 +50,28 @@
          style="-webkit-overflow-scrolling: touch;">
       {# ── FRONT OFFICE ───────────────────────────────────── #}
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-2 pb-1">Front Office</p>
+      <a href="{{ url_for('front_office.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.index' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </a>
       {% if current_user.is_admin %}
       <a href="{{ url_for('board.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'board' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
         Reservation Board
       </a>
       {% endif %}
+      <a href="{{ url_for('front_office.arrivals') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.arrivals' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14"/></svg>
+        Arrivals
+      </a>
+      <a href="{{ url_for('front_office.departures') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.departures' %}bg-sky-50 text-sky-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        Departures
+      </a>
+      <a href="{{ url_for('front_office.in_house') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.in_house' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+        In House
+      </a>
       <a href="{{ url_for('bookings.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'bookings' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
         Bookings
@@ -63,6 +79,10 @@
       <a href="{{ url_for('cal.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'cal' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
         Calendar
+      </a>
+      <a href="{{ url_for('guests.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'guests' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Guests
       </a>
       {% if current_user.is_admin %}
       <a href="{{ url_for('whatsapp.inbox') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'whatsapp' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">

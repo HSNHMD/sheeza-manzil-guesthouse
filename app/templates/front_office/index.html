@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Front Office — {{ brand.short_name }}{% endblock %}
+{% block content %}
+<div class="space-y-4 max-w-4xl">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <div>
+      <h1 class="text-xl font-bold text-slate-900">Front Office</h1>
+      <p class="text-xs text-slate-500 mt-0.5">
+        {{ today.strftime('%A · %b %-d, %Y') }}
+      </p>
+    </div>
+    <a href="{{ url_for('board.index') }}"
+       class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+      Open Reservation Board
+    </a>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <a href="{{ url_for('front_office.arrivals') }}"
+       class="bg-white rounded-xl border border-emerald-200 p-4 hover:bg-emerald-50 transition group">
+      <div class="flex items-start justify-between mb-2">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14"/></svg>
+        </span>
+        <svg class="w-3.5 h-3.5 text-emerald-300 group-hover:text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+      </div>
+      <div class="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold">Arrivals today</div>
+      <div class="text-3xl font-bold text-emerald-900 mt-1">{{ stats.arrivals_today }}</div>
+    </a>
+
+    <a href="{{ url_for('front_office.departures') }}"
+       class="bg-white rounded-xl border border-sky-200 p-4 hover:bg-sky-50 transition group">
+      <div class="flex items-start justify-between mb-2">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-sky-100 text-sky-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </span>
+        <svg class="w-3.5 h-3.5 text-sky-300 group-hover:text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+      </div>
+      <div class="text-[10px] uppercase tracking-wider text-sky-700 font-semibold">Departures today</div>
+      <div class="text-3xl font-bold text-sky-900 mt-1">{{ stats.departures_today }}</div>
+    </a>
+
+    <a href="{{ url_for('front_office.in_house') }}"
+       class="bg-white rounded-xl border border-blue-200 p-4 hover:bg-blue-50 transition group">
+      <div class="flex items-start justify-between mb-2">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-blue-100 text-blue-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        </span>
+        <svg class="w-3.5 h-3.5 text-blue-300 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+      </div>
+      <div class="text-[10px] uppercase tracking-wider text-blue-700 font-semibold">In house now</div>
+      <div class="text-3xl font-bold text-blue-900 mt-1">{{ stats.in_house }}</div>
+    </a>
+  </div>
+
+  <!-- Quick links -->
+  <div class="bg-white rounded-xl border border-slate-200 p-4">
+    <h2 class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-3">Quick links</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <a href="{{ url_for('bookings.index') }}" class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <span class="text-sm font-medium text-slate-800">All Bookings</span>
+      </a>
+      <a href="{{ url_for('cal.index') }}" class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <span class="text-sm font-medium text-slate-800">Calendar</span>
+      </a>
+      <a href="{{ url_for('guests.index') }}" class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <span class="text-sm font-medium text-slate-800">Guests</span>
+      </a>
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('whatsapp.inbox') }}" class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        <span class="text-sm font-medium text-slate-800">Messages</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

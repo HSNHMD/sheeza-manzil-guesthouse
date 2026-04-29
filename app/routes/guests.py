@@ -1,8 +1,57 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required
-from ..models import db, Guest
+from sqlalchemy import or_, func
+from ..models import db, Guest, Booking
 
 guests_bp = Blueprint('guests', __name__, url_prefix='/guests')
+
+
+@guests_bp.route('/')
+@login_required
+def index():
+    """Guest directory — searchable list with stay-history snippets.
+
+    Read-only. Tappable rows link to the existing edit view.
+    """
+    search = (request.args.get('search') or '').strip()
+    q = Guest.query
+    if search:
+        like = f'%{search}%'
+        q = q.filter(or_(
+            Guest.first_name.ilike(like),
+            Guest.last_name.ilike(like),
+            Guest.phone.ilike(like),
+            Guest.email.ilike(like),
+        ))
+    guests = q.order_by(Guest.last_name.asc(),
+                        Guest.first_name.asc()).limit(200).all()
+
+    # Stay-count + last-stay snapshot per guest, single batched query.
+    counts = {}
+    last_stay = {}
+    if guests:
+        guest_ids = [g.id for g in guests]
+        rows = (
+            db.session.query(
+                Booking.guest_id,
+                func.count(Booking.id),
+                func.max(Booking.check_in_date),
+            )
+            .filter(Booking.guest_id.in_(guest_ids))
+            .group_by(Booking.guest_id)
+            .all()
+        )
+        for gid, cnt, last in rows:
+            counts[gid] = cnt
+            last_stay[gid] = last
+
+    return render_template(
+        'guests/index.html',
+        guests=guests,
+        counts=counts,
+        last_stay=last_stay,
+        search=search,
+    )
 
 
 @guests_bp.route('/<int:guest_id>/edit', methods=['GET', 'POST'])

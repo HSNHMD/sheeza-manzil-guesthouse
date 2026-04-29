@@ -1,0 +1,239 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }} — {{ brand.short_name }}{% endblock %}
+
+{% block head_extra %}
+<style>
+  .fo-page {
+    --accent-em: #10b981;
+    --accent-em-bg: #ecfdf5;
+    --accent-em-border: #6ee7b7;
+    --accent-sk: #0ea5e9;
+    --accent-sk-bg: #f0f9ff;
+    --accent-sk-border: #7dd3fc;
+    --accent-bl: #2563eb;
+    --accent-bl-bg: #eff6ff;
+    --accent-bl-border: #93c5fd;
+  }
+  .fo-page[data-kind="arrivals"]   { --accent: var(--accent-em); --accent-bg: var(--accent-em-bg); --accent-border: var(--accent-em-border); }
+  .fo-page[data-kind="departures"] { --accent: var(--accent-sk); --accent-bg: var(--accent-sk-bg); --accent-border: var(--accent-sk-border); }
+  .fo-page[data-kind="in_house"]   { --accent: var(--accent-bl); --accent-bg: var(--accent-bl-bg); --accent-border: var(--accent-bl-border); }
+
+  /* Cards / list rows */
+  .fo-card {
+    background-color: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .fo-row {
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    text-decoration: none;
+    color: #0f172a;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    transition: background-color 0.10s ease;
+  }
+  .fo-row:last-child { border-bottom: 0; }
+  .fo-row:hover, .fo-row:focus {
+    background-color: #f8fafc;
+    outline: none;
+  }
+  .fo-room {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    background: var(--accent-bg);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+    border: 1px solid var(--accent-border);
+    letter-spacing: -0.01em;
+    flex-shrink: 0;
+  }
+  .fo-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #0f172a;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fo-meta {
+    font-size: 11px;
+    color: #475569;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    font-feature-settings: "tnum" on;
+  }
+  .fo-meta .dot { width: 3px; height: 3px; border-radius: 999px; background: #cbd5e1; }
+  .fo-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+  }
+  .fo-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1.6;
+  }
+  .fo-pill-new_request      { background:#f5f3ff;border-color:#c4b5fd;color:#5b21b6; }
+  .fo-pill-pending_payment  { background:#fffbeb;border-color:#fcd34d;color:#92400e; }
+  .fo-pill-payment_uploaded { background:#fefce8;border-color:#facc15;color:#854d0e; }
+  .fo-pill-payment_verified { background:#f0f9ff;border-color:#7dd3fc;color:#075985; }
+  .fo-pill-confirmed        { background:#eff6ff;border-color:#93c5fd;color:#1e40af; }
+  .fo-pill-checked_in       { background:#ecfdf5;border-color:#6ee7b7;color:#065f46; }
+  .fo-pill-checked_out      { background:#f8fafc;border-color:#cbd5e1;color:#475569; }
+  .fo-pill-cancelled,
+  .fo-pill-rejected         { background:#fff1f2;border-color:#fecdd3;color:#9f1239; }
+  .fo-pill-pay-not_received { background:#f8fafc;border-color:#cbd5e1;color:#475569; }
+  .fo-pill-pay-pending_review { background:#fffbeb;border-color:#fcd34d;color:#92400e; }
+  .fo-pill-pay-verified     { background:#ecfdf5;border-color:#6ee7b7;color:#065f46; }
+  .fo-pill-pay-rejected,
+  .fo-pill-pay-mismatch     { background:#fef2f2;border-color:#fecaca;color:#991b1b; }
+  .fo-chevron {
+    color: #cbd5e1;
+    flex-shrink: 0;
+  }
+
+  /* Toolbar */
+  .fo-toolbar {
+    background-color: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .fo-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #f8fafc;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 9px;
+    padding: 0 10px;
+    height: 36px;
+  }
+  .fo-search input {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    font-size: 13px;
+    color: #0f172a;
+  }
+  .fo-search svg { width: 14px; height: 14px; color: #94a3b8; }
+  .fo-empty {
+    background-color: #ffffff;
+    border: 1px dashed rgba(15, 23, 42, 0.10);
+    border-radius: 12px;
+    padding: 36px 16px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    font-style: italic;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fo-page space-y-3 max-w-3xl" data-kind="{{ page_kind }}">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <div>
+      <div class="text-[10px] uppercase tracking-[0.10em] font-semibold" style="color: var(--accent);">
+        Front Office
+      </div>
+      <h1 class="text-xl font-bold text-slate-900 leading-tight">
+        {{ page_title }}
+      </h1>
+      <p class="text-xs text-slate-500 mt-0.5">
+        {% if is_today %}Today, {% endif %}
+        {{ target_date.strftime('%a · %b %-d, %Y') }}
+        <span class="opacity-50">·</span>
+        {{ bookings|length }} {% if bookings|length == 1 %}booking{% else %}bookings{% endif %}
+      </p>
+    </div>
+    <a href="{{ url_for('front_office.index') }}"
+       class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:bg-slate-100">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+      Front Office
+    </a>
+  </div>
+
+  <!-- Search + date jump -->
+  <form method="GET" class="fo-toolbar flex flex-wrap items-end gap-2">
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Search</label>
+      <div class="fo-search">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/></svg>
+        <input type="text" name="search" value="{{ search }}"
+               placeholder="Guest, ref, or room…">
+      </div>
+    </div>
+    <div>
+      <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Date</label>
+      <input type="date" name="date" value="{{ target_date.isoformat() }}"
+             class="h-9 px-2 rounded-lg border border-slate-200 bg-white text-xs">
+    </div>
+    <button type="submit"
+            class="h-9 px-3 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800">
+      Apply
+    </button>
+    {% if not is_today or search %}
+    <a href="{{ url_for(request.endpoint) }}"
+       class="h-9 px-2 inline-flex items-center text-xs font-medium text-slate-500 hover:text-slate-800">
+      Today
+    </a>
+    {% endif %}
+  </form>
+
+  <!-- List -->
+  {% if bookings %}
+  <div class="fo-card">
+    {% for b in bookings %}
+      {% set ps = payment_status_for(b) %}
+      {% set bs = b.status if b.status in ('new_request','pending_payment','payment_uploaded','payment_verified','confirmed','checked_in','checked_out','cancelled','rejected') else 'fallback' %}
+      <a class="fo-row" href="{{ url_for('bookings.detail', booking_id=b.id) }}">
+        <span class="fo-room">#{{ b.room.number }}</span>
+        <span>
+          <span class="fo-name">{{ b.guest.first_name }} {{ b.guest.last_name }}</span>
+          <span class="fo-meta">
+            <span style="font-family:ui-monospace,monospace;">{{ b.booking_ref }}</span>
+            <span class="dot"></span>
+            <span>{{ b.check_in_date.strftime('%b %-d') }} → {{ b.check_out_date.strftime('%b %-d') }}</span>
+            <span class="dot"></span>
+            <span>{{ (b.check_out_date - b.check_in_date).days }}n</span>
+            <span class="dot"></span>
+            <span>{{ b.num_guests }}g</span>
+          </span>
+          <span class="fo-pills">
+            <span class="fo-pill fo-pill-{{ bs }}">{{ b.status.replace('_', ' ') }}</span>
+            <span class="fo-pill fo-pill-pay-{{ ps }}">{{ ps.replace('_', ' ') }}</span>
+          </span>
+        </span>
+        <svg class="w-4 h-4 fo-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="fo-empty">{{ empty_message }}</div>
+  {% endif %}
+</div>
+{% endblock %}
