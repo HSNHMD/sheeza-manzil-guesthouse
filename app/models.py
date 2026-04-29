@@ -40,12 +40,35 @@ class Room(db.Model):
     capacity = db.Column(db.Integer, default=1)
     price_per_night = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(20), default='available')  # available, occupied, maintenance, cleaning
-    housekeeping_status = db.Column(db.String(20), default='clean')  # clean, dirty, in_progress
+    # Housekeeping vocabulary (V1): clean, dirty, in_progress, inspected, out_of_order.
+    # Operational `status` and `housekeeping_status` are intentionally distinct:
+    # an occupied room can still be dirty/inspected, a vacant room can be clean
+    # or dirty. See app/services/housekeeping.py for the canonical state set.
+    housekeeping_status = db.Column(db.String(20), default='clean')
     description = db.Column(db.Text)
     amenities = db.Column(db.String(500))
     notes = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Housekeeping V1 — assignment + audit columns (added by migration
+    # b4c1f2d6e892). All four are nullable; pre-existing rooms simply
+    # render with no assignee and no last-updated stamp.
+    assigned_to_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    assigned_at = db.Column(db.DateTime, nullable=True)
+    housekeeping_updated_at = db.Column(db.DateTime, nullable=True)
+    housekeeping_updated_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    assigned_to = db.relationship(
+        'User', foreign_keys=[assigned_to_user_id])
+    housekeeping_updated_by = db.relationship(
+        'User', foreign_keys=[housekeeping_updated_by_user_id])
 
     bookings = db.relationship('Booking', backref='room', lazy='dynamic')
 

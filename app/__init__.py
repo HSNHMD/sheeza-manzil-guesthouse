@@ -90,7 +90,12 @@ def create_app(config_class=Config):
             return
         allowed = ('/staff', '/console', '/appadmin', '/logout', '/static',
                    '/public', '/privacy', '/account', '/admin/activity',
-                   '/admin/whatsapp', '/webhooks/whatsapp')
+                   '/admin/whatsapp', '/webhooks/whatsapp',
+                   # Housekeeping V1: the housekeeping board IS a staff
+                   # workflow, not an admin-only screen. Staff are
+                   # whitelisted here so the /housekeeping route group
+                   # can be accessed by either role.
+                   '/housekeeping')
         if not any(request.path == p or request.path.startswith(p + '/') for p in allowed):
             return redirect('/staff/dashboard')
 

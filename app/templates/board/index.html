@@ -40,13 +40,26 @@
   .board-shell {
     --day-w: {{ day_width_px }}px;
     --room-w: 232px;
-    --row-h: 48px;
+    --row-h: 56px;
     --header-h: 60px;
 
     background: var(--surface-page);
     color: var(--ink);
     font-feature-settings: "ss01" on, "cv11" on;
   }
+
+  /* Housekeeping V1 — room-rail pill (distinct from operational badge) */
+  .hk-rail {
+    display: inline-block; padding: 1px 6px; border-radius: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: .05em;
+    border: 1px solid transparent;
+    line-height: 1.2;
+  }
+  .hk-rail.s-clean        { background: #dcfce7; color: #166534; border-color: #86efac; }
+  .hk-rail.s-dirty        { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .hk-rail.s-in_progress  { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+  .hk-rail.s-inspected    { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+  .hk-rail.s-out_of_order { background: #e2e8f0; color: #334155; border-color: #cbd5e1; }
 
   /* ─────────────────────────────────────────────────────────────────
      TOOLBAR / HEADER GROUP
@@ -1588,6 +1601,17 @@
                   <span style="opacity:.45;">·</span>
                   <span class="{{ badge.text_class }}">{{ badge.label }}</span>
                 </div>
+                <div class="meta-line-2" style="margin-top:2px;">
+                  {# Housekeeping pill — distinct from operational status. #}
+                  <span class="hk-rail s-{{ r.housekeeping_status or 'clean' }}"
+                        title="Housekeeping: {{ (r.housekeeping_status or 'clean').replace('_',' ') }}">
+                    {{ (r.housekeeping_status or 'clean').replace('_',' ')|upper }}
+                  </span>
+                  {% if r.assigned_to_user_id %}
+                    <span style="opacity:.55; font-size:10px;">·</span>
+                    <span style="font-size:10px; color:#0369a1;" title="Assigned to user #{{ r.assigned_to_user_id }}">assigned</span>
+                  {% endif %}
+                </div>
               </div>
             </div>
 
@@ -1745,6 +1769,10 @@
                 <span class="{{ badge.text_class }}">{{ badge.label }}</span>
                 <span class="dot"></span>
                 <span>Floor {{ r.floor }}</span>
+                <span class="dot"></span>
+                <span class="hk-rail s-{{ r.housekeeping_status or 'clean' }}">
+                  {{ (r.housekeeping_status or 'clean').replace('_',' ')|upper }}
+                </span>
               </div>
             </div>
           </div>

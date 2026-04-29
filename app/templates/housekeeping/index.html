@@ -1,202 +1,352 @@
 {% extends 'base.html' %}
 {% block title %}Housekeeping{% endblock %}
+
 {% block content %}
-<div class="space-y-5">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-xl font-bold text-gray-800">Housekeeping Board</h1>
-    <button onclick="document.getElementById('bulkModal').classList.remove('hidden')"
-      class="border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-      Bulk Update
-    </button>
+<style>
+  /* Housekeeping V1 — mobile-first board */
+  .hk-shell { display: flex; flex-direction: column; gap: 12px; }
+  .hk-h1 { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin: 0; }
+  .hk-sub { font-size: 12px; color: #64748b; }
+
+  /* Tabs — large tap targets, scroll-snappable on phones */
+  .hk-tabs {
+    display: flex; gap: 6px; overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px; scroll-snap-type: x proximity;
+  }
+  .hk-tab {
+    flex: 0 0 auto; scroll-snap-align: start;
+    padding: 10px 14px; min-height: 44px;
+    border-radius: 999px; border: 1px solid #e2e8f0;
+    background: #fff; color: #475569;
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .hk-tab .pill-count {
+    background: #f1f5f9; color: #475569;
+    border-radius: 999px; padding: 1px 7px; font-size: 11px;
+  }
+  .hk-tab.is-active { background: #0f766e; color: #fff; border-color: #0f766e; }
+  .hk-tab.is-active .pill-count { background: rgba(255,255,255,.22); color: #fff; }
+
+  /* Stats — compact strip */
+  .hk-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  @media (max-width: 600px) {
+    .hk-stats { grid-template-columns: repeat(3, 1fr); }
+  }
+  .hk-stat {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 8px 10px; text-align: center;
+  }
+  .hk-stat-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+  .hk-stat-value { font-size: 18px; font-weight: 800; margin-top: 2px; }
+  .hk-stat-value.s-clean        { color: #16a34a; }
+  .hk-stat-value.s-dirty        { color: #dc2626; }
+  .hk-stat-value.s-in_progress  { color: #ca8a04; }
+  .hk-stat-value.s-inspected    { color: #2563eb; }
+  .hk-stat-value.s-out_of_order { color: #475569; }
+
+  /* Floor groups */
+  .hk-floor-h {
+    margin-top: 10px; padding: 4px 2px;
+    font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    color: #94a3b8; text-transform: uppercase;
+  }
+
+  /* Room cards — stacked on phones, grid on wider */
+  .hk-rooms { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  @media (min-width: 720px) {
+    .hk-rooms { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 1100px) {
+    .hk-rooms { grid-template-columns: 1fr 1fr 1fr; }
+  }
+
+  .hk-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+    box-shadow: 0 1px 1.5px rgba(15,23,42,.04);
+  }
+  .hk-card.is-dirty        { border-color: #fecaca; background: #fef2f2; }
+  .hk-card.is-clean        { border-color: #bbf7d0; background: #f0fdf4; }
+  .hk-card.is-in_progress  { border-color: #fde68a; background: #fffbeb; }
+  .hk-card.is-inspected    { border-color: #bfdbfe; background: #eff6ff; }
+  .hk-card.is-out_of_order { border-color: #cbd5e1; background: #f1f5f9; }
+
+  .hk-card-top {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  }
+  .hk-room-num {
+    font-size: 22px; font-weight: 800; color: #0f172a;
+    display: inline-flex; align-items: baseline; gap: 6px;
+  }
+  .hk-room-num .hash { color: #94a3b8; font-weight: 700; }
+  .hk-room-meta { font-size: 12px; color: #64748b; }
+
+  /* Status pill */
+  .hk-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em;
+    border: 1px solid transparent;
+  }
+  .hk-pill.s-clean        { background: #dcfce7; color: #166534; border-color: #86efac; }
+  .hk-pill.s-dirty        { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .hk-pill.s-in_progress  { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+  .hk-pill.s-inspected    { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+  .hk-pill.s-out_of_order { background: #e2e8f0; color: #334155; border-color: #cbd5e1; }
+  .hk-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+
+  /* Hint chips */
+  .hk-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; font-size: 11px; font-weight: 600;
+    border-radius: 999px; background: #f1f5f9; color: #475569;
+    border: 1px solid #e2e8f0;
+  }
+  .hk-chip.due-out { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+  .hk-chip.just-out { background: #fefce8; color: #854d0e; border-color: #fde68a; }
+  .hk-chip.assigned { background: #ecfeff; color: #155e75; border-color: #a5f3fc; }
+  .hk-chip.occupied { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+
+  /* Action button group — big touch targets */
+  .hk-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  @media (min-width: 540px) { .hk-actions { grid-template-columns: repeat(4, 1fr); } }
+
+  .hk-btn {
+    appearance: none; -webkit-appearance: none;
+    border: 1px solid transparent; border-radius: 10px;
+    padding: 10px 8px; min-height: 44px;
+    font-size: 12.5px; font-weight: 700;
+    background: #fff; color: #0f172a;
+    text-align: center; cursor: pointer; user-select: none;
+    transition: transform .05s ease, background .15s ease;
+    width: 100%;
+  }
+  .hk-btn:active { transform: scale(.97); }
+  .hk-btn-dirty       { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .hk-btn-in_progress { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+  .hk-btn-clean       { background: #dcfce7; color: #166534; border-color: #86efac; }
+  .hk-btn-inspected   { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+  .hk-btn-out_of_order{ background: #e2e8f0; color: #334155; border-color: #cbd5e1; }
+  .hk-btn[disabled]   { opacity: .55; cursor: default; }
+
+  .hk-row-flex { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+  /* Recent log */
+  .hk-log { font-size: 12px; color: #475569; }
+  .hk-log .row { display: flex; justify-content: space-between; gap: 10px;
+                 padding: 6px 0; border-bottom: 1px dashed #e2e8f0; }
+  .hk-log .row:last-child { border-bottom: 0; }
+  .hk-log .who { font-weight: 600; color: #0f172a; }
+
+  details.hk-assign-details {
+    background: #fff; border: 1px dashed #cbd5e1; border-radius: 10px;
+    padding: 6px 10px; font-size: 12px;
+  }
+  details.hk-assign-details > summary {
+    cursor: pointer; color: #0369a1; font-weight: 600; list-style: none; padding: 4px 0;
+  }
+  details.hk-assign-details > summary::-webkit-details-marker { display: none; }
+  details.hk-assign-details select, details.hk-assign-details button {
+    height: 36px; min-height: 36px; font-size: 13px;
+  }
+
+  .hk-bulk-bar {
+    background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px;
+    padding: 10px 12px; font-size: 13px; color: #475569;
+  }
+</style>
+
+<div class="hk-shell">
+
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="hk-h1">Housekeeping</h1>
+      <p class="hk-sub">Business date <strong>{{ business_date.strftime('%a %b %-d, %Y') }}</strong> ·
+        {{ stats.total }} active room{{ 's' if stats.total != 1 else '' }}</p>
+    </div>
+    <a href="{{ url_for('housekeeping.index', view='all') }}"
+       class="text-xs text-slate-500 hover:text-slate-800">Reset filters</a>
   </div>
 
-  <!-- Stats -->
-  <div class="grid grid-cols-3 gap-3">
-    <div class="bg-green-50 rounded-xl border border-green-200 p-4 text-center">
-      <p class="text-xs text-green-600 font-medium">Clean</p>
-      <p class="text-2xl font-bold text-green-700 mt-1">{{ stats.clean }}</p>
-    </div>
-    <div class="bg-red-50 rounded-xl border border-red-200 p-4 text-center">
-      <p class="text-xs text-red-600 font-medium">Dirty</p>
-      <p class="text-2xl font-bold text-red-700 mt-1">{{ stats.dirty }}</p>
-    </div>
-    <div class="bg-yellow-50 rounded-xl border border-yellow-200 p-4 text-center">
-      <p class="text-xs text-yellow-600 font-medium">In Progress</p>
-      <p class="text-2xl font-bold text-yellow-700 mt-1">{{ stats.in_progress }}</p>
-    </div>
-  </div>
-
-  <!-- Filters -->
-  <form method="GET" class="flex flex-wrap gap-2">
-    <select name="status" onchange="this.form.submit()"
-      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <option value="">All Status</option>
-      {% for s in hk_statuses %}
-      <option value="{{ s }}" {% if status_filter==s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
-      {% endfor %}
-    </select>
-    <select name="floor" onchange="this.form.submit()"
-      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <option value="">All Floors</option>
-      {% for f in floors %}
-      <option value="{{ f }}" {% if floor_filter|string==f|string %}selected{% endif %}>Floor {{ f }}</option>
-      {% endfor %}
-    </select>
-    {% if status_filter or floor_filter %}
-    <a href="{{ url_for('housekeeping.index') }}" class="px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg">Clear</a>
-    {% endif %}
-  </form>
-
-  <!-- Room Grid -->
-  {% if rooms %}
-  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-    {% for room in rooms %}
-    <div class="bg-white rounded-xl border-2 overflow-hidden
-      {% if room.housekeeping_status == 'clean' %}border-green-200
-      {% elif room.housekeeping_status == 'in_progress' %}border-yellow-300
-      {% else %}border-red-200{% endif %}">
-      <div class="p-3">
-        <div class="flex items-start justify-between mb-2">
-          <div>
-            <p class="font-bold text-gray-800 text-lg">{{ room.number }}</p>
-            <p class="text-xs text-gray-500">Floor {{ room.floor }}</p>
-          </div>
-          <span class="text-lg">
-            {% if room.housekeeping_status == 'clean' %}✅
-            {% elif room.housekeeping_status == 'in_progress' %}🔄
-            {% else %}🧹{% endif %}
-          </span>
-        </div>
-
-        <div class="flex gap-1 mb-2">
-          <span class="text-xs px-1.5 py-0.5 rounded
-            {% if room.status == 'available' %}bg-green-100 text-green-700
-            {% elif room.status == 'occupied' %}bg-blue-100 text-blue-700
-            {% elif room.status == 'cleaning' %}bg-yellow-100 text-yellow-700
-            {% else %}bg-red-100 text-red-700{% endif %}">
-            {{ room.status.title() }}
-          </span>
-        </div>
-
-        <!-- Quick action buttons -->
-        <div class="space-y-1">
-          {% if room.housekeeping_status == 'dirty' %}
-          <form method="POST" action="{{ url_for('housekeeping.update', room_id=room.id) }}">
-            <input type="hidden" name="action" value="started_cleaning">
-            <button type="submit" class="w-full text-xs py-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded-lg transition-colors">
-              Start Cleaning
-            </button>
-          </form>
-          {% elif room.housekeeping_status == 'in_progress' %}
-          <form method="POST" action="{{ url_for('housekeeping.update', room_id=room.id) }}">
-            <input type="hidden" name="action" value="completed">
-            <button type="submit" class="w-full text-xs py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors">
-              Mark Clean
-            </button>
-          </form>
-          {% endif %}
-
-          <button onclick="openActionModal({{ room.id }}, '{{ room.number }}')"
-            class="w-full text-xs py-1.5 border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-lg transition-colors">
-            Log Action
-          </button>
-        </div>
-      </div>
-    </div>
+  {# ── View tabs ────────────────────────────────────────────────── #}
+  <div class="hk-tabs" role="tablist">
+    {% set _vt = [
+      ('all',          'All',          stats.total),
+      ('dirty',        'Dirty',        stats.dirty),
+      ('in_progress',  'Cleaning',     stats.in_progress),
+      ('clean',        'Clean',        stats.clean),
+      ('inspected',    'Inspected',    stats.inspected),
+      ('out_of_order', 'Out of order', stats.out_of_order),
+      ('mine',         'Mine',         stats.mine),
+    ] %}
+    {% for code, label, n in _vt %}
+      <a class="hk-tab {% if view == code %}is-active{% endif %}"
+         href="{{ url_for('housekeeping.index', view=code, floor=floor_filter or none) }}">
+        <span>{{ label }}</span>
+        <span class="pill-count">{{ n }}</span>
+      </a>
     {% endfor %}
   </div>
-  {% else %}
-  <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
-    <p class="text-gray-400">No rooms found</p>
-  </div>
-  {% endif %}
 
-  <!-- Recent Activity -->
-  {% if recent_logs %}
-  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-    <div class="px-4 py-3 border-b border-gray-100">
-      <h2 class="font-semibold text-gray-700 text-sm">Recent Activity</h2>
-    </div>
-    <div class="divide-y divide-gray-50">
-      {% for log in recent_logs %}
-      <div class="px-4 py-2.5 flex items-start gap-3 text-sm">
-        <span class="text-gray-400 shrink-0 text-xs mt-0.5">{{ log.created_at.strftime('%H:%M') }}</span>
-        <div class="flex-1 min-w-0">
-          <span class="font-medium text-gray-700">Room {{ log.room.number }}</span>
-          <span class="text-gray-500"> — {{ log.action.replace('_',' ').title() }}</span>
-          {% if log.staff %}<span class="text-gray-400 text-xs"> by {{ log.staff.username }}</span>{% endif %}
-          {% if log.notes %}<p class="text-xs text-gray-400 truncate">{{ log.notes }}</p>{% endif %}
-        </div>
-      </div>
+  {# ── Compact stats strip ─────────────────────────────────────── #}
+  <div class="hk-stats">
+    <div class="hk-stat"><div class="hk-stat-label">Clean</div><div class="hk-stat-value s-clean">{{ stats.clean }}</div></div>
+    <div class="hk-stat"><div class="hk-stat-label">Dirty</div><div class="hk-stat-value s-dirty">{{ stats.dirty }}</div></div>
+    <div class="hk-stat"><div class="hk-stat-label">Cleaning</div><div class="hk-stat-value s-in_progress">{{ stats.in_progress }}</div></div>
+    <div class="hk-stat"><div class="hk-stat-label">Inspected</div><div class="hk-stat-value s-inspected">{{ stats.inspected }}</div></div>
+    <div class="hk-stat"><div class="hk-stat-label">Out</div><div class="hk-stat-value s-out_of_order">{{ stats.out_of_order }}</div></div>
+  </div>
+
+  {% if floors and floors|length > 1 %}
+  <form method="get" class="flex items-center gap-2 text-sm">
+    <input type="hidden" name="view" value="{{ view }}">
+    <span class="text-slate-500 text-xs">Floor</span>
+    <select name="floor" onchange="this.form.submit()" class="border border-slate-300 rounded-md px-2 py-1 text-sm">
+      <option value="">All</option>
+      {% for f in floors %}
+      <option value="{{ f }}" {% if floor_filter|string == f|string %}selected{% endif %}>F{{ f }}</option>
       {% endfor %}
-    </div>
-  </div>
+    </select>
+  </form>
   {% endif %}
-</div>
 
-<!-- Action Modal -->
-<div id="actionModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-xl shadow-xl w-full max-w-sm">
-    <div class="flex items-center justify-between p-4 border-b border-gray-200">
-      <h2 class="font-semibold text-gray-800">Log Action — Room <span id="modalRoom"></span></h2>
-      <button onclick="document.getElementById('actionModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
-    </div>
-    <form id="actionForm" method="POST" class="p-4 space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Action</label>
-        <select name="action" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="started_cleaning">Started Cleaning</option>
-          <option value="completed">Completed / Mark Clean</option>
-          <option value="inspected">Inspected</option>
-          <option value="maintenance_request">Maintenance Request</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-        <textarea name="notes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
-      </div>
-      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">Submit</button>
-    </form>
-  </div>
-</div>
+  {% if not rooms %}
+  <div class="hk-bulk-bar">No rooms match this view.</div>
+  {% endif %}
 
-<!-- Bulk Modal -->
-<div id="bulkModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-xl shadow-xl w-full max-w-sm">
-    <div class="flex items-center justify-between p-4 border-b border-gray-200">
-      <h2 class="font-semibold text-gray-800">Bulk Update Rooms</h2>
-      <button onclick="document.getElementById('bulkModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
-    </div>
-    <form method="POST" action="{{ url_for('housekeeping.bulk_update') }}" class="p-4 space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-2">Select Rooms</label>
-        <div class="space-y-1.5 max-h-48 overflow-y-auto">
-          {% for room in rooms %}
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="room_ids" value="{{ room.id }}" class="rounded">
-            <span class="font-medium">{{ room.number }}</span>
-            <span class="text-gray-500 text-xs">({{ room.housekeeping_status.replace('_',' ') }})</span>
-          </label>
+  {# ── Room cards, grouped by floor ──────────────────────────── #}
+  {% set ns = namespace(prev_floor=None) %}
+  <div class="hk-rooms">
+    {% for r in rooms %}
+      {% if ns.prev_floor != r.floor %}
+        {% if not loop.first %}</div><div class="hk-rooms">{% endif %}
+        <div class="hk-floor-h" style="grid-column: 1/-1;">Floor {{ r.floor }}</div>
+        {% set ns.prev_floor = r.floor %}
+      {% endif %}
+      {% set b = hk_badge(r.housekeeping_status) %}
+      {% set cur = r.current_booking %}
+      <div class="hk-card is-{{ r.housekeeping_status }}">
+
+        <div class="hk-card-top">
+          <div>
+            <div class="hk-room-num"><span class="hash">#</span>{{ r.number }}</div>
+            <div class="hk-room-meta">
+              {{ r.room_type }}{% if r.name and r.name != r.room_type %} · {{ r.name }}{% endif %}
+            </div>
+          </div>
+          <span class="hk-pill s-{{ r.housekeeping_status }}">
+            <span class="hk-dot"></span>{{ b.label }}
+          </span>
+        </div>
+
+        <div class="hk-row-flex">
+          {% if cur %}
+            <span class="hk-chip occupied">In-house · {{ cur.guest.full_name if cur.guest else 'Guest' }}</span>
+          {% endif %}
+          {% if r.id in due_out_room_ids %}
+            <span class="hk-chip due-out">Due out today</span>
+          {% elif r.id in just_out_room_ids %}
+            <span class="hk-chip just-out">Just out</span>
+          {% endif %}
+          {% if r.assigned_to %}
+            <span class="hk-chip assigned">Assigned: {{ r.assigned_to.username }}</span>
+          {% endif %}
+          {% if r.status and r.status != 'available' %}
+            <span class="hk-chip">Op: {{ r.status }}</span>
+          {% endif %}
+        </div>
+
+        <div class="hk-actions">
+          {% for action_code, btn_label in [
+            ('dirty',        'Mark Dirty'),
+            ('in_progress',  'Cleaning'),
+            ('clean',        'Mark Clean'),
+            ('inspected',    'Inspected'),
+          ] %}
+            <form method="POST"
+                  action="{{ url_for('housekeeping.update', room_id=r.id, view=view) }}"
+                  style="display:contents;">
+              <button type="submit" name="new_status" value="{{ action_code }}"
+                      class="hk-btn hk-btn-{{ action_code }}"
+                      {% if r.housekeeping_status == action_code %}disabled aria-pressed="true"{% endif %}>
+                {{ btn_label }}
+              </button>
+            </form>
           {% endfor %}
         </div>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Action</label>
-        <select name="action" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="mark_clean">Mark All Clean</option>
-          <option value="mark_dirty">Mark All Dirty</option>
-        </select>
-      </div>
-      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg">Apply</button>
-    </form>
-  </div>
-</div>
 
-<script>
-function openActionModal(roomId, roomNumber) {
-  document.getElementById('actionModal').classList.remove('hidden');
-  document.getElementById('modalRoom').textContent = roomNumber;
-  document.getElementById('actionForm').action = `/housekeeping/update/${roomId}`;
-}
-</script>
+        <div class="hk-row-flex" style="justify-content: space-between;">
+          <form method="POST"
+                action="{{ url_for('housekeeping.update', room_id=r.id, view=view) }}"
+                onsubmit="return confirm('Mark room {{ r.number }} OUT OF ORDER?');"
+                style="margin:0;">
+            <button type="submit" name="new_status" value="out_of_order"
+                    class="hk-btn hk-btn-out_of_order"
+                    style="padding: 8px 12px; min-height: 36px; width: auto;">
+              Out of order
+            </button>
+          </form>
+          {% if r.housekeeping_status == 'out_of_order' %}
+            <form method="POST"
+                  action="{{ url_for('housekeeping.update', room_id=r.id, view=view) }}"
+                  style="margin:0;">
+              <button type="submit" name="new_status" value="dirty"
+                      class="hk-btn hk-btn-dirty"
+                      style="padding: 8px 12px; min-height: 36px; width: auto;">
+                Restore (mark Dirty)
+              </button>
+            </form>
+          {% endif %}
+        </div>
+
+        <details class="hk-assign-details">
+          <summary>Assign cleaning task</summary>
+          <form method="POST"
+                action="{{ url_for('housekeeping.assign', room_id=r.id, view=view) }}"
+                class="flex flex-wrap gap-2 mt-2 items-center">
+            <select name="assignee_user_id" class="border border-slate-300 rounded-md px-2 py-1">
+              <option value="0">— Unassigned —</option>
+              {% for u in assignable_users %}
+                <option value="{{ u.id }}"
+                        {% if r.assigned_to_user_id == u.id %}selected{% endif %}>
+                  {{ u.username }} ({{ u.role }})
+                </option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="hk-btn"
+                    style="padding: 6px 12px; min-height: 36px; width: auto;
+                           background: #0f766e; color: #fff; border-color: #0f766e;">
+              Save
+            </button>
+          </form>
+        </details>
+
+      </div>
+    {% endfor %}
+  </div>
+
+  {# ── Recent activity ─────────────────────────────────────────── #}
+  {% if recent_logs %}
+  <details class="hk-assign-details" style="margin-top: 14px;">
+    <summary>Recent housekeeping activity ({{ recent_logs|length }})</summary>
+    <div class="hk-log mt-2">
+      {% for lg in recent_logs %}
+        <div class="row">
+          <span>
+            <span class="who">{{ lg.staff.username if lg.staff else 'system' }}</span>
+            ·
+            Room #{{ lg.room.number if lg.room else '?' }}
+            ·
+            {{ lg.action.replace('_', ' ') }}
+          </span>
+          <span style="color:#94a3b8;">{{ lg.created_at.strftime('%b %-d %H:%M') if lg.created_at else '' }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
+</div>
 {% endblock %}
