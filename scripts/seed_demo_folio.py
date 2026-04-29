@@ -24,8 +24,13 @@ Or locally against a sqlite DB after `flask db upgrade`.
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timedelta
+
+# Ensure the repo root is importable when this script is invoked as
+# `venv/bin/python scripts/seed_demo_folio.py` from the repo root.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app
 from app.models import db, User, Booking, FolioItem, ActivityLog
