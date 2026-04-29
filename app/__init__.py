@@ -47,6 +47,7 @@ def create_app(config_class=Config):
     from .routes.folios import folios_bp
     from .routes.reservation_board import board_bp
     from .routes.front_office import front_office_bp
+    from .routes.cashiering import cashiering_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -63,6 +64,7 @@ def create_app(config_class=Config):
     app.register_blueprint(folios_bp)
     app.register_blueprint(board_bp)
     app.register_blueprint(front_office_bp)
+    app.register_blueprint(cashiering_bp)
 
     from flask import request, redirect
     from flask_login import current_user

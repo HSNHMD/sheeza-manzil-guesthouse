@@ -227,6 +227,21 @@ def detail(booking_id):
         .all()
     )
     folio_totals = calculate_folio_totals(booking)
+
+    # Cashiering V1 — receipts visible alongside the folio
+    from ..models import CashierTransaction
+    from ..services.cashiering import (
+        cashier_summary_for, PAYMENT_METHODS, PAYMENT_METHOD_LABELS,
+        transaction_label,
+    )
+    cashier_txns = (
+        CashierTransaction.query
+        .filter(CashierTransaction.booking_id == booking.id)
+        .order_by(CashierTransaction.created_at.desc())
+        .all()
+    )
+    cashier_summary = cashier_summary_for(booking)
+
     return render_template('bookings/detail.html',
                            booking=booking,
                            activity_entries=activity_entries,
@@ -239,7 +254,12 @@ def detail(booking_id):
                            folio_totals=folio_totals,
                            folio_item_types=ITEM_TYPES,
                            folio_item_labels=ITEM_TYPE_LABELS,
-                           folio_item_label=display_folio_item_label)
+                           folio_item_label=display_folio_item_label,
+                           cashier_txns=cashier_txns,
+                           cashier_summary=cashier_summary,
+                           cashier_payment_methods=PAYMENT_METHODS,
+                           cashier_method_labels=PAYMENT_METHOD_LABELS,
+                           cashier_method_label=transaction_label)
 
 
 @bookings_bp.route('/<int:booking_id>/ai-draft', methods=['POST'])

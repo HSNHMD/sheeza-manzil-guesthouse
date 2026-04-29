@@ -519,3 +519,117 @@ class RoomBlock(db.Model):
         return (f'<RoomBlock id={self.id} room_id={self.room_id} '
                 f'{self.start_date}→{self.end_date} reason={self.reason} '
                 f'active={self.is_active}>')
+
+
+# ── Cashiering V1 ────────────────────────────────────────────────────
+#
+# A CashierTransaction is a cash-event ledger entry — it captures HOW
+# a payment was received (method, reference, cashier) separate from
+# the FolioItem ledger that tracks WHAT the guest owes.
+#
+# Design rules (binding, mirrored from
+# docs/accounts_business_date_night_audit_plan.md §2):
+#
+#   - Posting a payment creates BOTH a CashierTransaction row AND a
+#     FolioItem row with item_type='payment'. They are linked via
+#     CashierTransaction.folio_item_id.
+#   - Folio balance math is unchanged — it still reads folio_items
+#     only. CashierTransaction is the cash-flow / audit record.
+#   - Reports about cash flow read cashier_transactions (filter by
+#     method, by cashier_user_id). Reports about guest balance read
+#     folio_items. They reconcile via folio_item_id.
+#   - Voiding a transaction soft-removes (status='voided') AND voids
+#     the linked folio_item (status='voided'). Both rows preserved
+#     for audit; balance math excludes both.
+#   - Refunds create a NEW transaction with transaction_type='refund'
+#     (and a new positive folio_item, not a void of the original).
+#     Tax / GST stays correct because the original payment row is
+#     never deleted.
+#   - V1 does NOT modify Invoice.amount_paid or Invoice.payment_status.
+#     The legacy invoice payment flow stays untouched. Reconciling
+#     cashiering with invoices is Phase 4 (post-Night-Audit V1).
+#   - amount is always stored POSITIVE. Direction is on transaction_type.
+class CashierTransaction(db.Model):
+    __tablename__ = 'cashier_transactions'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+
+    # ── Foreign keys ────────────────────────────────────────────
+    booking_id    = db.Column(db.Integer,
+                              db.ForeignKey('bookings.id', ondelete='SET NULL'),
+                              nullable=True)
+    guest_id      = db.Column(db.Integer,
+                              db.ForeignKey('guests.id', ondelete='SET NULL'),
+                              nullable=True)
+    folio_item_id = db.Column(db.Integer,
+                              db.ForeignKey('folio_items.id', ondelete='SET NULL'),
+                              nullable=True)
+    invoice_id    = db.Column(db.Integer,
+                              db.ForeignKey('invoices.id', ondelete='SET NULL'),
+                              nullable=True)
+
+    # ── Money ────────────────────────────────────────────────────
+    # Always positive — direction is on transaction_type.
+    amount   = db.Column(db.Float, nullable=False, default=0.0)
+    currency = db.Column(db.String(3), nullable=False, default='MVR')
+
+    # ── How / who ───────────────────────────────────────────────
+    payment_method = db.Column(db.String(20), nullable=False)
+                     # cash | bank_transfer | card | wallet | other
+    reference_number = db.Column(db.String(80), nullable=True)
+    received_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    # ── Type / lifecycle ────────────────────────────────────────
+    transaction_type = db.Column(db.String(20), nullable=False, default='payment')
+                       # payment | refund | adjustment
+    status = db.Column(db.String(20), nullable=False, default='posted')
+             # posted | voided | refunded
+
+    notes = db.Column(db.String(500), nullable=True)
+    metadata_json = db.Column(db.Text, nullable=True)
+
+    # ── Void tracking ───────────────────────────────────────────
+    voided_at         = db.Column(db.DateTime, nullable=True)
+    voided_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    void_reason = db.Column(db.String(255), nullable=True)
+
+    # ── Relationships ───────────────────────────────────────────
+    booking     = db.relationship('Booking', foreign_keys=[booking_id])
+    guest       = db.relationship('Guest',   foreign_keys=[guest_id])
+    folio_item  = db.relationship('FolioItem', foreign_keys=[folio_item_id])
+    invoice     = db.relationship('Invoice', foreign_keys=[invoice_id])
+    received_by = db.relationship('User', foreign_keys=[received_by_user_id])
+    voided_by   = db.relationship('User', foreign_keys=[voided_by_user_id])
+
+    __table_args__ = (
+        db.Index('ix_cashier_txn_booking_created',
+                 'booking_id', 'created_at'),
+        db.Index('ix_cashier_txn_user_created',
+                 'received_by_user_id', 'created_at'),
+        db.Index('ix_cashier_txn_status',
+                 'status'),
+        db.Index('ix_cashier_txn_method',
+                 'payment_method'),
+    )
+
+    @property
+    def is_voided(self) -> bool:
+        return self.status == 'voided'
+
+    @property
+    def is_refund(self) -> bool:
+        return self.transaction_type == 'refund'
+
+    def __repr__(self):
+        return (f'<CashierTransaction id={self.id} '
+                f'booking_id={self.booking_id} '
+                f'{self.transaction_type} {self.amount} {self.currency} '
+                f'via {self.payment_method} status={self.status}>')
