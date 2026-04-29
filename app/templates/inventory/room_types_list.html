@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Room Types{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="inv-h1">Room Types</h1>
+      <p class="text-xs text-slate-500">{{ types|length }} type{{ 's' if types|length != 1 else '' }}.</p>
+    </div>
+    <div class="inv-actions">
+      <a href="{{ url_for('inventory.overview') }}" class="btn-secondary">← Inventory</a>
+      <a href="{{ url_for('inventory.room_type_new') }}" class="btn-primary">+ New room type</a>
+    </div>
+  </div>
+
+  {% if types %}
+  <table class="inv-table">
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Max occ.</th>
+        <th>Base cap.</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rt in types %}
+      <tr>
+        <td><strong>{{ rt.code }}</strong></td>
+        <td>{{ rt.name }}</td>
+        <td>{{ rt.max_occupancy }}</td>
+        <td>{{ rt.base_capacity }}</td>
+        <td>
+          {% if rt.is_active %}<span class="pill ok">active</span>
+          {% else %}<span class="pill muted">inactive</span>
+          {% endif %}
+        </td>
+        <td class="inv-actions">
+          <a class="btn-secondary" href="{{ url_for('inventory.room_type_edit', rt_id=rt.id) }}">Edit</a>
+          <form method="POST" action="{{ url_for('inventory.room_type_toggle', rt_id=rt.id) }}" style="display:inline;">
+            <button type="submit" class="btn-secondary">{{ 'Deactivate' if rt.is_active else 'Activate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-slate-500">No room types yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

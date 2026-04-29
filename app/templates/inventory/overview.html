@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}Inventory Overview{% endblock %}
+{% block content %}
+<style>
+  .inv-shell { display: flex; flex-direction: column; gap: 14px; }
+  .inv-h1 { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin: 0; }
+  .inv-grid {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  @media (max-width: 700px) { .inv-grid { grid-template-columns: 1fr 1fr; } }
+  .inv-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .inv-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
+  .inv-card .value { font-size: 22px; font-weight: 800; color: #0f172a; }
+  .inv-card a { font-size: 12px; color: #0369a1; }
+
+  table.inv-table {
+    width: 100%; border-collapse: collapse; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+    font-size: 13px;
+  }
+  table.inv-table th, table.inv-table td {
+    padding: 10px 12px; text-align: left; border-bottom: 1px solid #e2e8f0;
+  }
+  table.inv-table tr:last-child td { border-bottom: 0; }
+  table.inv-table th {
+    background: #f8fafc; font-weight: 600; color: #475569;
+    text-transform: uppercase; font-size: 11px; letter-spacing: .04em;
+  }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+  }
+  .pill.ok       { background: #dcfce7; color: #166534; }
+  .pill.warn     { background: #fef3c7; color: #92400e; }
+  .pill.bad      { background: #fee2e2; color: #991b1b; }
+  .pill.muted    { background: #e2e8f0; color: #475569; }
+</style>
+
+<div class="inv-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="inv-h1">Rates &amp; Inventory</h1>
+      <p class="text-xs text-slate-500">Snapshot for {{ today.strftime('%a %b %-d, %Y') }}</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('inventory.room_types_list') }}" class="text-sm text-blue-700 hover:text-blue-900">Manage room types →</a>
+    </div>
+  </div>
+
+  <div class="inv-grid">
+    <div class="inv-card">
+      <span class="label">Room types</span>
+      <span class="value">{{ counts.room_types }}</span>
+      <a href="{{ url_for('inventory.room_types_list') }}">Manage</a>
+    </div>
+    <div class="inv-card">
+      <span class="label">Rate plans</span>
+      <span class="value">{{ counts.rate_plans }}</span>
+      <a href="{{ url_for('inventory.rate_plans_list') }}">Manage</a>
+    </div>
+    <div class="inv-card">
+      <span class="label">Active overrides</span>
+      <span class="value">{{ counts.overrides }}</span>
+      <a href="{{ url_for('inventory.overrides_list') }}">Manage</a>
+    </div>
+    <div class="inv-card">
+      <span class="label">Active restrictions</span>
+      <span class="value">{{ counts.restrictions }}</span>
+      <a href="{{ url_for('inventory.restrictions_list') }}">Manage</a>
+    </div>
+  </div>
+
+  <h2 class="text-sm font-semibold text-slate-700 mt-2">Today's room-type snapshot</h2>
+
+  {% if rows %}
+  <table class="inv-table">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Physical</th>
+        <th>Available today</th>
+        <th>Rate (today)</th>
+        <th>Restrictions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <strong>{{ row.room_type.name }}</strong>
+          <span class="text-xs text-slate-500">· {{ row.room_type.code }}</span>
+        </td>
+        <td>{{ row.physical_count }}</td>
+        <td>
+          {% if row.available > 0 %}
+            <span class="pill ok">{{ row.available }} available</span>
+          {% else %}
+            <span class="pill bad">0 available</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.rate is not none %}
+            ${{ '%.2f'|format(row.rate) }}
+          {% else %}
+            <span class="text-slate-400">no rate</span>
+          {% endif %}
+        </td>
+        <td>
+          {% set e = row.effective %}
+          {% if e.stop_sell %}<span class="pill bad">stop-sell</span>{% endif %}
+          {% if e.closed_to_arrival %}<span class="pill warn">CTA</span>{% endif %}
+          {% if e.closed_to_departure %}<span class="pill warn">CTD</span>{% endif %}
+          {% if e.min_stay %}<span class="pill muted">min {{ e.min_stay }}n</span>{% endif %}
+          {% if e.max_stay %}<span class="pill muted">max {{ e.max_stay }}n</span>{% endif %}
+          {% if not (e.stop_sell or e.closed_to_arrival or e.closed_to_departure or e.min_stay or e.max_stay) %}
+            <span class="text-slate-400 text-xs">none</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="text-sm text-slate-500">No room types yet. <a class="text-blue-700" href="{{ url_for('inventory.room_type_new') }}">Create one</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

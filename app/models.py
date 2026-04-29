@@ -35,7 +35,16 @@ class Room(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     number = db.Column(db.String(10), unique=True, nullable=False)
     name = db.Column(db.String(100))
-    room_type = db.Column(db.String(50), nullable=False)  # single, double, suite, etc.
+    # Legacy free-text column. Kept for backwards compat with existing
+    # templates / queries. The Rates & Inventory V1 migration backfills
+    # `room_type_id` (FK below) from the distinct values found here.
+    room_type = db.Column(db.String(50), nullable=False)
+    # Rates & Inventory V1 — optional FK to room_types catalog row.
+    # Nullable for now so booking flows can ignore it until migrated.
+    room_type_id = db.Column(
+        db.Integer, db.ForeignKey('room_types.id', ondelete='SET NULL'),
+        nullable=True,
+    )
     floor = db.Column(db.Integer, default=1)
     capacity = db.Column(db.Integer, default=1)
     price_per_night = db.Column(db.Float, nullable=False)
@@ -71,6 +80,10 @@ class Room(db.Model):
         'User', foreign_keys=[housekeeping_updated_by_user_id])
 
     bookings = db.relationship('Booking', backref='room', lazy='dynamic')
+    type_ref = db.relationship(
+        'RoomType', foreign_keys=[room_type_id],
+        backref=db.backref('rooms', lazy='dynamic'),
+    )
 
     def __repr__(self):
         return f'<Room {self.number}>'
@@ -754,3 +767,162 @@ class NightAuditRun(db.Model):
         return (f'<NightAuditRun id={self.id} '
                 f'closed={self.business_date_closed} → {self.next_business_date} '
                 f'status={self.status}>')
+
+
+# ── Rates & Inventory V1 ────────────────────────────────────────────
+#
+# Lightweight room-type catalog + rate plans + dated overrides +
+# per-day restrictions. Designed to be ADDITIVE — existing booking
+# flows continue to read Room.room_type (string) and Room.price_per_night
+# unchanged. The new layer exposes optional helpers that booking code
+# can adopt later without forcing migration of legacy data.
+#
+# See docs/accounts_business_date_night_audit_plan.md for the broader
+# operational context. Channel manager / OTA sync / booking engine are
+# explicitly out of V1 scope.
+
+
+class RoomType(db.Model):
+    """Catalog row for a sellable room category (Deluxe, Twin, etc.).
+
+    Existing Room rows carry a free-text `room_type` string. The
+    Rates & Inventory V1 migration backfills this table from the
+    distinct existing strings and links Room.room_type_id. New rooms
+    should reference room_type_id; the legacy string column is kept
+    for backwards-compat templates and gradually phased out.
+    """
+    __tablename__ = 'room_types'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    code        = db.Column(db.String(20), unique=True, nullable=False)
+    name        = db.Column(db.String(100), nullable=False)
+    max_occupancy = db.Column(db.Integer, nullable=False, default=2)
+    base_capacity = db.Column(db.Integer, nullable=False, default=2)
+    description = db.Column(db.Text)
+    is_active   = db.Column(db.Boolean, nullable=False, default=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    rate_plans   = db.relationship('RatePlan', backref='room_type',
+                                   lazy='dynamic')
+    overrides    = db.relationship('RateOverride', backref='room_type',
+                                   lazy='dynamic')
+    restrictions = db.relationship('RateRestriction', backref='room_type',
+                                   lazy='dynamic')
+
+    def __repr__(self):
+        return f'<RoomType {self.code}: {self.name}>'
+
+
+class RatePlan(db.Model):
+    """A sellable rate plan attached to a RoomType.
+
+    base_rate is the property-default nightly price for this plan; date
+    overrides (RateOverride) supersede it on specific date ranges. V1
+    keeps currency at the property level (no FX); set via env or the
+    `currency` column for explicit display.
+    """
+    __tablename__ = 'rate_plans'
+
+    id           = db.Column(db.Integer, primary_key=True)
+    code         = db.Column(db.String(30), unique=True, nullable=False)
+    name         = db.Column(db.String(100), nullable=False)
+    room_type_id = db.Column(
+        db.Integer, db.ForeignKey('room_types.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    base_rate    = db.Column(db.Float, nullable=False, default=0.0)
+    currency     = db.Column(db.String(8), nullable=False, default='USD')
+    is_refundable = db.Column(db.Boolean, nullable=False, default=True)
+    is_active    = db.Column(db.Boolean, nullable=False, default=True)
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow,
+                             nullable=False)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow,
+                             onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f'<RatePlan {self.code} rate={self.base_rate}>'
+
+
+class RateOverride(db.Model):
+    """Date-range nightly-rate override for a RoomType (and optional plan).
+
+    On any given night the effective rate is computed as:
+
+        most-recently-created active override whose [start, end] covers
+        the date AND scope (room_type_id, optional rate_plan_id)
+        → falls back to RatePlan.base_rate
+        → falls back to property default (Room.price_per_night for now)
+
+    end_date is INCLUSIVE — an override with start=2026-06-01 end=2026-06-07
+    applies to seven nights.
+    """
+    __tablename__ = 'rate_overrides'
+
+    id           = db.Column(db.Integer, primary_key=True)
+    room_type_id = db.Column(
+        db.Integer, db.ForeignKey('room_types.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    rate_plan_id = db.Column(
+        db.Integer, db.ForeignKey('rate_plans.id', ondelete='CASCADE'),
+        nullable=True,
+    )
+    start_date   = db.Column(db.Date, nullable=False)
+    end_date     = db.Column(db.Date, nullable=False)
+    nightly_rate = db.Column(db.Float, nullable=False)
+    is_active    = db.Column(db.Boolean, nullable=False, default=True)
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow,
+                             nullable=False)
+
+    rate_plan = db.relationship('RatePlan', foreign_keys=[rate_plan_id])
+
+    def covers(self, d):
+        return self.start_date <= d <= self.end_date
+
+    def __repr__(self):
+        return (f'<RateOverride rt={self.room_type_id} '
+                f'{self.start_date}→{self.end_date} @{self.nightly_rate}>')
+
+
+class RateRestriction(db.Model):
+    """Per-room-type restrictions over a date range.
+
+    All four flags + min/max stay are nullable / optional. A row with
+    only `stop_sell=True` is the simplest shape — it blocks new
+    availability for that room type on those dates. Mixing flags on a
+    single row is fine; multiple overlapping rows compose with the
+    most-restrictive value winning (see services/inventory.py).
+    """
+    __tablename__ = 'rate_restrictions'
+
+    id           = db.Column(db.Integer, primary_key=True)
+    room_type_id = db.Column(
+        db.Integer, db.ForeignKey('room_types.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    start_date   = db.Column(db.Date, nullable=False)
+    end_date     = db.Column(db.Date, nullable=False)
+
+    min_stay     = db.Column(db.Integer, nullable=True)
+    max_stay     = db.Column(db.Integer, nullable=True)
+    closed_to_arrival   = db.Column(db.Boolean, nullable=False, default=False)
+    closed_to_departure = db.Column(db.Boolean, nullable=False, default=False)
+    stop_sell    = db.Column(db.Boolean, nullable=False, default=False)
+    is_active    = db.Column(db.Boolean, nullable=False, default=True)
+
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow,
+                             nullable=False)
+
+    def covers(self, d):
+        return self.start_date <= d <= self.end_date
+
+    def __repr__(self):
+        return (f'<RateRestriction rt={self.room_type_id} '
+                f'{self.start_date}→{self.end_date} '
+                f'stop_sell={self.stop_sell}>')

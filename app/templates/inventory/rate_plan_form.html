@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Rate Plan' if plan else 'New Rate Plan' }}{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <h1 class="inv-h1">{{ 'Edit ' + plan.code if plan else 'New rate plan' }}</h1>
+
+  <form method="POST" class="inv-form">
+    {% if not plan %}
+    <div>
+      <label for="code">Plan code *</label>
+      <input type="text" id="code" name="code" maxlength="30"
+             value="{{ form.get('code', '') }}" required>
+    </div>
+    {% else %}
+    <div>
+      <label>Code (immutable)</label>
+      <input type="text" disabled value="{{ plan.code }}">
+    </div>
+    {% endif %}
+
+    <div>
+      <label for="name">Name *</label>
+      <input type="text" id="name" name="name" maxlength="100"
+             value="{{ plan.name if plan else form.get('name', '') }}" required>
+    </div>
+
+    {% if not plan %}
+    <div>
+      <label for="room_type_id">Room type *</label>
+      <select id="room_type_id" name="room_type_id" required>
+        <option value="">— select —</option>
+        {% for rt in types %}
+        <option value="{{ rt.id }}" {% if form.get('room_type_id')|string == rt.id|string %}selected{% endif %}>{{ rt.name }} ({{ rt.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% else %}
+    <div>
+      <label>Room type (immutable)</label>
+      <input type="text" disabled value="{{ plan.room_type.name if plan.room_type else '—' }}">
+    </div>
+    {% endif %}
+
+    <div class="row">
+      <div>
+        <label for="base_rate">Base nightly rate *</label>
+        <input type="number" step="0.01" min="0" id="base_rate" name="base_rate"
+               value="{{ plan.base_rate if plan else form.get('base_rate', '') }}" required>
+      </div>
+      <div>
+        <label for="currency">Currency</label>
+        <input type="text" id="currency" name="currency" maxlength="8"
+               value="{{ plan.currency if plan else form.get('currency', 'USD') }}">
+      </div>
+    </div>
+
+    <div class="checks">
+      <label><input type="checkbox" name="is_refundable" value="1" {% if not plan or plan.is_refundable %}checked{% endif %}> Refundable</label>
+      {% if plan %}
+      <label><input type="checkbox" name="is_active" value="1" {% if plan.is_active %}checked{% endif %}> Active</label>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3" maxlength="1000">{{ plan.notes if plan else form.get('notes', '') }}</textarea>
+    </div>
+
+    <div class="inv-actions">
+      <button type="submit" class="btn-primary">{{ 'Save' if plan else 'Create' }}</button>
+      <a class="btn-secondary" href="{{ url_for('inventory.rate_plans_list') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Restriction' if restriction else 'New Restriction' }}{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <h1 class="inv-h1">{{ 'Edit restriction #' + restriction.id|string if restriction else 'New restriction' }}</h1>
+
+  <form method="POST" class="inv-form">
+    {% if not restriction %}
+    <div>
+      <label for="room_type_id">Room type *</label>
+      <select id="room_type_id" name="room_type_id" required>
+        <option value="">— select —</option>
+        {% for rt in types %}
+        <option value="{{ rt.id }}" {% if form.get('room_type_id')|string == rt.id|string %}selected{% endif %}>{{ rt.name }} ({{ rt.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="row">
+      <div>
+        <label for="start_date">Start date *</label>
+        <input type="date" id="start_date" name="start_date"
+               value="{{ restriction.start_date if restriction else form.get('start_date', '') }}" required>
+      </div>
+      <div>
+        <label for="end_date">End date * (inclusive)</label>
+        <input type="date" id="end_date" name="end_date"
+               value="{{ restriction.end_date if restriction else form.get('end_date', '') }}" required>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="min_stay">Min stay (nights)</label>
+        <input type="number" id="min_stay" name="min_stay" min="1"
+               value="{{ restriction.min_stay if restriction and restriction.min_stay else form.get('min_stay', '') }}">
+      </div>
+      <div>
+        <label for="max_stay">Max stay (nights)</label>
+        <input type="number" id="max_stay" name="max_stay" min="1"
+               value="{{ restriction.max_stay if restriction and restriction.max_stay else form.get('max_stay', '') }}">
+      </div>
+    </div>
+
+    <div class="checks">
+      <label><input type="checkbox" name="stop_sell" value="1" {% if restriction and restriction.stop_sell %}checked{% endif %}> Stop sell</label>
+      <label><input type="checkbox" name="closed_to_arrival" value="1" {% if restriction and restriction.closed_to_arrival %}checked{% endif %}> Closed to arrival</label>
+      <label><input type="checkbox" name="closed_to_departure" value="1" {% if restriction and restriction.closed_to_departure %}checked{% endif %}> Closed to departure</label>
+      {% if restriction %}
+      <label><input type="checkbox" name="is_active" value="1" {% if restriction.is_active %}checked{% endif %}> Active</label>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="2" maxlength="1000">{{ restriction.notes if restriction else form.get('notes', '') }}</textarea>
+    </div>
+
+    <div class="inv-actions">
+      <button type="submit" class="btn-primary">{{ 'Save' if restriction else 'Create' }}</button>
+      <a class="btn-secondary" href="{{ url_for('inventory.restrictions_list') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

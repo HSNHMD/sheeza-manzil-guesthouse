@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Rate Overrides{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="inv-h1">Rate Overrides</h1>
+      <p class="text-xs text-slate-500">{{ overrides|length }} override{{ 's' if overrides|length != 1 else '' }}.</p>
+    </div>
+    <div class="inv-actions">
+      <a href="{{ url_for('inventory.overview') }}" class="btn-secondary">← Inventory</a>
+      <a href="{{ url_for('inventory.override_new') }}" class="btn-primary">+ New override</a>
+    </div>
+  </div>
+
+  {% if overrides %}
+  <table class="inv-table">
+    <thead>
+      <tr>
+        <th>Room type</th>
+        <th>Plan</th>
+        <th>Dates</th>
+        <th>Nightly rate</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ov in overrides %}
+      <tr>
+        <td>{{ types[ov.room_type_id].name if types[ov.room_type_id] else '—' }}</td>
+        <td>{% if ov.rate_plan_id and plans[ov.rate_plan_id] %}<span class="pill info">{{ plans[ov.rate_plan_id].code }}</span>{% else %}<span class="pill muted">type-wide</span>{% endif %}</td>
+        <td>{{ ov.start_date }} → {{ ov.end_date }}</td>
+        <td>${{ '%.2f'|format(ov.nightly_rate) }}</td>
+        <td>{% if ov.is_active %}<span class="pill ok">active</span>{% else %}<span class="pill muted">inactive</span>{% endif %}</td>
+        <td class="inv-actions">
+          <a class="btn-secondary" href="{{ url_for('inventory.override_edit', ov_id=ov.id) }}">Edit</a>
+          <form method="POST" action="{{ url_for('inventory.override_toggle', ov_id=ov.id) }}" style="display:inline;">
+            <button type="submit" class="btn-secondary">{{ 'Deactivate' if ov.is_active else 'Activate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-slate-500">No overrides yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

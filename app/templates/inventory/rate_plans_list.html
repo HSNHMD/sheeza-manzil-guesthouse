@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}Rate Plans{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="inv-h1">Rate Plans</h1>
+      <p class="text-xs text-slate-500">{{ plans|length }} plan{{ 's' if plans|length != 1 else '' }}.</p>
+    </div>
+    <div class="inv-actions">
+      <a href="{{ url_for('inventory.overview') }}" class="btn-secondary">← Inventory</a>
+      <a href="{{ url_for('inventory.rate_plan_new') }}" class="btn-primary">+ New rate plan</a>
+    </div>
+  </div>
+
+  {% if plans %}
+  <table class="inv-table">
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Room type</th>
+        <th>Base rate</th>
+        <th>Refundable</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in plans %}
+      <tr>
+        <td><strong>{{ p.code }}</strong></td>
+        <td>{{ p.name }}</td>
+        <td>{{ p.room_type.name if p.room_type else '—' }}</td>
+        <td>{{ p.currency }} {{ '%.2f'|format(p.base_rate) }}</td>
+        <td>{% if p.is_refundable %}<span class="pill ok">yes</span>{% else %}<span class="pill muted">no</span>{% endif %}</td>
+        <td>{% if p.is_active %}<span class="pill ok">active</span>{% else %}<span class="pill muted">inactive</span>{% endif %}</td>
+        <td class="inv-actions">
+          <a class="btn-secondary" href="{{ url_for('inventory.rate_plan_edit', plan_id=p.id) }}">Edit</a>
+          <form method="POST" action="{{ url_for('inventory.rate_plan_toggle', plan_id=p.id) }}" style="display:inline;">
+            <button type="submit" class="btn-secondary">{{ 'Deactivate' if p.is_active else 'Activate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-slate-500">No rate plans yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Restrictions{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="inv-h1">Restrictions</h1>
+      <p class="text-xs text-slate-500">{{ restrictions|length }} restriction{{ 's' if restrictions|length != 1 else '' }}.</p>
+    </div>
+    <div class="inv-actions">
+      <a href="{{ url_for('inventory.overview') }}" class="btn-secondary">← Inventory</a>
+      <a href="{{ url_for('inventory.restriction_new') }}" class="btn-primary">+ New restriction</a>
+    </div>
+  </div>
+
+  {% if restrictions %}
+  <table class="inv-table">
+    <thead>
+      <tr>
+        <th>Room type</th>
+        <th>Dates</th>
+        <th>Min stay</th>
+        <th>Max stay</th>
+        <th>Flags</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in restrictions %}
+      <tr>
+        <td>{{ types[r.room_type_id].name if types[r.room_type_id] else '—' }}</td>
+        <td>{{ r.start_date }} → {{ r.end_date }}</td>
+        <td>{{ r.min_stay or '—' }}</td>
+        <td>{{ r.max_stay or '—' }}</td>
+        <td>
+          {% if r.stop_sell %}<span class="pill bad">stop-sell</span>{% endif %}
+          {% if r.closed_to_arrival %}<span class="pill warn">CTA</span>{% endif %}
+          {% if r.closed_to_departure %}<span class="pill warn">CTD</span>{% endif %}
+          {% if not (r.stop_sell or r.closed_to_arrival or r.closed_to_departure) %}<span class="text-slate-400 text-xs">—</span>{% endif %}
+        </td>
+        <td>{% if r.is_active %}<span class="pill ok">active</span>{% else %}<span class="pill muted">inactive</span>{% endif %}</td>
+        <td class="inv-actions">
+          <a class="btn-secondary" href="{{ url_for('inventory.restriction_edit', r_id=r.id) }}">Edit</a>
+          <form method="POST" action="{{ url_for('inventory.restriction_toggle', r_id=r.id) }}" style="display:inline;">
+            <button type="submit" class="btn-secondary">{{ 'Deactivate' if r.is_active else 'Activate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-slate-500">No restrictions yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Room Type' if rt else 'New Room Type' }}{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <h1 class="inv-h1">{{ 'Edit room type ' + rt.code if rt else 'New room type' }}</h1>
+
+  <form method="POST" class="inv-form">
+    {% if not rt %}
+    <div>
+      <label for="code">Code (short, A-Z/0-9 only) *</label>
+      <input type="text" id="code" name="code" maxlength="20"
+             value="{{ form.get('code', '') }}" required style="text-transform: uppercase;">
+    </div>
+    {% else %}
+    <div>
+      <label>Code (immutable)</label>
+      <input type="text" disabled value="{{ rt.code }}">
+    </div>
+    {% endif %}
+
+    <div>
+      <label for="name">Name *</label>
+      <input type="text" id="name" name="name" maxlength="100"
+             value="{{ rt.name if rt else form.get('name', '') }}" required>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="max_occupancy">Max occupancy *</label>
+        <input type="number" id="max_occupancy" name="max_occupancy" min="1"
+               value="{{ rt.max_occupancy if rt else form.get('max_occupancy', 2) }}">
+      </div>
+      <div>
+        <label for="base_capacity">Base capacity *</label>
+        <input type="number" id="base_capacity" name="base_capacity" min="1"
+               value="{{ rt.base_capacity if rt else form.get('base_capacity', 2) }}">
+      </div>
+    </div>
+
+    <div>
+      <label for="description">Description</label>
+      <textarea id="description" name="description" rows="3" maxlength="1000">{{ rt.description if rt else form.get('description', '') }}</textarea>
+    </div>
+
+    {% if rt %}
+    <div class="checks">
+      <label><input type="checkbox" name="is_active" value="1" {% if rt.is_active %}checked{% endif %}> Active</label>
+    </div>
+    {% endif %}
+
+    <div class="inv-actions">
+      <button type="submit" class="btn-primary">{{ 'Save' if rt else 'Create' }}</button>
+      <a class="btn-secondary" href="{{ url_for('inventory.room_types_list') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

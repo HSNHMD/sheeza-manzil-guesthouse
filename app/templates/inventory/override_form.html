@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Override' if override else 'New Rate Override' }}{% endblock %}
+{% block content %}
+{% include 'inventory/_styles.html' %}
+
+<div class="inv-shell">
+  <h1 class="inv-h1">{{ 'Edit override #' + override.id|string if override else 'New rate override' }}</h1>
+
+  <form method="POST" class="inv-form">
+    {% if not override %}
+    <div>
+      <label for="room_type_id">Room type *</label>
+      <select id="room_type_id" name="room_type_id" required>
+        <option value="">— select —</option>
+        {% for rt in types %}
+        <option value="{{ rt.id }}" {% if form.get('room_type_id')|string == rt.id|string %}selected{% endif %}>{{ rt.name }} ({{ rt.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="rate_plan_id">Rate plan (optional — type-wide if blank)</label>
+      <select id="rate_plan_id" name="rate_plan_id">
+        <option value="">— type-wide —</option>
+        {% for p in plans %}
+        <option value="{{ p.id }}" {% if form.get('rate_plan_id')|string == p.id|string %}selected{% endif %}>{{ p.code }} — {{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="row">
+      <div>
+        <label for="start_date">Start date *</label>
+        <input type="date" id="start_date" name="start_date"
+               value="{{ override.start_date if override else form.get('start_date', '') }}" required>
+      </div>
+      <div>
+        <label for="end_date">End date * (inclusive)</label>
+        <input type="date" id="end_date" name="end_date"
+               value="{{ override.end_date if override else form.get('end_date', '') }}" required>
+      </div>
+    </div>
+
+    <div>
+      <label for="nightly_rate">Nightly rate *</label>
+      <input type="number" id="nightly_rate" name="nightly_rate" step="0.01" min="0"
+             value="{{ override.nightly_rate if override else form.get('nightly_rate', '') }}" required>
+    </div>
+
+    {% if override %}
+    <div class="checks">
+      <label><input type="checkbox" name="is_active" value="1" {% if override.is_active %}checked{% endif %}> Active</label>
+    </div>
+    {% endif %}
+
+    <div>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="2" maxlength="1000">{{ override.notes if override else form.get('notes', '') }}</textarea>
+    </div>
+
+    <div class="inv-actions">
+      <button type="submit" class="btn-primary">{{ 'Save' if override else 'Create' }}</button>
+      <a class="btn-secondary" href="{{ url_for('inventory.overrides_list') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
