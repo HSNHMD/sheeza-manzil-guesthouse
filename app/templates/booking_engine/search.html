@@ -1,0 +1,68 @@
+{% extends 'public/base.html' %}
+{% block title %}Book a stay — {{ brand.name }}{% endblock %}
+
+{% block content %}
+<style>
+  .be-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:20px; }
+  .be-h1 { font-size: 1.4rem; font-weight: 700; color: #0f172a; margin: 0 0 6px; }
+  .be-sub { color: #64748b; font-size: 13px; margin-bottom: 16px; }
+  .be-row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 540px) { .be-row { grid-template-columns: 1fr; } }
+  .be-label { font-size: 12px; font-weight: 600; color: #475569; display:block; margin-bottom: 4px; }
+  .be-input {
+    width:100%; padding: 11px 12px; border-radius: 10px; min-height: 44px;
+    border: 1px solid #cbd5e1; font-size: 15px; background:#fff;
+  }
+  .be-cta {
+    background:{{ brand.primary_color or '#0f766e' }}; color:#fff; border:0;
+    width: 100%; padding: 14px 16px; border-radius: 12px;
+    font-weight: 700; font-size: 15px; min-height: 50px;
+    margin-top: 16px; cursor: pointer;
+  }
+  .be-cta:active { transform: scale(.99); }
+  .be-flash { padding: 10px 12px; border-radius: 10px; margin-bottom: 12px;
+              font-size: 13px; }
+  .be-flash.error { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+</style>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    <div class="be-flash {{ cat }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="be-card">
+  <h1 class="be-h1">Book your stay</h1>
+  <p class="be-sub">Choose your dates and guest count, then see what's available.</p>
+
+  <form method="GET" action="{{ url_for('booking_engine.results') }}">
+    <div class="be-row">
+      <div>
+        <label class="be-label" for="check_in">Check-in</label>
+        <input class="be-input" type="date" id="check_in" name="check_in"
+               min="{{ today_iso }}"
+               value="{{ prefill.check_in }}" required>
+      </div>
+      <div>
+        <label class="be-label" for="check_out">Check-out</label>
+        <input class="be-input" type="date" id="check_out" name="check_out"
+               min="{{ tomorrow_iso }}"
+               value="{{ prefill.check_out }}" required>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;">
+      <label class="be-label" for="guests">Guests</label>
+      <select class="be-input" id="guests" name="guests">
+        {% for n in [1,2,3,4,5,6] %}
+          <option value="{{ n }}" {% if prefill.guests|string == n|string %}selected{% endif %}>
+            {{ n }} guest{{ 's' if n != 1 else '' }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit" class="be-cta">Search availability</button>
+  </form>
+</div>
+{% endblock %}

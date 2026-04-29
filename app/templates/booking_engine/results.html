@@ -1,0 +1,128 @@
+{% extends 'public/base.html' %}
+{% block title %}Available rooms — {{ brand.name }}{% endblock %}
+
+{% block content %}
+<style>
+  .be-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:18px;
+             margin-bottom: 12px; }
+  .be-h1 { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
+  .be-sub { color: #64748b; font-size: 13px; margin-bottom: 12px; }
+  .be-rt {
+    display: flex; flex-direction: column; gap: 10px;
+    background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .be-rt-name { font-size: 1rem; font-weight: 700; color:#0f172a; }
+  .be-rt-meta { font-size: 12.5px; color:#64748b; }
+  .be-rt-price { font-size: 1.6rem; font-weight: 800; color:#0f172a;
+                 letter-spacing: -.01em; }
+  .be-rt-price small { font-size: 12px; font-weight: 600; color:#64748b; margin-left:2px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.ok   { background:#dcfce7; color:#166534; }
+  .pill.warn { background:#fef3c7; color:#92400e; }
+  .pill.bad  { background:#fee2e2; color:#991b1b; }
+  .pill.muted { background:#e2e8f0; color:#475569; }
+  .be-cta {
+    background:{{ brand.primary_color or '#0f766e' }}; color:#fff; border:0;
+    width: 100%; padding: 14px 16px; border-radius: 12px;
+    font-weight: 700; font-size: 15px; min-height: 50px;
+    text-align:center; text-decoration:none; display:block;
+  }
+  .be-cta-disabled {
+    background:#e2e8f0; color:#94a3b8; border:0;
+    width: 100%; padding: 14px 16px; border-radius: 12px;
+    font-weight: 700; font-size: 15px; min-height: 50px;
+    text-align:center; cursor:not-allowed; display:block;
+  }
+  .be-flash { padding: 10px 12px; border-radius: 10px; margin-bottom: 12px;
+              font-size: 13px; }
+  .be-flash.error { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+  .be-back { color:#0369a1; font-size: 13px; text-decoration:none; }
+  details { font-size: 12.5px; color:#475569; }
+  details summary { cursor: pointer; color: #0369a1; font-weight: 600; }
+  details > ul { padding: 8px 0 4px 18px; }
+</style>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    <div class="be-flash {{ cat }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="be-card">
+  <h1 class="be-h1">Available rooms</h1>
+  <p class="be-sub">
+    {{ check_in.strftime('%a, %b %-d') }} → {{ check_out.strftime('%a, %b %-d') }}
+    · {{ nights }} night{{ 's' if nights != 1 else '' }}
+    · {{ guests }} guest{{ 's' if guests != 1 else '' }}
+  </p>
+  <a class="be-back" href="{{ url_for('booking_engine.search_form',
+       check_in=check_in.isoformat(), check_out=check_out.isoformat(), guests=guests) }}">← Change search</a>
+</div>
+
+{% if not options %}
+  <div class="be-card">
+    <p>No room types match this search. Try different dates or fewer guests.</p>
+  </div>
+{% endif %}
+
+{% for opt in options %}
+  <div class="be-rt">
+    <div class="flex justify-between items-start gap-3">
+      <div>
+        <div class="be-rt-name">{{ opt.room_type_name }}</div>
+        <div class="be-rt-meta">
+          {{ opt.room_type_code }} · sleeps up to {{ opt.max_occupancy }}
+          {% if opt.rate_plan_name %} · {{ opt.rate_plan_name }}{% endif %}
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div class="be-rt-price">
+          {{ opt.currency }} {{ '%.2f'|format(opt.subtotal) }}
+          <small>total</small>
+        </div>
+        <div class="be-rt-meta">
+          {{ opt.currency }} {{ '%.2f'|format(opt.subtotal / opt.nights) if opt.nights else 0 }} / night avg
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap gap-1">
+      {% if opt.bookable %}
+        <span class="pill ok">{{ opt.available }} room{{ 's' if opt.available != 1 else '' }} available</span>
+      {% else %}
+        <span class="pill bad">Not bookable</span>
+      {% endif %}
+      {% if opt.refundable %}
+        <span class="pill muted">refundable</span>
+      {% else %}
+        <span class="pill warn">non-refundable</span>
+      {% endif %}
+    </div>
+
+    <details>
+      <summary>Nightly breakdown</summary>
+      <ul>
+        {% for n in opt.nightly_breakdown %}
+          <li>{{ n.date.strftime('%a, %b %-d') }} — {{ opt.currency }} {{ '%.2f'|format(n.rate) }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    {% if not opt.bookable %}
+      <div class="be-cta-disabled">Unavailable</div>
+      {% if opt.reasons %}
+      <details>
+        <summary style="color:#991b1b;">Why?</summary>
+        <ul>{% for r in opt.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+    {% else %}
+      <a class="be-cta" href="{{ url_for('booking_engine.select',
+            room_type_id=opt.room_type_id, rate_plan_id=opt.rate_plan_id,
+            check_in=check_in.isoformat(), check_out=check_out.isoformat(),
+            guests=guests) }}">Continue with {{ opt.room_type_name }}</a>
+    {% endif %}
+  </div>
+{% endfor %}
+{% endblock %}

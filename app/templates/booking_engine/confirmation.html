@@ -1,0 +1,70 @@
+{% extends 'public/base.html' %}
+{% block title %}Reservation received — {{ brand.name }}{% endblock %}
+
+{% block content %}
+<style>
+  .be-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+             padding:18px; margin-bottom: 12px; }
+  .be-h1 { font-size: 1.3rem; font-weight: 800; color: #0f172a; margin: 0 0 6px; }
+  .be-sub { color: #64748b; font-size: 13.5px; margin-bottom: 8px; }
+  .be-ref {
+    background:#ecfdf5; border:1px solid #6ee7b7; border-radius:10px;
+    padding: 10px 14px; font-size: 14px; color:#065f46;
+    display:inline-block; font-weight: 700; letter-spacing: .04em;
+  }
+  .be-summary {
+    background:#f8fafc; border:1px dashed #cbd5e1; border-radius:12px;
+    padding: 12px; font-size: 13px; color:#475569; margin: 10px 0;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .be-summary .total {
+    color:#0f172a; font-weight:800; font-size:17px; margin-top: 6px;
+    border-top: 1px solid #e2e8f0; padding-top: 8px;
+  }
+  .be-pay {
+    background:#fffbeb; border:1px solid #fcd34d; border-radius:12px;
+    padding: 14px; color:#78350f; font-size: 13.5px; margin-top: 8px;
+  }
+  .be-pay h3 { font-weight: 800; margin: 0 0 6px; color: #78350f; }
+  .be-pay code { background:#fff; padding: 1px 6px; border-radius: 4px;
+                 font-size: 12.5px; color:#0f172a; }
+</style>
+
+<div class="be-card">
+  <h1 class="be-h1">Reservation request received ✓</h1>
+  <p class="be-sub">Thank you, {{ booking.guest.first_name }}. Your booking is held as <em>pending payment</em>.</p>
+  <span class="be-ref">REF · {{ booking.booking_ref }}</span>
+
+  <div class="be-summary">
+    <div><strong>{{ booking.room.room_type }}</strong> — Room #{{ booking.room.number }}</div>
+    <div>{{ booking.check_in_date.strftime('%a, %b %-d, %Y') }}
+         → {{ booking.check_out_date.strftime('%a, %b %-d, %Y') }}
+         · {{ (booking.check_out_date - booking.check_in_date).days }} night{{ 's' if (booking.check_out_date - booking.check_in_date).days != 1 else '' }}
+         · {{ booking.num_guests }} guest{{ 's' if booking.num_guests != 1 else '' }}</div>
+    <div class="total">Total: USD {{ '%.2f'|format(booking.total_amount) }}</div>
+  </div>
+
+  <div class="be-pay">
+    <h3>How to confirm your booking</h3>
+    <p>Please transfer the booking total to our account and reply with the payment reference. We'll mark your booking as confirmed within a few hours.</p>
+    <ul style="margin-top:6px; padding-left:18px;">
+      <li>Bank: BML (Bank of Maldives)</li>
+      <li>Account: <code>{{ brand.bank_account or '7770-000000-001' }}</code></li>
+      <li>Account name: {{ brand.name }}</li>
+      <li>Reference: <code>{{ booking.booking_ref }}</code></li>
+    </ul>
+    <p style="margin-top:8px;">
+      Or contact us on WhatsApp at <strong>{{ brand.contact_phone or '+960 737 5797' }}</strong>
+      with your booking ref to arrange payment.
+    </p>
+  </div>
+</div>
+
+<div class="be-card" style="text-align:center;">
+  <p class="be-sub">Need to make another booking?</p>
+  <a href="{{ url_for('booking_engine.search_form') }}"
+     style="color:{{ brand.primary_color or '#0f766e' }}; font-weight:700;">
+    ← Search again
+  </a>
+</div>
+{% endblock %}

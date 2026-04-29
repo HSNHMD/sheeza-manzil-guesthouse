@@ -1,0 +1,112 @@
+{% extends 'public/base.html' %}
+{% block title %}Guest details — {{ brand.name }}{% endblock %}
+
+{% block content %}
+<style>
+  .be-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+             padding:18px; margin-bottom: 12px; }
+  .be-h1 { font-size: 1.2rem; font-weight: 700; color: #0f172a; margin: 0 0 10px; }
+  .be-sub { color: #64748b; font-size: 13px; margin-bottom: 6px; }
+  .be-summary {
+    background:#f8fafc; border:1px dashed #cbd5e1; border-radius:12px;
+    padding: 12px; font-size: 13px; color:#475569; margin-bottom: 14px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .be-summary .total {
+    color:#0f172a; font-weight:800; font-size:18px; margin-top: 6px;
+    border-top: 1px solid #e2e8f0; padding-top: 8px;
+  }
+  .be-row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 540px) { .be-row { grid-template-columns: 1fr; } }
+  .be-label { font-size: 12px; font-weight: 600; color: #475569; display:block; margin-bottom: 4px; }
+  .be-input {
+    width:100%; padding: 11px 12px; border-radius: 10px; min-height: 44px;
+    border: 1px solid #cbd5e1; font-size: 15px; background:#fff;
+  }
+  .be-cta {
+    background:{{ brand.primary_color or '#0f766e' }}; color:#fff; border:0;
+    width: 100%; padding: 14px 16px; border-radius: 12px;
+    font-weight: 700; font-size: 15px; min-height: 50px;
+    margin-top: 14px; cursor: pointer;
+  }
+  .be-back { color:#0369a1; font-size: 13px; text-decoration:none; }
+  .be-flash { padding: 10px 12px; border-radius: 10px; margin-bottom: 12px;
+              font-size: 13px; }
+  .be-flash.error { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+</style>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    <div class="be-flash {{ cat }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="be-card">
+  <h1 class="be-h1">Your stay</h1>
+
+  <div class="be-summary">
+    <div><strong>{{ quote.room_type.name }}</strong> · sleeps up to {{ quote.room_type.max_occupancy }}</div>
+    <div>{{ check_in.strftime('%a, %b %-d') }} → {{ check_out.strftime('%a, %b %-d') }}
+         · {{ quote.nights|length }} night{{ 's' if quote.nights|length != 1 else '' }}
+         · {{ guests }} guest{{ 's' if guests != 1 else '' }}</div>
+    {% if quote.rate_plan %}
+      <div>Plan: {{ quote.rate_plan.name }} ({{ 'refundable' if quote.rate_plan.is_refundable else 'non-refundable' }})</div>
+    {% endif %}
+    <div class="total">Estimated total: {{ quote.currency }} {{ '%.2f'|format(quote.total) }}</div>
+  </div>
+
+  <a class="be-back" href="{{ url_for('booking_engine.results',
+        check_in=check_in.isoformat(), check_out=check_out.isoformat(),
+        guests=guests) }}">← Change room</a>
+</div>
+
+<div class="be-card">
+  <h2 class="be-h1" style="font-size:1rem;">Guest details</h2>
+
+  <form method="POST" action="{{ url_for('booking_engine.confirm') }}">
+    <input type="hidden" name="room_type_id" value="{{ room_type_id }}">
+    {% if rate_plan_id %}<input type="hidden" name="rate_plan_id" value="{{ rate_plan_id }}">{% endif %}
+    <input type="hidden" name="check_in"     value="{{ check_in.isoformat() }}">
+    <input type="hidden" name="check_out"    value="{{ check_out.isoformat() }}">
+    <input type="hidden" name="guests"       value="{{ guests }}">
+
+    <div class="be-row">
+      <div>
+        <label class="be-label" for="first_name">First name *</label>
+        <input class="be-input" type="text" id="first_name" name="first_name" required maxlength="64">
+      </div>
+      <div>
+        <label class="be-label" for="last_name">Last name *</label>
+        <input class="be-input" type="text" id="last_name" name="last_name" required maxlength="64">
+      </div>
+    </div>
+
+    <div class="be-row" style="margin-top:10px;">
+      <div>
+        <label class="be-label" for="phone">Phone *</label>
+        <input class="be-input" type="tel" id="phone" name="phone" required maxlength="20" placeholder="+960...">
+      </div>
+      <div>
+        <label class="be-label" for="email">Email</label>
+        <input class="be-input" type="email" id="email" name="email" maxlength="120">
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label class="be-label" for="nationality">Nationality (optional)</label>
+      <input class="be-input" type="text" id="nationality" name="nationality" maxlength="50">
+    </div>
+
+    <div style="margin-top:10px;">
+      <label class="be-label" for="special_requests">Special requests (optional)</label>
+      <textarea class="be-input" id="special_requests" name="special_requests"
+                rows="2" maxlength="500" style="min-height: 60px;"></textarea>
+    </div>
+
+    <button type="submit" class="be-cta">Confirm reservation request</button>
+    <p class="be-sub" style="margin-top:10px; text-align:center;">
+      You'll receive payment instructions on the next page. Your reservation is held as <em>pending payment</em> until we confirm.
+    </p>
+  </form>
+</div>
+{% endblock %}
