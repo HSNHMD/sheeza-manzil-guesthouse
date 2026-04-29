@@ -451,3 +451,71 @@ class FolioItem(db.Model):
         return (f'<FolioItem id={self.id} booking_id={self.booking_id} '
                 f'type={self.item_type} status={self.status} '
                 f'total={self.total_amount}>')
+
+
+# ── Room blocks (out-of-order / owner-hold periods) ──────────────────
+#
+# A RoomBlock marks a date range during which a room is unavailable
+# for guest bookings. Used for maintenance, deep cleaning, owner holds,
+# or any other "do not place a guest here" reason.
+#
+# Design rules:
+#   - Blocks coexist with the existing Room.status flag. Room.status is
+#     a current-time state ('available' / 'out_of_order' / etc.).
+#     RoomBlock is a date-range record. Both can be present.
+#   - end_date is EXCLUSIVE — same convention as Booking.check_out_date.
+#     A block from 2026-04-30 to 2026-05-02 covers nights for the 30th
+#     and 1st, but the 2nd is free.
+#   - Blocks are NEVER hard-deleted. Removal sets removed_at / removed_by
+#     so the audit trail survives. Active blocks have removed_at IS NULL.
+class RoomBlock(db.Model):
+    __tablename__ = 'room_blocks'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+
+    room_id     = db.Column(db.Integer,
+                            db.ForeignKey('rooms.id', ondelete='CASCADE'),
+                            nullable=False)
+    start_date  = db.Column(db.Date, nullable=False)
+    end_date    = db.Column(db.Date, nullable=False)
+
+    reason      = db.Column(db.String(40), nullable=False, default='maintenance')
+                  # 'maintenance' | 'owner_hold' | 'deep_cleaning' |
+                  # 'damage_repair' | 'other'
+    notes       = db.Column(db.String(500), nullable=True)
+
+    created_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    removed_at  = db.Column(db.DateTime, nullable=True)
+    removed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    room       = db.relationship('Room', foreign_keys=[room_id])
+    created_by = db.relationship('User', foreign_keys=[created_by_user_id])
+    removed_by = db.relationship('User', foreign_keys=[removed_by_user_id])
+
+    __table_args__ = (
+        db.Index('ix_room_blocks_room_dates',
+                 'room_id', 'start_date', 'end_date'),
+        db.Index('ix_room_blocks_active',
+                 'room_id', 'removed_at'),
+    )
+
+    @property
+    def is_active(self) -> bool:
+        return self.removed_at is None
+
+    @property
+    def nights(self) -> int:
+        return (self.end_date - self.start_date).days
+
+    def __repr__(self):
+        return (f'<RoomBlock id={self.id} room_id={self.room_id} '
+                f'{self.start_date}→{self.end_date} reason={self.reason} '
+                f'active={self.is_active}>')

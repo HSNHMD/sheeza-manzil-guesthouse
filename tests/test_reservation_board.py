@@ -313,8 +313,14 @@ class BoardRouteRenderingTests(_RouteBase):
         db.session.commit()
         r = self.client.get('/board?floor=1')
         self.assertEqual(r.status_code, 200)
-        self.assertIn(b'F1-room', r.data)
-        self.assertNotIn(b'G7-room', r.data)
+        # Look only at the board area BEFORE the modal markup. The
+        # "Move room" / "Block room" modals list ALL rooms in their
+        # <select> dropdowns regardless of the floor filter (correct
+        # UX), so the unfiltered room legitimately appears in those
+        # <option> tags later in the document.
+        board_only = r.data.split(b'id="modal-move-room"')[0]
+        self.assertIn(b'F1-room', board_only)
+        self.assertNotIn(b'G7-room', board_only)
 
     def test_search_matches_booking_ref(self):
         room = _seed_room('99')

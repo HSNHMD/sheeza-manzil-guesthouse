@@ -993,3 +993,169 @@ def payment_reject(booking_id):
     )
     flash(f'Payment for {booking.booking_ref} rejected. Booking marked as rejected.', 'warning')
     return redirect(url_for('bookings.detail', booking_id=booking_id))
+
+
+# ── Board operational interactions (Phase A + B) ─────────────────────
+#
+# These routes are reached from the Reservation Board drawer's
+# "Move room…" / "Extend stay…" buttons. They mutate booking.room_id /
+# booking.check_out_date only after validation, with confirm-style
+# server-side checks. Booking status / payment status are NEVER
+# touched. Every change writes an ActivityLog row.
+
+@bookings_bp.route('/<int:booking_id>/move-room', methods=['POST'])
+@login_required
+@admin_required
+def move_room(booking_id):
+    """Move a booking to a different room.
+
+    Form inputs:
+        new_room_id  — required; must exist
+        return_to    — optional; defaults to the board
+
+    Validation:
+      - target room exists
+      - no overlap with other active bookings on the target room
+      - no overlap with an active room block on the target room
+    """
+    from ..services.board_actions import check_booking_room_move_conflict
+
+    booking = Booking.query.get_or_404(booking_id)
+    new_room_id_raw = (request.form.get('new_room_id') or '').strip()
+    return_to = (request.form.get('return_to') or '').strip()
+
+    try:
+        new_room_id = int(new_room_id_raw)
+    except (ValueError, TypeError):
+        flash('Move failed: invalid room.', 'error')
+        return _board_redirect(return_to, booking_id)
+
+    if new_room_id == booking.room_id:
+        flash('Booking is already in that room — nothing to move.', 'info')
+        return _board_redirect(return_to, booking_id)
+
+    new_room = Room.query.get(new_room_id)
+    if new_room is None:
+        flash('Move failed: target room does not exist.', 'error')
+        return _board_redirect(return_to, booking_id)
+
+    conflict = check_booking_room_move_conflict(
+        target_room_id=new_room_id,
+        check_in_date=booking.check_in_date,
+        check_out_date=booking.check_out_date,
+        exclude_booking_id=booking.id,
+    )
+    if conflict is not None:
+        flash(f'Cannot move {booking.booking_ref}: {conflict}.', 'error')
+        return _board_redirect(return_to, booking_id)
+
+    old_room = Room.query.get(booking.room_id)
+    old_room_id = booking.room_id
+    booking.room_id = new_room_id
+
+    log_activity(
+        'booking.room_moved',
+        booking=booking, invoice=booking.invoice,
+        description=(
+            f'Room moved from #{old_room.number if old_room else old_room_id} '
+            f'to #{new_room.number}.'
+        ),
+        metadata={
+            'booking_id':   booking.id,
+            'booking_ref':  booking.booking_ref,
+            'old_room_id':  old_room_id,
+            'new_room_id':  new_room_id,
+            'old_room_num': old_room.number if old_room else None,
+            'new_room_num': new_room.number,
+        },
+    )
+    db.session.commit()
+
+    flash(
+        f'Moved {booking.booking_ref} to room #{new_room.number}.',
+        'success',
+    )
+    return _board_redirect(return_to, booking_id)
+
+
+@bookings_bp.route('/<int:booking_id>/update-stay', methods=['POST'])
+@login_required
+@admin_required
+def update_stay(booking_id):
+    """Extend or shorten a stay by changing the check-out date.
+
+    Form inputs:
+        new_check_out  — required, ISO YYYY-MM-DD
+        return_to      — optional
+
+    Validation:
+      - new check-out parses cleanly
+      - new check-out > existing check-in
+      - no overlap with other active bookings on the SAME room
+      - no overlap with an active room block on the SAME room
+    """
+    from ..services.board_actions import (
+        check_stay_update_conflict, parse_iso_date,
+    )
+
+    booking = Booking.query.get_or_404(booking_id)
+    raw = (request.form.get('new_check_out') or '').strip()
+    return_to = (request.form.get('return_to') or '').strip()
+
+    new_check_out = parse_iso_date(raw)
+    if new_check_out is None:
+        flash('Update failed: please pick a valid date.', 'error')
+        return _board_redirect(return_to, booking_id)
+
+    if new_check_out == booking.check_out_date:
+        flash('Check-out date is unchanged.', 'info')
+        return _board_redirect(return_to, booking_id)
+
+    conflict = check_stay_update_conflict(
+        room_id=booking.room_id,
+        booking_id=booking.id,
+        new_check_in=booking.check_in_date,
+        new_check_out=new_check_out,
+    )
+    if conflict is not None:
+        flash(
+            f'Cannot update stay for {booking.booking_ref}: {conflict}.',
+            'error',
+        )
+        return _board_redirect(return_to, booking_id)
+
+    old_check_out = booking.check_out_date
+    booking.check_out_date = new_check_out
+
+    log_activity(
+        'booking.stay_updated',
+        booking=booking, invoice=booking.invoice,
+        description=(
+            f'Stay updated: check-out {old_check_out} → {new_check_out}.'
+        ),
+        metadata={
+            'booking_id':     booking.id,
+            'booking_ref':    booking.booking_ref,
+            'old_check_out':  old_check_out.isoformat() if old_check_out else None,
+            'new_check_out':  new_check_out.isoformat(),
+            'old_nights':     (old_check_out - booking.check_in_date).days if old_check_out else None,
+            'new_nights':     (new_check_out - booking.check_in_date).days,
+        },
+    )
+    db.session.commit()
+
+    flash(
+        f'Stay for {booking.booking_ref} updated. Check-out now '
+        f'{new_check_out.strftime("%a %b %d")}.',
+        'success',
+    )
+    return _board_redirect(return_to, booking_id)
+
+
+def _board_redirect(return_to, booking_id):
+    """Redirect back to wherever the user came from. Falls back to the
+    booking detail page so admins on staging can verify the change.
+    Only allows internal paths (defends against open-redirect)."""
+    if return_to and return_to.startswith('/') and not return_to.startswith('//'):
+        return redirect(return_to)
+    return redirect(url_for('bookings.detail', booking_id=booking_id))

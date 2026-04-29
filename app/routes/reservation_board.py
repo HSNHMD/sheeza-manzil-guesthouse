@@ -20,7 +20,7 @@ from flask import Blueprint, render_template, request
 from flask_login import login_required
 from sqlalchemy import or_
 
-from ..models import Room, Booking, ActivityLog
+from ..models import Room, Booking, ActivityLog, RoomBlock, db
 from ..decorators import admin_required
 from ..services.board import (
     DEFAULT_VIEW,
@@ -204,6 +204,45 @@ def index():
     for r in rooms:
         bars_by_room[r.id].sort(key=lambda x: x.grid_col_start)
 
+    # ── Active room blocks overlapping the window ──
+    blocks_by_room = {r.id: [] for r in rooms}
+    if room_ids:
+        active_blocks = (
+            RoomBlock.query
+            .filter(
+                RoomBlock.room_id.in_(room_ids),
+                RoomBlock.removed_at.is_(None),
+                RoomBlock.start_date <  end,
+                RoomBlock.end_date   >  start,
+            )
+            .all()
+        )
+        for blk in active_blocks:
+            # Compute grid placement (same convention as bookings)
+            eff_start = max(blk.start_date, start)
+            eff_end   = min(blk.end_date, end)
+            col_start = (eff_start - start).days + 2
+            col_span  = max(1, (eff_end - eff_start).days)
+            blocks_by_room[blk.room_id].append({
+                'id':            blk.id,
+                'reason':        blk.reason,
+                'reason_label': {
+                    'maintenance':   'Maintenance',
+                    'owner_hold':    'Owner hold',
+                    'deep_cleaning': 'Deep cleaning',
+                    'damage_repair': 'Damage repair',
+                    'other':         'Block',
+                }.get(blk.reason, blk.reason or 'Block'),
+                'start_date':    blk.start_date.isoformat(),
+                'end_date':      blk.end_date.isoformat(),
+                'nights':        blk.nights,
+                'notes':         (blk.notes or '')[:140],
+                'cuts_left':     blk.start_date < start,
+                'cuts_right':    blk.end_date   > end,
+                'grid_col_start': col_start,
+                'grid_col_span':  col_span,
+            })
+
     # ── Recent activity (batched) ──
     # Fetch up to ~3 audit rows per booking for the drawer "Recent
     # activity" section. One query covers the whole window.
@@ -304,6 +343,7 @@ def index():
                 'row_n':      row_n,
                 'badge':      badges[r.id],
                 'bars':       bars_by_room.get(r.id, []),
+                'blocks':     blocks_by_room.get(r.id, []),
                 'zebra':      (room_index % 2 == 1),
             })
             row_n += 1
@@ -340,8 +380,19 @@ def index():
         total_body_rows=total_body_rows,
         filter_summary=filter_summary,
         drawer_data=drawer_data,
+        blocks_by_room=blocks_by_room,
         mobile_arrivals=mobile_arrivals,
         mobile_departures=mobile_departures,
+        # Full room list for the move-room modal dropdown
+        all_rooms=Room.query.order_by(Room.floor.asc(),
+                                      Room.number.asc()).all(),
+        block_reasons=(
+            ('maintenance',    'Maintenance'),
+            ('owner_hold',     'Owner hold'),
+            ('deep_cleaning',  'Deep cleaning'),
+            ('damage_repair', 'Damage repair'),
+            ('other',          'Other'),
+        ),
         # Form-state echo
         floor=floor,
         room_type=room_type,
@@ -361,3 +412,147 @@ def index():
             'rejected', 'mismatch',
         ),
     )
+
+
+# ── Phase C: Room blocks (out-of-order / owner-hold periods) ────────
+
+@board_bp.route('/board/rooms/<int:room_id>/blocks', methods=['POST'])
+@login_required
+@admin_required
+def create_block(room_id):
+    """Create a date-ranged room block.
+
+    Form inputs:
+        start_date  — required, ISO YYYY-MM-DD
+        end_date    — required, ISO YYYY-MM-DD (exclusive)
+        reason      — one of ROOM_BLOCK_REASONS slugs
+        notes       — optional, ≤500 chars
+        return_to   — optional internal redirect path
+
+    Validation:
+      - room exists
+      - dates parse cleanly and end > start
+      - no overlap with active bookings on the room
+      - no overlap with other active blocks on the room
+    """
+    from flask import request, redirect, url_for, flash
+    from ..services.audit import log_activity
+    from ..services.board_actions import (
+        check_room_block_conflict, parse_iso_date, ROOM_BLOCK_REASONS,
+    )
+    from flask_login import current_user
+
+    room = Room.query.get_or_404(room_id)
+
+    start_date = parse_iso_date(request.form.get('start_date'))
+    end_date   = parse_iso_date(request.form.get('end_date'))
+    reason     = (request.form.get('reason') or 'maintenance').strip()
+    notes      = (request.form.get('notes') or '').strip() or None
+    return_to  = (request.form.get('return_to') or '').strip()
+
+    if start_date is None or end_date is None:
+        flash('Block failed: please pick both start and end dates.', 'error')
+        return _block_redirect(return_to)
+
+    if reason not in {slug for slug, _ in ROOM_BLOCK_REASONS}:
+        reason = 'maintenance'
+
+    conflict = check_room_block_conflict(
+        room_id=room.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if conflict is not None:
+        flash(
+            f'Cannot block #{room.number}: {conflict}.',
+            'error',
+        )
+        return _block_redirect(return_to)
+
+    block = RoomBlock(
+        room_id=room.id,
+        start_date=start_date,
+        end_date=end_date,
+        reason=reason,
+        notes=notes[:500] if notes else None,
+        created_by_user_id=getattr(current_user, 'id', None),
+    )
+    db.session.add(block)
+    db.session.flush()
+
+    log_activity(
+        'room.block_created',
+        description=(
+            f'Room #{room.number} blocked '
+            f'{start_date} → {end_date} ({reason}).'
+        ),
+        metadata={
+            'room_id':      room.id,
+            'room_number':  room.number,
+            'block_id':     block.id,
+            'start_date':   start_date.isoformat(),
+            'end_date':     end_date.isoformat(),
+            'reason':       reason,
+            'nights':       block.nights,
+        },
+    )
+    db.session.commit()
+
+    flash(
+        f'Room #{room.number} blocked '
+        f'{start_date.strftime("%b %d")} → {end_date.strftime("%b %d")}.',
+        'success',
+    )
+    return _block_redirect(return_to)
+
+
+@board_bp.route('/board/blocks/<int:block_id>/remove', methods=['POST'])
+@login_required
+@admin_required
+def remove_block(block_id):
+    """Soft-remove a room block (sets removed_at + removed_by).
+
+    Voided blocks are excluded from conflict checks but kept for audit.
+    """
+    from flask import request, redirect, url_for, flash
+    from datetime import datetime
+    from ..services.audit import log_activity
+    from flask_login import current_user
+
+    block = RoomBlock.query.get_or_404(block_id)
+    return_to = (request.form.get('return_to') or '').strip()
+
+    if block.removed_at is not None:
+        flash('That block was already removed.', 'info')
+        return _block_redirect(return_to)
+
+    block.removed_at = datetime.utcnow()
+    block.removed_by_user_id = getattr(current_user, 'id', None)
+
+    log_activity(
+        'room.block_removed',
+        description=(
+            f'Block on room #{block.room.number if block.room else block.room_id} '
+            f'({block.start_date} → {block.end_date}) removed.'
+        ),
+        metadata={
+            'room_id':      block.room_id,
+            'room_number':  block.room.number if block.room else None,
+            'block_id':     block.id,
+            'start_date':   block.start_date.isoformat(),
+            'end_date':     block.end_date.isoformat(),
+            'reason':       block.reason,
+        },
+    )
+    db.session.commit()
+
+    flash('Room block removed.', 'success')
+    return _block_redirect(return_to)
+
+
+def _block_redirect(return_to):
+    """Defense-in-depth: only allow internal paths back."""
+    from flask import redirect, url_for
+    if return_to and return_to.startswith('/') and not return_to.startswith('//'):
+        return redirect(return_to)
+    return redirect(url_for('board.index'))
