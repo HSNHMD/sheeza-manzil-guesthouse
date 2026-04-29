@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Order Queue — Online Menu{% endblock %}
+{% block content %}
+<style>
+  .q-shell { display: flex; flex-direction: column; gap: 12px; }
+  .q-h1 { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin: 0; }
+  .q-tabs {
+    display: flex; gap: 4px; flex-wrap: wrap;
+  }
+  .q-tab {
+    padding: 8px 14px; min-height: 38px;
+    border-radius: 999px; border: 1px solid #e2e8f0;
+    background: #fff; color: #475569;
+    font-size: 12.5px; font-weight: 700;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .q-tab .pc {
+    background: #f1f5f9; color: #475569;
+    border-radius: 999px; padding: 1px 8px; font-size: 11px;
+  }
+  .q-tab.is-active { background: #0f766e; color: #fff; border-color: #0f766e; }
+  .q-tab.is-active .pc { background: rgba(255,255,255,.2); color: #fff; }
+
+  .q-row {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 12px 14px; display: grid; gap: 10px;
+    grid-template-columns: 1fr auto;
+  }
+  .q-row.s-new { border-left: 4px solid #f59e0b; }
+  .q-row.s-confirmed { border-left: 4px solid #2563eb; }
+  .q-row.s-delivered { border-left: 4px solid #16a34a; opacity: 0.85; }
+  .q-row.s-cancelled { border-left: 4px solid #dc2626; opacity: 0.7; }
+
+  .q-row .meta { font-size: 12.5px; color: #475569; }
+  .q-row .ref  { font-size: 14.5px; font-weight: 800; color: #0f172a; }
+  .q-row .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .pill-s-new       { background: #fef3c7; color: #92400e; }
+  .pill-s-confirmed { background: #dbeafe; color: #1e40af; }
+  .pill-s-delivered { background: #dcfce7; color: #166534; }
+  .pill-s-cancelled { background: #fee2e2; color: #991b1b; }
+  .pill-posted      { background: #e0e7ff; color: #3730a3; }
+  .pill-unlinked    { background: #fef9c3; color: #854d0e; }
+
+  .q-amt { font-size: 18px; font-weight: 800; color: #0f172a;
+           font-variant-numeric: tabular-nums; align-self: end;
+           text-align: right; }
+  .q-empty { color: #94a3b8; font-style: italic; padding: 20px; text-align: center; }
+</style>
+
+<div class="q-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="q-h1">Online Menu · Order Queue</h1>
+      <p class="text-xs text-slate-500">Latest 200 orders.</p>
+    </div>
+    <a href="{{ url_for('menu.qr_poster') }}" class="text-xs text-blue-700">QR poster →</a>
+  </div>
+
+  <nav class="q-tabs">
+    {% set _all = counts.values()|sum %}
+    <a class="q-tab {% if not status_filter %}is-active{% endif %}"
+       href="{{ url_for('menu.admin_queue') }}">All <span class="pc">{{ _all }}</span></a>
+    {% for s in ['new','confirmed','delivered','cancelled'] %}
+      <a class="q-tab {% if status_filter == s %}is-active{% endif %}"
+         href="{{ url_for('menu.admin_queue', status=s) }}">{{ s.title() }} <span class="pc">{{ counts[s] }}</span></a>
+    {% endfor %}
+  </nav>
+
+  {% if not orders %}
+    <p class="q-empty">No orders match this filter.</p>
+  {% endif %}
+
+  {% for o in orders %}
+    <div class="q-row s-{{ o.status }}">
+      <div>
+        <div class="ref">
+          <a href="{{ url_for('menu.admin_order_detail', order_id=o.id) }}" class="text-slate-900">Order #{{ o.id }}</a>
+          <span class="pill pill-s-{{ o.status }}">{{ o.status }}</span>
+          {% if o.is_posted_to_folio %}
+            <span class="pill pill-posted">posted to folio</span>
+          {% elif o.booking_id is none %}
+            <span class="pill pill-unlinked">unlinked</span>
+          {% endif %}
+        </div>
+        <div class="meta" style="margin-top: 4px;">
+          {{ o.created_at.strftime('%b %-d · %H:%M') }} ·
+          {{ o.items.count() }} item{{ 's' if o.items.count() != 1 else '' }} ·
+          {% if o.booking %}
+            <strong>{{ o.booking.booking_ref }}</strong>
+            · #{{ o.booking.room.number if o.booking.room else '?' }}
+            · {{ o.booking.guest.full_name if o.booking.guest else '?' }}
+          {% else %}
+            Room {{ o.room_number_input or '?' }}
+            · {{ o.guest_name_input or '—' }}
+          {% endif %}
+        </div>
+      </div>
+      <div class="q-amt">${{ '%.2f'|format(o.total_amount) }}</div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

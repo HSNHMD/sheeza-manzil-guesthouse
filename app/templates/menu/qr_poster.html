@@ -1,0 +1,70 @@
+{% extends 'public/base.html' %}
+{% block title %}Menu QR — {{ brand.name }}{% endblock %}
+
+{% block content %}
+<style>
+  @media print {
+    header, footer, nav { display: none !important; }
+    body { background: #fff; }
+    .qr-poster { box-shadow: none; border: 0; padding: 24px; }
+  }
+  .qr-poster {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 28px 24px; text-align: center;
+    max-width: 480px; margin: 0 auto;
+  }
+  .qr-poster h1 {
+    font-size: 1.5rem; font-weight: 800; color: #0f172a; margin: 0 0 4px;
+  }
+  .qr-poster .room-tag {
+    display: inline-block; padding: 4px 14px;
+    background: #f1f5f9; color: #475569;
+    border-radius: 999px; font-size: 12.5px; font-weight: 700;
+    margin: 6px 0 14px;
+  }
+  .qr-poster img {
+    width: 240px; height: 240px; display: block; margin: 0 auto;
+    border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px;
+    background: #fff;
+  }
+  .qr-poster .url {
+    font-family: ui-monospace, monospace; font-size: 12px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 8px 10px; margin-top: 12px;
+    word-break: break-all; color: #475569;
+  }
+  .qr-poster .help { font-size: 13px; color: #475569; margin: 14px 0 0; }
+  .qr-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: center; }
+  .qr-actions button, .qr-actions a {
+    background: #fff; color: #475569; border: 1px solid #cbd5e1;
+    padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;
+    cursor: pointer; text-decoration: none;
+  }
+</style>
+
+<div class="qr-poster">
+  <h1>{{ brand.name }}</h1>
+  <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">In-room dining</p>
+  {% if room %}
+    <div class="room-tag">Room {{ room }}</div>
+  {% endif %}
+
+  {# Server-side QR via qrserver fallback. The page still renders + the
+     URL is shown in plaintext below if the image fails to load. #}
+  <img src="https://api.qrserver.com/v1/create-qr-code/?size=480x480&margin=4&data={{ target_url|urlencode }}"
+       alt="Menu QR"
+       onerror="this.style.display='none'; document.getElementById('qrFallback').style.display='block';">
+
+  <div id="qrFallback" style="display:none; padding: 20px; color:#94a3b8; font-style: italic;">
+    QR image unavailable. Type or scan the URL below.
+  </div>
+
+  <p class="help">Scan with your phone camera to open the menu, build an order, and send it to our team.</p>
+  <div class="url">{{ target_url }}</div>
+
+  <div class="qr-actions">
+    <button onclick="window.print();">Print poster</button>
+    <a href="{{ target_url }}">Open menu</a>
+  </div>
+</div>
+{% endblock %}

@@ -53,6 +53,7 @@ def create_app(config_class=Config):
     from .routes.booking_engine import booking_engine_bp
     from .routes.reports import reports_bp
     from .routes.pos import pos_bp
+    from .routes.menu_orders import menu_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -75,6 +76,7 @@ def create_app(config_class=Config):
     app.register_blueprint(booking_engine_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(pos_bp)
+    app.register_blueprint(menu_bp)
 
     # Register the business-date context processor so every template
     # can read {{ business_date }} without explicit passthrough.
@@ -107,7 +109,11 @@ def create_app(config_class=Config):
                    # POS terminal: restaurant/bar/F&B staff use this
                    # to post charges. /pos/admin/* still hits the
                    # admin_required decorator inside the route.
-                   '/pos')
+                   '/pos',
+                   # Online menu / QR ordering: public guest pages
+                   # (no auth) + staff queue at /menu/admin/* gated
+                   # by admin_required inside the route.
+                   '/menu')
         if not any(request.path == p or request.path.startswith(p + '/') for p in allowed):
             return redirect('/staff/dashboard')
 

@@ -1,0 +1,96 @@
+{% extends 'public/base.html' %}
+{% block title %}Order #{{ order.id }} — {{ brand.name }}{% endblock %}
+
+{% block content %}
+<style>
+  .o-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+            padding:18px; margin-bottom: 12px; }
+  .o-h1 { font-size: 1.3rem; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
+  .o-sub { color: #64748b; font-size: 13px; }
+  .o-status {
+    display: inline-block; padding: 4px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .s-new       { background: #fef3c7; color: #92400e; }
+  .s-confirmed { background: #dbeafe; color: #1e40af; }
+  .s-delivered { background: #dcfce7; color: #166534; }
+  .s-cancelled { background: #fee2e2; color: #991b1b; }
+  .o-line {
+    display: grid; grid-template-columns: 1fr auto auto;
+    gap: 8px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0;
+    font-size: 13px;
+  }
+  .o-line:last-child { border-bottom: 0; }
+  .o-line .name { font-weight: 700; color: #0f172a; }
+  .o-line .qty  { color: #64748b; font-variant-numeric: tabular-nums; }
+  .o-line .lt   { font-weight: 800; color: #0f172a;
+                  font-variant-numeric: tabular-nums; min-width: 64px;
+                  text-align: right; }
+  .o-tot { display: flex; justify-content: space-between;
+           border-top: 2px solid #e2e8f0; padding-top: 10px;
+           margin-top: 8px; font-weight: 800; font-size: 15px; color: #0f172a; }
+
+  .o-step {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 0; font-size: 13px;
+  }
+  .o-step .dot {
+    width: 22px; height: 22px; border-radius: 999px;
+    background: #e2e8f0; color: #64748b;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
+  }
+  .o-step.is-done .dot { background: #0f766e; color: #fff; }
+  .o-step.is-now  .dot { background: {{ brand.primary_color or '#0f766e' }};
+                          color: #fff; box-shadow: 0 0 0 4px rgba(15,118,110,.2); }
+</style>
+
+<div class="o-card">
+  <h1 class="o-h1">Order #{{ order.id }}</h1>
+  <p class="o-sub">Submitted {{ order.created_at.strftime('%b %-d, %H:%M') }}</p>
+  <div style="margin-top: 10px;">
+    <span class="o-status s-{{ order.status }}">{{ order.status }}</span>
+    {% if order.is_posted_to_folio %}
+      <span class="o-status s-confirmed" style="background:#e0e7ff; color:#3730a3;">Posted to room</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="o-card">
+  {% set steps = [('new','Submitted'), ('confirmed','Confirmed'), ('delivered','Delivered')] %}
+  {% set current_idx = (steps|map(attribute=0)|list).index(order.status) if order.status in ['new','confirmed','delivered'] else -1 %}
+  {% for code, label in steps %}
+    {% set idx = loop.index0 %}
+    <div class="o-step {% if order.status == 'cancelled' %}{% elif idx < current_idx %}is-done{% elif idx == current_idx %}is-now{% endif %}">
+      <span class="dot">{{ '✓' if (idx <= current_idx and order.status != 'cancelled') else (loop.index) }}</span>
+      <span>{{ label }}</span>
+    </div>
+  {% endfor %}
+  {% if order.status == 'cancelled' %}
+    <div class="o-step is-done"><span class="dot" style="background:#dc2626;">✕</span><span>Cancelled{% if order.cancel_reason %} · {{ order.cancel_reason }}{% endif %}</span></div>
+  {% endif %}
+</div>
+
+<div class="o-card">
+  <h3 class="o-h1" style="font-size: 14px; margin-bottom: 10px;">Items</h3>
+  {% for it in order.items %}
+    <div class="o-line">
+      <div>
+        <div class="name">{{ it.item_name_snapshot }}</div>
+        {% if it.note %}<div class="o-sub">{{ it.note }}</div>{% endif %}
+      </div>
+      <div class="qty">× {{ '%.0f'|format(it.quantity) if it.quantity == it.quantity|int else it.quantity }}</div>
+      <div class="lt">${{ '%.2f'|format(it.line_total) }}</div>
+    </div>
+  {% endfor %}
+  <div class="o-tot"><span>Total</span><span>${{ '%.2f'|format(order.total_amount) }}</span></div>
+  {% if order.is_posted_to_folio %}
+    <p class="o-sub" style="margin-top: 10px;">This order has been posted to your room folio. Settle at checkout.</p>
+  {% endif %}
+</div>
+
+<div class="o-card" style="text-align: center;">
+  <a href="{{ url_for('menu.index') }}" style="color: {{ brand.primary_color or '#0f766e' }}; font-weight: 700;">← Order more from menu</a>
+</div>
+{% endblock %}

@@ -1,0 +1,192 @@
+{% extends 'base.html' %}
+{% block title %}Order #{{ order.id }} — Online Menu{% endblock %}
+{% block content %}
+<style>
+  .d-shell { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+  .d-h1 { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin: 0; }
+  .d-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+            padding: 16px; }
+  .d-card h3 { font-size: 12px; font-weight: 800; color: #475569;
+               text-transform: uppercase; letter-spacing: .05em;
+               margin: 0 0 10px; }
+
+  .d-meta { font-size: 13px; color: #475569; line-height: 1.5; }
+  .d-meta strong { color: #0f172a; }
+
+  .d-line {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 8px;
+    padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 13px;
+  }
+  .d-line:last-child { border-bottom: 0; }
+  .d-line .name { font-weight: 700; color: #0f172a; }
+  .d-line .qty { color: #64748b; }
+  .d-line .lt { font-weight: 800; min-width: 64px; text-align: right;
+                font-variant-numeric: tabular-nums; }
+  .d-tot { display: flex; justify-content: space-between;
+           border-top: 2px solid #e2e8f0; padding-top: 10px;
+           margin-top: 8px; font-weight: 800; font-size: 16px; }
+
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .pill-s-new       { background: #fef3c7; color: #92400e; }
+  .pill-s-confirmed { background: #dbeafe; color: #1e40af; }
+  .pill-s-delivered { background: #dcfce7; color: #166534; }
+  .pill-s-cancelled { background: #fee2e2; color: #991b1b; }
+  .pill-posted      { background: #e0e7ff; color: #3730a3; }
+
+  .d-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn-primary, .btn-secondary, .btn-danger {
+    border-radius: 8px; padding: 9px 14px; font-weight: 700; font-size: 13px;
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .btn-primary { background: #0f766e; color: #fff; border-color: #0f766e; }
+  .btn-secondary { background: #fff; color: #475569; border-color: #cbd5e1; }
+  .btn-danger { background: #fff; color: #b91c1c; border-color: #fecaca; }
+  .btn-secondary:disabled, .btn-primary:disabled, .btn-danger:disabled {
+    opacity: 0.5; cursor: not-allowed;
+  }
+  form.inline { display: inline; margin: 0; }
+  form.inline button { width: 100%; }
+
+  .d-row-form {
+    display: grid; grid-template-columns: 1fr auto; gap: 8px;
+    margin-top: 10px;
+  }
+  .d-row-form select, .d-row-form input {
+    padding: 8px 10px; border-radius: 8px; border: 1px solid #cbd5e1;
+    font-size: 13px;
+  }
+</style>
+
+<div class="d-shell">
+  <div class="flex items-baseline justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="d-h1">Order #{{ order.id }}</h1>
+      <p class="text-xs text-slate-500">
+        Submitted {{ order.created_at.strftime('%a, %b %-d %Y · %H:%M') }} · source: {{ order.source }}
+      </p>
+    </div>
+    <a class="text-xs text-blue-700" href="{{ url_for('menu.admin_queue') }}">← Queue</a>
+  </div>
+
+  <div class="d-card">
+    <h3>Status</h3>
+    <span class="pill pill-s-{{ order.status }}">{{ order.status }}</span>
+    {% if order.is_posted_to_folio %}
+      <span class="pill pill-posted">posted to folio</span>
+    {% endif %}
+    <div class="d-meta" style="margin-top: 10px;">
+      {% if order.confirmed_at %}
+        <div>Confirmed {{ order.confirmed_at.strftime('%b %-d %H:%M') }}{% if order.confirmed_by %} by {{ order.confirmed_by.username }}{% endif %}.</div>
+      {% endif %}
+      {% if order.delivered_at %}
+        <div>Delivered {{ order.delivered_at.strftime('%b %-d %H:%M') }}{% if order.delivered_by %} by {{ order.delivered_by.username }}{% endif %}.</div>
+      {% endif %}
+      {% if order.cancelled_at %}
+        <div>Cancelled {{ order.cancelled_at.strftime('%b %-d %H:%M') }}.{% if order.cancel_reason %} <em>{{ order.cancel_reason }}</em>{% endif %}</div>
+      {% endif %}
+      {% if order.posted_to_folio_at %}
+        <div>Posted to folio {{ order.posted_to_folio_at.strftime('%b %-d %H:%M') }}{% if order.posted_by %} by {{ order.posted_by.username }}{% endif %}. Folio item ids: <code>{{ order.folio_item_ids }}</code></div>
+      {% endif %}
+    </div>
+
+    <div class="d-actions" style="margin-top: 12px;">
+      {% if order.status == 'new' %}
+        <form method="POST" action="{{ url_for('menu.admin_confirm', order_id=order.id) }}" class="inline">
+          <button type="submit" class="btn-primary">Confirm order</button>
+        </form>
+      {% endif %}
+      {% if order.status == 'confirmed' %}
+        <form method="POST" action="{{ url_for('menu.admin_deliver', order_id=order.id) }}" class="inline">
+          <button type="submit" class="btn-primary">Mark delivered</button>
+        </form>
+      {% endif %}
+      {% if order.status in ('new', 'confirmed') %}
+        <form method="POST" action="{{ url_for('menu.admin_cancel', order_id=order.id) }}" class="inline"
+              onsubmit="this.cancel_reason.value = prompt('Reason (optional)') || '';">
+          <input type="hidden" name="cancel_reason" value="">
+          <button type="submit" class="btn-danger">Cancel order</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="d-card">
+    <h3>Booking link</h3>
+    {% if order.booking %}
+      <div class="d-meta">
+        <strong>{{ order.booking.booking_ref }}</strong>
+        · Room #{{ order.booking.room.number if order.booking.room else '?' }}
+        · {{ order.booking.guest.full_name if order.booking.guest else '?' }}
+        · status: {{ order.booking.status.replace('_',' ') }}
+      </div>
+    {% else %}
+      <div class="d-meta">
+        Guest typed: room <strong>{{ order.room_number_input or '—' }}</strong>,
+        last name <strong>{{ order.guest_name_input or '—' }}</strong>.
+        No booking matched.
+      </div>
+    {% endif %}
+
+    {% if not order.is_posted_to_folio %}
+    <form method="POST" action="{{ url_for('menu.admin_attach_booking', order_id=order.id) }}" class="d-row-form">
+      <select name="booking_id">
+        <option value="0">— Unlinked —</option>
+        {% for b in in_house %}
+        <option value="{{ b.id }}" {% if order.booking_id == b.id %}selected{% endif %}>
+          {{ b.booking_ref }} · #{{ b.room.number if b.room else '?' }} · {{ b.guest.full_name if b.guest else '?' }}
+        </option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-secondary">Attach</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="d-card">
+    <h3>Items</h3>
+    {% for it in order.items %}
+      <div class="d-line">
+        <div>
+          <div class="name">{{ it.item_name_snapshot }}</div>
+          {% if it.note %}<div class="text-xs text-slate-500">{{ it.note }}</div>{% endif %}
+        </div>
+        <div class="qty">× {{ '%.0f'|format(it.quantity) if it.quantity == it.quantity|int else it.quantity }}</div>
+        <div class="lt">${{ '%.2f'|format(it.line_total) }}</div>
+      </div>
+    {% endfor %}
+    <div class="d-tot"><span>Total</span><span>${{ '%.2f'|format(order.total_amount) }}</span></div>
+  </div>
+
+  {% if order.notes %}
+  <div class="d-card">
+    <h3>Guest note</h3>
+    <p class="d-meta">{{ order.notes }}</p>
+  </div>
+  {% endif %}
+
+  {% if order.contact_phone %}
+  <div class="d-card">
+    <h3>Contact</h3>
+    <p class="d-meta">{{ order.contact_phone }}</p>
+  </div>
+  {% endif %}
+
+  {% if order.booking_id and not order.is_posted_to_folio and order.status != 'cancelled' %}
+  <div class="d-card" style="border-color: #fcd34d; background: #fffbeb;">
+    <h3 style="color: #92400e;">Post to room folio</h3>
+    <p class="d-meta">
+      This will create folio items on booking <strong>{{ order.booking.booking_ref }}</strong> totaling
+      <strong>${{ '%.2f'|format(order.total_amount) }}</strong>. Source will be marked <code>online_menu</code>.
+      No payment is collected — guest settles at checkout.
+    </p>
+    <form method="POST" action="{{ url_for('menu.admin_post_to_folio', order_id=order.id) }}" class="inline" style="margin-top: 8px;">
+      <button type="submit" class="btn-primary">Post to folio</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

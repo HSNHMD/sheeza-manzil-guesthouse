@@ -985,3 +985,143 @@ class PosItem(db.Model):
 
     def __repr__(self):
         return f'<PosItem {self.name} @{self.price}>'
+
+
+# ── Online Menu / QR Ordering V1 ────────────────────────────────────
+#
+# Guests open /menu on a phone, build a cart, optionally enter their
+# room number + last name to attach the order to an in-house booking,
+# and submit. Staff see new orders in a queue, confirm them, and
+# explicitly decide whether to post the order to the folio. NO auto-
+# posting, NO payment online (V1).
+#
+# `public_token` is a short URL-safe token stored on the order so the
+# guest can refresh /menu/order/<token> to track status without auth.
+# Item rows snapshot the POS item's name + price at submit time so
+# later menu edits don't rewrite history.
+
+
+class GuestOrder(db.Model):
+    __tablename__ = 'guest_orders'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    # URL-safe random token used for the public /menu/order/<token>
+    # status page. ~22 chars (token_urlsafe(16)).
+    public_token = db.Column(db.String(40), unique=True, nullable=False,
+                             index=True)
+
+    # Optional link to a real booking. Populated if the guest's room
+    # number + last-name combo matched an active in-house booking at
+    # submit time. Otherwise None — the order is still recorded.
+    booking_id = db.Column(
+        db.Integer, db.ForeignKey('bookings.id', ondelete='SET NULL'),
+        nullable=True, index=True,
+    )
+    # Whatever the guest typed, kept verbatim for staff reference.
+    room_number_input = db.Column(db.String(20), nullable=True)
+    guest_name_input  = db.Column(db.String(120), nullable=True)
+    contact_phone     = db.Column(db.String(40), nullable=True)
+    notes             = db.Column(db.String(500), nullable=True)
+
+    # Lifecycle. V1 keeps it small.
+    # new → confirmed → delivered  (or cancelled at any point)
+    status = db.Column(db.String(20), nullable=False, default='new',
+                       index=True)
+
+    # Snapshot total at submit time (sum of item line totals).
+    # Re-computed when items are mutated (V1 forbids item mutation
+    # after submit, so this is effectively immutable).
+    total_amount = db.Column(db.Float, nullable=False, default=0.0)
+
+    # Where the order came from. 'guest_menu' (typed URL) or
+    # 'qr_menu' (scanned QR). Set by the route based on a query
+    # param. Reports may eventually filter on this.
+    source = db.Column(db.String(20), nullable=False, default='guest_menu')
+
+    # Lifecycle stamps (who clicked the button, when).
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    confirmed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    delivered_at = db.Column(db.DateTime, nullable=True)
+    delivered_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    cancelled_at = db.Column(db.DateTime, nullable=True)
+    cancelled_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    cancel_reason = db.Column(db.String(255), nullable=True)
+
+    # Folio link. Populated when staff clicks "Post to room" on the
+    # admin queue. Stores a comma-joined string of FolioItem ids; the
+    # actual rows live in the folio_items table.
+    posted_to_folio_at = db.Column(db.DateTime, nullable=True)
+    posted_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    folio_item_ids = db.Column(db.String(255), nullable=True)
+
+    metadata_json = db.Column(db.Text, nullable=True)
+
+    items = db.relationship('GuestOrderItem', backref='order',
+                            lazy='dynamic',
+                            cascade='all, delete-orphan',
+                            order_by='GuestOrderItem.id')
+
+    booking = db.relationship('Booking',
+                              foreign_keys=[booking_id],
+                              backref='guest_orders')
+
+    @property
+    def is_open(self):
+        return self.status in ('new', 'confirmed')
+
+    @property
+    def is_posted_to_folio(self):
+        return self.posted_to_folio_at is not None
+
+    def __repr__(self):
+        return (f'<GuestOrder #{self.id} {self.status} '
+                f'token={self.public_token[:6]}…>')
+
+
+class GuestOrderItem(db.Model):
+    __tablename__ = 'guest_order_items'
+
+    id        = db.Column(db.Integer, primary_key=True)
+    order_id  = db.Column(
+        db.Integer, db.ForeignKey('guest_orders.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    # Reference is preserved so the admin can see which menu item the
+    # order originally pointed at. SET NULL on delete because the menu
+    # owner may safely retire an item without rewriting history; the
+    # snapshot fields below carry the displayed name + price.
+    pos_item_id = db.Column(
+        db.Integer, db.ForeignKey('pos_items.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    # Snapshots — frozen at submit time.
+    item_name_snapshot  = db.Column(db.String(120), nullable=False)
+    item_type_snapshot  = db.Column(db.String(30), nullable=False,
+                                    default='restaurant')
+    unit_price          = db.Column(db.Float, nullable=False, default=0.0)
+    quantity            = db.Column(db.Float, nullable=False, default=1.0)
+    line_total          = db.Column(db.Float, nullable=False, default=0.0)
+    note                = db.Column(db.String(255), nullable=True)
+
+    pos_item = db.relationship('PosItem', foreign_keys=[pos_item_id])
+
+    def __repr__(self):
+        return (f'<GuestOrderItem {self.item_name_snapshot}× {self.quantity} '
+                f'@{self.unit_price}>')
