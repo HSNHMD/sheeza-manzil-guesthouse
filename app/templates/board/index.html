@@ -949,6 +949,214 @@
   }
 
   /* ─────────────────────────────────────────────────────────────────
+     MOBILE FALLBACK — room list
+     The full tape chart is hidden on phones, but rooms must still
+     be visible so the front desk can scan occupancy at a glance.
+     ───────────────────────────────────────────────────────────────── */
+  .m-rooms-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px 8px;
+  }
+  .m-rooms-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    font-weight: 700;
+    color: #94a3b8;
+  }
+  .m-rooms-title strong { color: #0f172a; font-weight: 700; }
+  .m-room-card {
+    background-color: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  }
+  .m-room-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background-color: #ffffff;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  }
+  .m-room-head.is-occupied { border-bottom-color: rgba(16, 185, 129, 0.20); }
+  .m-room-head.is-vacant   { background-color: #fcfdfd; }
+  .m-room-num {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: #f1f5f9;
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    letter-spacing: -0.01em;
+  }
+  .m-room-num.is-occupied { background-color: #d1fae5; color: #065f46; }
+  .m-room-num.is-dirty    { background-color: #ffedd5; color: #9a3412; }
+  .m-room-num.is-blocked  { background-color: #e2e8f0; color: #334155; }
+  .m-room-info { flex: 1; min-width: 0; }
+  .m-room-info .line-1 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.2;
+  }
+  .m-room-info .line-2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #475569;
+    margin-top: 2px;
+    flex-wrap: wrap;
+  }
+  .m-room-info .line-2 .dot {
+    width: 3px; height: 3px; border-radius: 999px;
+    background: #cbd5e1;
+  }
+  .m-room-status-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+  }
+
+  /* Booking strip inside a room card */
+  .m-bookings { padding: 0; }
+  .m-booking-row {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px 14px;
+    border-top: 1px solid rgba(15, 23, 42, 0.04);
+    text-decoration: none;
+    color: #0f172a;
+    background-color: #ffffff;
+    transition: background-color 0.10s ease;
+  }
+  .m-booking-row:first-child { border-top: 0; }
+  .m-booking-row:active,
+  .m-booking-row:hover { background-color: #f8fafc; }
+  .m-booking-bar {
+    width: 4px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
+  .m-bar-new_request      { background-color: #8b5cf6; }
+  .m-bar-pending_payment  { background-color: #f59e0b; }
+  .m-bar-payment_uploaded { background-color: #eab308; }
+  .m-bar-payment_verified { background-color: #0ea5e9; }
+  .m-bar-confirmed        { background-color: #3b82f6; }
+  .m-bar-checked_in       { background-color: #10b981; }
+  .m-bar-checked_out      { background-color: #94a3b8; }
+  .m-bar-cancelled,
+  .m-bar-rejected         { background-color: #fb7185; }
+  .m-bar-fallback         { background-color: #cbd5e1; }
+  .m-booking-meta { flex: 1; min-width: 0; }
+  .m-booking-guest {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .m-booking-dates {
+    font-size: 11px;
+    color: #475569;
+    margin-top: 1px;
+    font-feature-settings: "tnum" on;
+  }
+  .m-booking-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .m-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid;
+    line-height: 1.5;
+  }
+  .m-pill-new_request      { background:#f5f3ff;border-color:#c4b5fd;color:#5b21b6; }
+  .m-pill-pending_payment  { background:#fffbeb;border-color:#fcd34d;color:#92400e; }
+  .m-pill-payment_uploaded { background:#fefce8;border-color:#facc15;color:#854d0e; }
+  .m-pill-payment_verified { background:#f0f9ff;border-color:#7dd3fc;color:#075985; }
+  .m-pill-confirmed        { background:#eff6ff;border-color:#93c5fd;color:#1e40af; }
+  .m-pill-checked_in       { background:#ecfdf5;border-color:#6ee7b7;color:#065f46; }
+  .m-pill-checked_out      { background:#f8fafc;border-color:#cbd5e1;color:#475569; }
+  .m-pill-cancelled,
+  .m-pill-rejected         { background:#fff1f2;border-color:#fecdd3;color:#9f1239; }
+  .m-pill-pay-mismatch,
+  .m-pill-pay-rejected     { background:#fef2f2;border-color:#fecaca;color:#991b1b; }
+  .m-pill-pay-pending_review { background:#fffbeb;border-color:#fcd34d;color:#92400e; }
+  .m-pill-pay-verified     { background:#ecfdf5;border-color:#6ee7b7;color:#065f46; }
+
+  .m-booking-empty {
+    padding: 10px 14px;
+    font-size: 11px;
+    color: #94a3b8;
+    font-style: italic;
+    background-color: #fbfcfd;
+    border-top: 1px solid rgba(15, 23, 42, 0.04);
+  }
+  .m-booking-more {
+    display: block;
+    padding: 8px 14px;
+    text-align: center;
+    font-size: 11px;
+    color: #475569;
+    background-color: #fbfcfd;
+    border-top: 1px dashed rgba(15, 23, 42, 0.10);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .m-booking-more:hover { color: #0f172a; background-color: #f1f5f9; }
+
+  /* "Show full board" override toggle (visible only on phones) */
+  .m-board-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    background-color: #ffffff;
+    color: #0f172a;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .m-board-toggle:hover { background-color: #f8fafc; }
+
+  /* Body class set by the toggle button (full board on a phone). */
+  body.force-board .desktop-board { display: block !important; }
+  body.force-board .mobile-ops    { display: none  !important; }
+  body.force-board .board-scroll  { max-height: calc(100vh - 220px); }
+
+  /* ─────────────────────────────────────────────────────────────────
      RESPONSIVE
      ───────────────────────────────────────────────────────────────── */
   @media (max-width: 1024px) {
@@ -1223,13 +1431,13 @@
   <!-- ── Mobile / narrow operations view ─────────────────────────── -->
   <div class="mobile-ops space-y-3">
 
-    <!-- Stat cards -->
+    <!-- Stat cards (top of phone screen, scannable summary) -->
     <div class="grid grid-cols-2 gap-2">
-      <a href="#mobile-arrivals" class="panel panel-pad hover:bg-emerald-50 transition">
+      <a href="{{ url_for('bookings.index') }}" class="panel panel-pad hover:bg-emerald-50 transition">
         <div class="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold">Arrivals today</div>
         <div class="text-2xl font-bold text-emerald-800 mt-1">{{ stats.arrivals_today }}</div>
       </a>
-      <a href="#mobile-departures" class="panel panel-pad hover:bg-sky-50 transition">
+      <a href="{{ url_for('bookings.index') }}" class="panel panel-pad hover:bg-sky-50 transition">
         <div class="text-[10px] uppercase tracking-wider text-sky-700 font-semibold">Departures today</div>
         <div class="text-2xl font-bold text-sky-800 mt-1">{{ stats.departures_today }}</div>
       </a>
@@ -1258,58 +1466,101 @@
       </div>
     </form>
 
-    {% if mobile_arrivals %}
-    <div class="panel" id="mobile-arrivals">
-      <div class="px-4 pt-3 flex items-center justify-between">
-        <h2 class="text-sm font-bold text-slate-900">Arrivals today</h2>
-        <span class="text-[11px] text-emerald-700 font-semibold">{{ mobile_arrivals|length }}</span>
+    <!-- Rooms list — the operationally-useful view. One card per
+         room, with each booking inside the visible window stacked
+         underneath. Tap any booking row to open the side drawer. -->
+    {% if rooms %}
+    <div class="m-rooms-header">
+      <div class="m-rooms-title">
+        <strong>{{ rooms|length }}</strong> room{{ 's' if rooms|length != 1 else '' }}
+        <span style="opacity:.55;">·</span>
+        {{ start.strftime('%b %-d') }} – {{ end_inclusive.strftime('%b %-d') }}
+        <span style="opacity:.55;">·</span>
+        {{ span }}-day window
       </div>
-      <ul class="divide-y divide-slate-100">
-        {% for b in mobile_arrivals %}
-        <li>
-          <a href="{{ url_for('bookings.detail', booking_id=b.id) }}"
-             class="flex items-center gap-3 px-4 py-3 hover:bg-emerald-50/50">
-            <span class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs flex-shrink-0">{{ b.room.number }}</span>
-            <span class="flex-1 min-w-0">
-              <span class="block text-sm font-semibold text-slate-900 truncate">{{ b.guest.first_name }} {{ b.guest.last_name }}</span>
-              <span class="block text-xs text-slate-500 truncate">{{ b.booking_ref }} · {{ b.num_guests }}g · {{ (b.check_out_date - b.check_in_date).days }}n</span>
+      <button type="button" class="m-board-toggle" onclick="document.body.classList.toggle('force-board'); this.blur();">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+        <span>Show full board</span>
+      </button>
+    </div>
+
+    <div class="space-y-2">
+      {% for r in rooms %}
+        {% set badge = badges[r.id] %}
+        {% set bars = bars_by_room[r.id] %}
+        {% set room_state = badge.label.lower() %}
+        {% set dot_class_clean = badge.dot_class.replace('bg-', 'm-') %}
+        {% set is_occupied = ('occupied' in room_state) %}
+        {% set is_dirty    = ('dirty' in room_state) %}
+        {% set is_blocked  = ('out' in room_state or 'blocked' in room_state) %}
+
+        <article class="m-room-card">
+          <div class="m-room-head {% if is_occupied %}is-occupied{% elif not bars %}is-vacant{% endif %}">
+            <span class="m-room-num {% if is_occupied %}is-occupied{% elif is_dirty %}is-dirty{% elif is_blocked %}is-blocked{% endif %}">
+              {{ r.number }}
             </span>
-            <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-          </a>
-        </li>
-        {% endfor %}
-      </ul>
+            <div class="m-room-info">
+              <div class="line-1">{{ r.room_type }}</div>
+              <div class="line-2">
+                <span class="m-room-status-dot {{ badge.dot_class }}"></span>
+                <span class="{{ badge.text_class }}">{{ badge.label }}</span>
+                <span class="dot"></span>
+                <span>Floor {{ r.floor }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="m-bookings">
+            {% if bars %}
+              {% for bar in bars[:3] %}
+                {% set status_slug = bar.booking_status if bar.booking_status in ('new_request','pending_payment','payment_uploaded','payment_verified','confirmed','checked_in','checked_out','cancelled','rejected') else 'fallback' %}
+                <a class="m-booking-row"
+                   href="{{ url_for('bookings.detail', booking_id=bar.booking_id) }}"
+                   onclick="return openDrawer(event, {{ bar.booking_id }});">
+                  <span class="m-booking-bar m-bar-{{ status_slug }}"></span>
+                  <div class="m-booking-meta">
+                    <div class="m-booking-guest">{{ bar.guest_name }}</div>
+                    <div class="m-booking-dates">
+                      {{ bar.check_in.strftime('%b %-d') }} → {{ bar.check_out.strftime('%b %-d') }}
+                      <span style="opacity:.5;">·</span>
+                      {{ bar.nights }}n
+                      <span style="opacity:.5;">·</span>
+                      {{ bar.num_guests }}g
+                      <span style="opacity:.5;">·</span>
+                      <span style="font-family:ui-monospace,monospace;">{{ bar.booking_ref }}</span>
+                    </div>
+                    <div class="m-booking-pills">
+                      <span class="m-pill m-pill-{{ status_slug }}">{{ bar.booking_status.replace('_', ' ') }}</span>
+                      {% if bar.payment_status in ('mismatch','rejected','pending_review','verified') %}
+                        <span class="m-pill m-pill-pay-{{ bar.payment_status }}">{{ bar.payment_status.replace('_', ' ') }}</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <svg class="w-4 h-4 self-center flex-shrink-0" style="color:#cbd5e1;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </a>
+              {% endfor %}
+              {% if bars|length > 3 %}
+                <a class="m-booking-more" href="{{ url_for('rooms.detail', room_id=r.id) if False else url_for('bookings.index') }}">
+                  + {{ bars|length - 3 }} more booking{{ 's' if (bars|length - 3) != 1 else '' }} in window
+                </a>
+              {% endif %}
+            {% else %}
+              <p class="m-booking-empty">No bookings in this {{ span }}-day window.</p>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+
+    <p class="text-[11px] text-slate-400 italic text-center pt-2 leading-relaxed">
+      Tip: tap any booking to see details. Rotate to landscape (or
+      tap "Show full board" above) for the tape-chart view.
+    </p>
+    {% else %}
+    <div class="panel panel-pad text-sm text-slate-500 italic text-center">
+      No rooms match the current filters.
     </div>
     {% endif %}
-
-    {% if mobile_departures %}
-    <div class="panel" id="mobile-departures">
-      <div class="px-4 pt-3 flex items-center justify-between">
-        <h2 class="text-sm font-bold text-slate-900">Departures today</h2>
-        <span class="text-[11px] text-sky-700 font-semibold">{{ mobile_departures|length }}</span>
-      </div>
-      <ul class="divide-y divide-slate-100">
-        {% for b in mobile_departures %}
-        <li>
-          <a href="{{ url_for('bookings.detail', booking_id=b.id) }}"
-             class="flex items-center gap-3 px-4 py-3 hover:bg-sky-50/50">
-            <span class="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs flex-shrink-0">{{ b.room.number }}</span>
-            <span class="flex-1 min-w-0">
-              <span class="block text-sm font-semibold text-slate-900 truncate">{{ b.guest.first_name }} {{ b.guest.last_name }}</span>
-              <span class="block text-xs text-slate-500 truncate">{{ b.booking_ref }} · {{ b.num_guests }}g</span>
-            </span>
-            <svg class="w-4 h-4 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-          </a>
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
-
-    <div class="panel panel-pad text-[11px] text-slate-500 leading-relaxed">
-      The full timeline board is optimized for desktop / tablet landscape.
-      Rotate to landscape or open on a wider screen for the tape-chart view.
-    </div>
   </div>
 </div>
 

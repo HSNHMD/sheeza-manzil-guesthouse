@@ -552,15 +552,63 @@ class MobileFallbackTests(_RouteBase):
         super().setUp()
         self._login(self.admin_id)
 
-    def test_mobile_arrivals_list_appears_when_arrivals_exist(self):
-        room = _seed_room('77')
+    def test_mobile_room_card_renders_for_every_room(self):
+        # Mobile fallback now lists every room as a card so the front
+        # desk can scan occupancy on a phone.
+        for n in ('11', '12', '13'):
+            room = Room(number=n, name='F0', room_type='Deluxe',
+                        floor=0, capacity=2, price_per_night=600.0)
+            db.session.add(room)
+        db.session.commit()
+        r = self.client.get('/board')
+        self.assertEqual(r.status_code, 200)
+        # New mobile-rooms structure
+        self.assertIn(b'class="mobile-ops', r.data)
+        self.assertIn(b'class="m-room-card"', r.data)
+        # All three rooms render (the m-room-num cell carries the
+        # room number — count those occurrences).
+        self.assertGreaterEqual(
+            r.data.count(b'class="m-room-num'),
+            3,
+            'expected one m-room-num per room',
+        )
+
+    def test_mobile_room_card_shows_booking_when_present(self):
+        room = _seed_room('99')
         today = date.today()
         _seed_booking(room,
                       ci=today, co=today + timedelta(days=2),
-                      status='confirmed', ref='BKMOBA')
+                      status='confirmed', ref='BKMOB')
         r = self.client.get('/board')
-        self.assertIn(b'mobile-arrivals', r.data)
-        self.assertIn(b'BKMOBA', r.data)
+        self.assertEqual(r.status_code, 200)
+        # Booking row appears inside a room card with the m-booking-row class
+        self.assertIn(b'class="m-booking-row"', r.data)
+        self.assertIn(b'BKMOB', r.data)
+        # The mobile booking row should call openDrawer so taps open the
+        # side drawer (consistent with the desktop bar behaviour).
+        self.assertIn(b'openDrawer(event,', r.data)
+
+    def test_mobile_empty_room_shows_no_bookings_message(self):
+        # Room with no bookings → "No bookings in this window"
+        _seed_room('77')
+        r = self.client.get('/board')
+        self.assertIn(b'm-booking-empty', r.data)
+
+    def test_mobile_show_full_board_toggle_present(self):
+        _seed_room('77')
+        r = self.client.get('/board')
+        # The toggle button must exist so the user can override the
+        # mobile view to see the full tape chart.
+        self.assertIn(b'm-board-toggle', r.data)
+        self.assertIn(b"force-board", r.data)
+
+    def test_mobile_view_window_label_reflects_view(self):
+        _seed_room('77')
+        r = self.client.get('/board?view=7d')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'7-day window', r.data)
+        r = self.client.get('/board?view=14d')
+        self.assertIn(b'14-day window', r.data)
 
 
 class BoardRouteSafetyTests(_RouteBase):
