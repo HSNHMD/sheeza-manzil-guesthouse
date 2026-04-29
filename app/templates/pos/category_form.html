@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Category' if category else 'New Category' }}{% endblock %}
+{% block content %}
+{% include 'pos/_styles.html' %}
+
+<div class="pos-shell">
+  <h1 class="pos-h1">{{ 'Edit ' + category.name if category else 'New POS category' }}</h1>
+
+  <form method="POST" class="pos-form">
+    <div>
+      <label for="name">Name *</label>
+      <input type="text" id="name" name="name" maxlength="80" required
+             value="{{ category.name if category else form.get('name', '') }}">
+    </div>
+    <div class="row">
+      <div>
+        <label for="sort_order">Sort order</label>
+        <input type="number" id="sort_order" name="sort_order" min="0"
+               value="{{ category.sort_order if category else form.get('sort_order', 100) }}">
+      </div>
+      {% if category %}
+      <div style="align-self: end;">
+        <label style="display: inline-flex; align-items: center; gap: 6px;">
+          <input type="checkbox" name="is_active" value="1" {% if category.is_active %}checked{% endif %}>
+          Active
+        </label>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="pos-actions">
+      <button type="submit" class="btn-primary">{{ 'Save' if category else 'Create' }}</button>
+      <a href="{{ url_for('pos.categories_list') }}" class="btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -926,3 +926,62 @@ class RateRestriction(db.Model):
         return (f'<RateRestriction rt={self.room_type_id} '
                 f'{self.start_date}→{self.end_date} '
                 f'stop_sell={self.stop_sell}>')
+
+
+# ── POS / F&B V1 ────────────────────────────────────────────────────
+#
+# Light catalog: categories (e.g. "Drinks", "Mains") + items (e.g.
+# "Espresso") with a default unit price. A POS sale never invents its
+# own accounting truth: every sale becomes one or more FolioItem rows
+# (and optionally a CashierTransaction for "pay now"). See
+# app/services/pos.py for the canonical sale flow.
+#
+# `default_item_type` mirrors the FolioItem.item_type vocabulary
+# (services/folio.ITEM_TYPES) — typically 'restaurant', 'goods',
+# 'service'. It's the type stamped on each FolioItem the sale creates.
+
+
+class PosCategory(db.Model):
+    __tablename__ = 'pos_categories'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(80), unique=True, nullable=False)
+    sort_order  = db.Column(db.Integer, nullable=False, default=100)
+    is_active   = db.Column(db.Boolean, nullable=False, default=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    items = db.relationship('PosItem', backref='category',
+                            lazy='dynamic',
+                            cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<PosCategory {self.name}>'
+
+
+class PosItem(db.Model):
+    __tablename__ = 'pos_items'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    category_id = db.Column(
+        db.Integer, db.ForeignKey('pos_categories.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    name        = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(500), nullable=True)
+    price       = db.Column(db.Float, nullable=False, default=0.0)
+    # FolioItem.item_type to stamp on each created folio row.
+    # Whitelisted in services.pos against folio.ITEM_TYPES.
+    default_item_type = db.Column(db.String(30), nullable=False,
+                                  default='restaurant')
+    is_active   = db.Column(db.Boolean, nullable=False, default=True)
+    sort_order  = db.Column(db.Integer, nullable=False, default=100)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f'<PosItem {self.name} @{self.price}>'

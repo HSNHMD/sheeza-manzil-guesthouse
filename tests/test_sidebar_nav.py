@@ -91,16 +91,21 @@ class SidebarDepartmentSectionsTests(unittest.TestCase):
         r = self.client.get('/bookings/')
         self.assertIn(b'Messages', r.data)
 
-    def test_restaurant_section_has_coming_soon_placeholders(self):
+    def test_restaurant_section_has_pos_terminal_link(self):
+        # POS / F&B V1 promoted POS Terminal from "Coming Soon" to a
+        # real link. Orders / Menu / Room Charges remain as "Soon"
+        # placeholders.
         self._login(self.admin_id)
         r = self.client.get('/bookings/')
         # Restaurant heading present
         self.assertIn(b'Restaurant', r.data)
-        # Each placeholder labelled "Soon"
-        for entry in (b'POS', b'Orders', b'Menu', b'Room Charges'):
+        # POS Terminal is a working link
+        self.assertIn(b'POS Terminal', r.data)
+        self.assertIn(b'/pos/', r.data)
+        # Remaining placeholders still labelled "Soon"
+        for entry in (b'Orders', b'Menu', b'Room Charges'):
             self.assertIn(entry, r.data)
-        # And the "Soon" pill appears at least 4 times (one per placeholder)
-        self.assertGreaterEqual(r.data.count(b'Soon'), 4)
+        self.assertGreaterEqual(r.data.count(b'Soon'), 3)
 
     def test_existing_links_still_present_after_regroup(self):
         # No working page must be silently removed by the regroup.

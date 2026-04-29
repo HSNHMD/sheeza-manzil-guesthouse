@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}POS Items{% endblock %}
+{% block content %}
+{% include 'pos/_styles.html' %}
+
+<div class="pos-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="pos-h1">POS Items</h1>
+      <p class="pos-sub">{{ items|length }} item{{ 's' if items|length != 1 else '' }}.</p>
+    </div>
+    <div class="pos-actions">
+      <a href="{{ url_for('pos.admin_overview') }}" class="btn-secondary">← POS Admin</a>
+      <a href="{{ url_for('pos.item_new') }}" class="btn-primary">+ New item</a>
+    </div>
+  </div>
+
+  {% if items %}
+  <table class="pos-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Category</th>
+        <th>Folio type</th>
+        <th class="num">Price</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td>
+          <strong>{{ it.name }}</strong>
+          {% if it.description %}<div class="pos-sub">{{ it.description }}</div>{% endif %}
+        </td>
+        <td>{{ categories[it.category_id].name if categories[it.category_id] else '—' }}</td>
+        <td><span class="pill muted">{{ it.default_item_type }}</span></td>
+        <td class="num">${{ '%.2f'|format(it.price) }}</td>
+        <td>{% if it.is_active %}<span class="pill ok">active</span>{% else %}<span class="pill muted">inactive</span>{% endif %}</td>
+        <td class="pos-actions">
+          <a href="{{ url_for('pos.item_edit', item_id=it.id) }}" class="btn-secondary">Edit</a>
+          <form method="POST" action="{{ url_for('pos.item_toggle', item_id=it.id) }}" style="display:inline;">
+            <button type="submit" class="btn-secondary">{{ 'Deactivate' if it.is_active else 'Activate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="pos-sub">No items yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

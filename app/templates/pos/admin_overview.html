@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}POS Admin{% endblock %}
+{% block content %}
+{% include 'pos/_styles.html' %}
+
+<div class="pos-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="pos-h1">POS / F&amp;B Admin</h1>
+      <p class="pos-sub">Manage categories and menu items. Open the <a class="text-blue-700" href="{{ url_for('pos.terminal') }}">Terminal</a> to take orders.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-white border border-slate-200 rounded-lg p-3">
+      <div class="text-xs uppercase font-semibold text-slate-500">Categories</div>
+      <div class="text-2xl font-extrabold mt-1">{{ counts.categories }}</div>
+      <div class="text-xs text-slate-500">{{ counts.active_categories }} active</div>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-lg p-3">
+      <div class="text-xs uppercase font-semibold text-slate-500">Items</div>
+      <div class="text-2xl font-extrabold mt-1">{{ counts.items }}</div>
+      <div class="text-xs text-slate-500">{{ counts.active_items }} active</div>
+    </div>
+  </div>
+
+  <div class="pos-actions">
+    <a href="{{ url_for('pos.categories_list') }}" class="btn-primary">Manage Categories</a>
+    <a href="{{ url_for('pos.items_list') }}" class="btn-primary">Manage Items</a>
+    <a href="{{ url_for('pos.terminal') }}" class="btn-secondary">Open Terminal →</a>
+  </div>
+</div>
+{% endblock %}

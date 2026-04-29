@@ -52,6 +52,7 @@ def create_app(config_class=Config):
     from .routes.inventory import inventory_bp
     from .routes.booking_engine import booking_engine_bp
     from .routes.reports import reports_bp
+    from .routes.pos import pos_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -73,6 +74,7 @@ def create_app(config_class=Config):
     app.register_blueprint(inventory_bp)
     app.register_blueprint(booking_engine_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(pos_bp)
 
     # Register the business-date context processor so every template
     # can read {{ business_date }} without explicit passthrough.
@@ -101,7 +103,11 @@ def create_app(config_class=Config):
                    # workflow, not an admin-only screen. Staff are
                    # whitelisted here so the /housekeeping route group
                    # can be accessed by either role.
-                   '/housekeeping')
+                   '/housekeeping',
+                   # POS terminal: restaurant/bar/F&B staff use this
+                   # to post charges. /pos/admin/* still hits the
+                   # admin_required decorator inside the route.
+                   '/pos')
         if not any(request.path == p or request.path.startswith(p + '/') for p in allowed):
             return redirect('/staff/dashboard')
 

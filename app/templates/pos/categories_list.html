@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}POS Categories{% endblock %}
+{% block content %}
+{% include 'pos/_styles.html' %}
+
+<div class="pos-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="pos-h1">POS Categories</h1>
+      <p class="pos-sub">{{ categories|length }} category{{ 'ies' if categories|length != 1 else '' }}.</p>
+    </div>
+    <div class="pos-actions">
+      <a href="{{ url_for('pos.admin_overview') }}" class="btn-secondary">← POS Admin</a>
+      <a href="{{ url_for('pos.category_new') }}" class="btn-primary">+ New category</a>
+    </div>
+  </div>
+
+  {% if categories %}
+  <table class="pos-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th class="num">Sort order</th>
+        <th>Items</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in categories %}
+      <tr>
+        <td><strong>{{ c.name }}</strong></td>
+        <td class="num">{{ c.sort_order }}</td>
+        <td>{{ c.items.count() }}</td>
+        <td>{% if c.is_active %}<span class="pill ok">active</span>{% else %}<span class="pill muted">inactive</span>{% endif %}</td>
+        <td class="pos-actions">
+          <a href="{{ url_for('pos.category_edit', cat_id=c.id) }}" class="btn-secondary">Edit</a>
+          <form method="POST" action="{{ url_for('pos.category_toggle', cat_id=c.id) }}" style="display:inline;">
+            <button type="submit" class="btn-secondary">{{ 'Deactivate' if c.is_active else 'Activate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="pos-sub">No categories yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
