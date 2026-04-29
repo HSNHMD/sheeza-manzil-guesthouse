@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}Reports — Revenue{% endblock %}
+{% block content %}
+<div class="rp-shell">
+  {% include 'reports/_layout.html' %}
+
+  <div class="rp-kpis">
+    <div class="rp-kpi"><span class="label">Room revenue</span><span class="value">${{ '%.2f'|format(rev.room_revenue) }}</span><span class="meta">Booking.total_amount</span></div>
+    <div class="rp-kpi"><span class="label">Ancillary</span><span class="value">${{ '%.2f'|format(rev.ancillary.total) }}</span><span class="meta">FolioItem ex-room</span></div>
+    <div class="rp-kpi {% if rev.discounts_total > 0 %}is-negative{% endif %}"><span class="label">Discounts</span><span class="value">−${{ '%.2f'|format(rev.discounts_total) }}</span></div>
+    <div class="rp-kpi"><span class="label">Total charges</span><span class="value">${{ '%.2f'|format(rev.total_charges) }}</span></div>
+  </div>
+
+  <div class="rp-kpis">
+    <div class="rp-kpi is-positive"><span class="label">Payments received</span><span class="value">${{ '%.2f'|format(rev.payments_received) }}</span><span class="meta">CashierTransaction · payment · posted</span></div>
+    <div class="rp-kpi {% if rev.refunds_paid > 0 %}is-warn{% endif %}"><span class="label">Refunds paid</span><span class="value">${{ '%.2f'|format(rev.refunds_paid) }}</span></div>
+    <div class="rp-kpi"><span class="label">Net cash flow</span><span class="value">${{ '%.2f'|format(rev.net_cashflow) }}</span><span class="meta">payments − refunds</span></div>
+    <div class="rp-kpi {% if rev.adjustments_net != 0 %}is-warn{% endif %}"><span class="label">Adjustments (net)</span><span class="value">${{ '%.2f'|format(rev.adjustments_net) }}</span></div>
+  </div>
+
+  {# ── By-day mini bar chart ── #}
+  {% if series %}
+  <div class="rp-card">
+    <h3>Charges + payments by day</h3>
+    {% set bar_count = series|length %}
+    {% set bar_w = 18 %}
+    {% set chart_w = (bar_count * (bar_w + 8)) + 40 %}
+    <div style="overflow-x:auto;">
+      <svg width="{{ chart_w }}" height="170" viewBox="0 0 {{ chart_w }} 170" style="font-family: ui-sans-serif, system-ui, sans-serif;">
+        {# Axis baseline #}
+        <line x1="36" y1="140" x2="{{ chart_w - 4 }}" y2="140" stroke="#cbd5e1" stroke-width="1"/>
+        {% for s in series %}
+          {% set i = loop.index0 %}
+          {% set ix = 40 + i * (bar_w + 8) %}
+          {% set rev_h = (s.room_revenue / max_y * 110) if max_y > 0 else 0 %}
+          {% set anc_h = (s.ancillary    / max_y * 110) if max_y > 0 else 0 %}
+          {% set pay_h = (s.payments     / max_y * 110) if max_y > 0 else 0 %}
+          {# Stacked: room (bottom) + ancillary (top) #}
+          <rect x="{{ ix }}" y="{{ 140 - rev_h }}" width="{{ bar_w / 2 }}" height="{{ rev_h }}" fill="#0f766e"></rect>
+          <rect x="{{ ix }}" y="{{ 140 - rev_h - anc_h }}" width="{{ bar_w / 2 }}" height="{{ anc_h }}" fill="#5eead4"></rect>
+          {# Payments — separate slim bar to the right #}
+          <rect x="{{ ix + bar_w / 2 + 1 }}" y="{{ 140 - pay_h }}" width="{{ bar_w / 2 }}" height="{{ pay_h }}" fill="#0ea5e9"></rect>
+          {# Date label #}
+          <text x="{{ ix + bar_w / 2 }}" y="158" font-size="9" fill="#64748b" text-anchor="middle">{{ s.date.strftime('%-d') }}</text>
+        {% endfor %}
+        {# Legend #}
+        <g transform="translate(40, 10)">
+          <rect x="0"  y="0" width="10" height="10" fill="#0f766e"></rect>
+          <text x="14" y="9" font-size="10" fill="#475569">room</text>
+          <rect x="60" y="0" width="10" height="10" fill="#5eead4"></rect>
+          <text x="74" y="9" font-size="10" fill="#475569">ancillary</text>
+          <rect x="140" y="0" width="10" height="10" fill="#0ea5e9"></rect>
+          <text x="154" y="9" font-size="10" fill="#475569">payments</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Ancillary breakdown ── #}
+  <div class="rp-card">
+    <h3>Ancillary revenue · {{ rng.label }}</h3>
+    {% if rev.ancillary.total > 0 %}
+    <table class="rp-table">
+      <thead>
+        <tr><th>Category</th><th class="num">Amount</th><th class="num">% of ancillary</th></tr>
+      </thead>
+      <tbody>
+        {% for k, v in rev.ancillary.items() if k != 'total' and v > 0 %}
+        <tr>
+          <td>{{ k.replace('_', ' ').title() }}</td>
+          <td class="num">${{ '%.2f'|format(v) }}</td>
+          <td class="num">{{ '%.0f'|format(100.0 * v / rev.ancillary.total) }}%</td>
+        </tr>
+        {% endfor %}
+        <tr style="font-weight:700;">
+          <td>Total</td>
+          <td class="num">${{ '%.2f'|format(rev.ancillary.total) }}</td>
+          <td class="num">100%</td>
+        </tr>
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-slate-400 italic">No ancillary revenue posted in this range.</p>
+    {% endif %}
+  </div>
+
+  <div class="rp-source">
+    <strong>How these numbers compose:</strong>
+    Total charges = room revenue + ancillary − discounts ± adjustments. Payments and refunds are tracked separately and are <strong>not</strong> added to charges. Discounts here are the absolute value of negative <code>FolioItem.total_amount</code> rows of type <code>discount</code>.
+  </div>
+</div>
+{% endblock %}

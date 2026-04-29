@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Reports — Overview{% endblock %}
+{% block content %}
+<div class="rp-shell">
+  {% include 'reports/_layout.html' %}
+
+  {# ── Operations (today, not range-filtered) ── #}
+  <div>
+    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Operations · Today</h3>
+    <div class="rp-kpis">
+      <div class="rp-kpi"><span class="label">Arrivals today</span><span class="value">{{ ops.arrivals_today }}</span></div>
+      <div class="rp-kpi"><span class="label">Departures today</span><span class="value">{{ ops.departures_today }}</span></div>
+      <div class="rp-kpi"><span class="label">In-house</span><span class="value">{{ ops.in_house }}</span></div>
+      <div class="rp-kpi"><span class="label">Occupancy today</span><span class="value">{{ occ_today.occupancy_pct }}%</span><span class="meta">{{ occ_today.rooms_occupied }} / {{ occ_today.rooms_total }} rooms</span></div>
+    </div>
+  </div>
+
+  <div>
+    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Rooms · Today</h3>
+    <div class="rp-kpis">
+      <div class="rp-kpi"><span class="label">Occupied</span><span class="value">{{ ops.occupied_rooms }}</span></div>
+      <div class="rp-kpi"><span class="label">Vacant</span><span class="value">{{ ops.vacant_rooms }}</span></div>
+      <div class="rp-kpi {% if ops.dirty_rooms > 0 %}is-warn{% endif %}"><span class="label">Dirty</span><span class="value">{{ ops.dirty_rooms }}</span></div>
+      <div class="rp-kpi {% if ops.out_of_order_rooms > 0 %}is-negative{% endif %}"><span class="label">Out of order</span><span class="value">{{ ops.out_of_order_rooms }}</span></div>
+    </div>
+  </div>
+
+  {# ── Money headline (range-aware) ── #}
+  <div>
+    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Money · {{ rng.label }}</h3>
+    <div class="rp-kpis">
+      <div class="rp-kpi"><span class="label">Total charges</span><span class="value">${{ '%.2f'|format(rev.total_charges) }}</span><span class="meta">room + ancillary − discounts ± adj</span></div>
+      <div class="rp-kpi"><span class="label">Payments received</span><span class="value">${{ '%.2f'|format(rev.payments_received) }}</span></div>
+      <div class="rp-kpi {% if pend.outstanding_total > 0 %}is-warn{% endif %}"><span class="label">Outstanding</span><span class="value">${{ '%.2f'|format(pend.outstanding_total) }}</span><span class="meta">{{ pend.outstanding_count }} live booking{{ 's' if pend.outstanding_count != 1 else '' }}</span></div>
+      <div class="rp-kpi {% if pend.pending_count > 0 %}is-warn{% endif %}"><span class="label">Pending review</span><span class="value">{{ pend.pending_count }}</span><span class="meta">invoices awaiting verify</span></div>
+    </div>
+  </div>
+
+  <div class="rp-source">
+    <strong>Canonical sources (V1):</strong>
+    Room revenue = sum of <code>Booking.total_amount</code> for non-cancelled bookings checking in this range. Ancillary = non-voided <code>FolioItem</code> rows excluding <code>room_charge</code>. Payments = posted <code>CashierTransaction</code> rows of type <code>payment</code>. Outstanding = sum of <code>folio_balance(booking)</code> &gt; 0 across live bookings. Payments are <strong>not</strong> revenue.
+  </div>
+</div>
+{% endblock %}

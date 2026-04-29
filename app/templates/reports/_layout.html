@@ -1,0 +1,137 @@
+{# Shared header for the four /reports/* tab pages.
+   Each page does:  {% include 'reports/_layout.html' %}  before its body. #}
+<style>
+  .rp-shell { display: flex; flex-direction: column; gap: 14px; }
+  .rp-h1 { font-size: 1.3rem; font-weight: 800; color: #0f172a; margin: 0; }
+  .rp-sub { color: #64748b; font-size: 12.5px; margin: 0; }
+
+  /* Tab strip */
+  .rp-tabs {
+    display: flex; gap: 4px; overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid #e2e8f0; padding: 0 0 1px;
+  }
+  .rp-tab {
+    flex: 0 0 auto; padding: 10px 16px;
+    text-decoration: none; color: #64748b;
+    font-size: 13px; font-weight: 600;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .rp-tab:hover { color: #0f172a; }
+  .rp-tab.is-active { color: #0f766e; border-bottom-color: #0f766e; }
+
+  /* Date-range picker — preset chips + custom dates */
+  .rp-range {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 10px 12px; display: flex; align-items: center;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .rp-chip {
+    padding: 6px 12px; border-radius: 999px;
+    background: #f1f5f9; color: #475569; font-size: 12px;
+    font-weight: 600; text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .rp-chip.is-active { background: #0f766e; color: #fff; }
+  .rp-range form { display: inline-flex; align-items: center; gap: 4px; }
+  .rp-range input[type=date] {
+    height: 32px; padding: 2px 6px; font-size: 12.5px;
+    border-radius: 6px; border: 1px solid #cbd5e1;
+  }
+  .rp-range button {
+    height: 32px; padding: 0 12px; font-size: 12px; font-weight: 600;
+    border: 0; border-radius: 6px; background: #0f172a; color: #fff;
+    cursor: pointer;
+  }
+
+  /* KPI cards */
+  .rp-kpis {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  @media (max-width: 760px) { .rp-kpis { grid-template-columns: repeat(2, 1fr); } }
+  .rp-kpi {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .rp-kpi .label {
+    font-size: 10.5px; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.04em; font-weight: 700;
+  }
+  .rp-kpi .value {
+    font-size: 22px; font-weight: 800; color: #0f172a;
+    letter-spacing: -0.01em;
+  }
+  .rp-kpi .meta { font-size: 11px; color: #94a3b8; }
+  .rp-kpi.is-positive .value { color: #16a34a; }
+  .rp-kpi.is-negative .value { color: #dc2626; }
+  .rp-kpi.is-warn .value     { color: #ca8a04; }
+
+  /* Tables */
+  table.rp-table {
+    width: 100%; border-collapse: collapse; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+    font-size: 13px;
+  }
+  table.rp-table th, table.rp-table td {
+    padding: 9px 12px; text-align: left; border-bottom: 1px solid #e2e8f0;
+  }
+  table.rp-table tr:last-child td { border-bottom: 0; }
+  table.rp-table th {
+    background: #f8fafc; font-weight: 700; color: #475569;
+    text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em;
+  }
+  table.rp-table td.num, table.rp-table th.num { text-align: right; font-feature-settings: 'tnum' on; }
+
+  /* Section card */
+  .rp-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 14px;
+  }
+  .rp-card h3 {
+    font-size: 11.5px; font-weight: 700; color: #475569;
+    text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px;
+  }
+
+  .rp-source {
+    background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px;
+    padding: 6px 10px; font-size: 11.5px; color: #78350f;
+    line-height: 1.4;
+  }
+  .rp-source strong { color: #78350f; }
+</style>
+
+<div class="flex items-baseline justify-between flex-wrap gap-2">
+  <div>
+    <h1 class="rp-h1">Reports &amp; Analytics</h1>
+    <p class="rp-sub">{{ rng.label }} · {{ rng.start.isoformat() }} → {{ rng.end_inclusive.isoformat() }} · {{ rng.days }} day{{ 's' if rng.days != 1 else '' }}</p>
+  </div>
+</div>
+
+<nav class="rp-tabs">
+  <a class="rp-tab {% if active_tab == 'overview' %}is-active{% endif %}"
+     href="{{ url_for('reports.overview', range=request.args.get('range','today'), start=request.args.get('start'), end=request.args.get('end')) }}">Overview</a>
+  <a class="rp-tab {% if active_tab == 'revenue' %}is-active{% endif %}"
+     href="{{ url_for('reports.revenue', range=request.args.get('range','today'), start=request.args.get('start'), end=request.args.get('end')) }}">Revenue</a>
+  <a class="rp-tab {% if active_tab == 'occupancy' %}is-active{% endif %}"
+     href="{{ url_for('reports.occupancy', range=request.args.get('range','today'), start=request.args.get('start'), end=request.args.get('end')) }}">Occupancy</a>
+  <a class="rp-tab {% if active_tab == 'outstanding' %}is-active{% endif %}"
+     href="{{ url_for('reports.outstanding', range=request.args.get('range','today'), start=request.args.get('start'), end=request.args.get('end')) }}">Outstanding</a>
+</nav>
+
+<div class="rp-range">
+  <span class="text-xs text-slate-500 mr-1">Range:</span>
+  {% set base = url_for('reports.' + active_tab) %}
+  {% for code, label in [('today','Today'),('yesterday','Yesterday'),('week','This week'),('month','This month')] %}
+    <a class="rp-chip {% if rng.label == label or request.args.get('range', 'today') == code %}is-active{% endif %}"
+       href="{{ base }}?range={{ code }}">{{ label }}</a>
+  {% endfor %}
+  <form method="GET" action="{{ base }}">
+    <input type="hidden" name="range" value="custom">
+    <input type="date" name="start" value="{{ rng.start.isoformat() }}">
+    <span class="text-xs text-slate-400">→</span>
+    <input type="date" name="end" value="{{ rng.end_inclusive.isoformat() }}">
+    <button type="submit">Custom</button>
+  </form>
+</div>

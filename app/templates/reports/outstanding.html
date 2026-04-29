@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Reports — Outstanding{% endblock %}
+{% block content %}
+<div class="rp-shell">
+  {% include 'reports/_layout.html' %}
+
+  <div class="rp-kpis">
+    <div class="rp-kpi {% if grand_total > 0 %}is-warn{% endif %}">
+      <span class="label">Total outstanding</span>
+      <span class="value">${{ '%.2f'|format(grand_total) }}</span>
+      <span class="meta">{{ rows|length }} live booking{{ 's' if rows|length != 1 else '' }}</span>
+    </div>
+    <div class="rp-kpi {% if pend.pending_count > 0 %}is-warn{% endif %}">
+      <span class="label">Pending review</span>
+      <span class="value">{{ pend.pending_count }}</span>
+      <span class="meta">invoices awaiting verify</span>
+    </div>
+  </div>
+
+  <div class="rp-card">
+    <h3>Bookings with positive folio balance</h3>
+    {% if rows %}
+    <table class="rp-table">
+      <thead>
+        <tr>
+          <th>Booking</th>
+          <th>Guest</th>
+          <th>Room</th>
+          <th>Stay</th>
+          <th>Status</th>
+          <th class="num">Balance</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><strong>{{ r.booking.booking_ref }}</strong></td>
+          <td>{{ r.booking.guest.full_name if r.booking.guest else '—' }}</td>
+          <td>#{{ r.booking.room.number if r.booking.room else '?' }}</td>
+          <td>{{ r.booking.check_in_date }} → {{ r.booking.check_out_date }}</td>
+          <td><span class="text-xs" style="text-transform: uppercase; letter-spacing: .04em;">{{ r.booking.status.replace('_',' ') }}</span></td>
+          <td class="num"><strong>${{ '%.2f'|format(r.balance) }}</strong></td>
+          <td>
+            <a class="text-xs text-blue-700" href="{{ url_for('bookings.detail', booking_id=r.booking.id) }}">Open →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-emerald-700">No live bookings have an outstanding balance. ✓</p>
+    {% endif %}
+  </div>
+
+  <div class="rp-source">
+    <strong>How outstanding is computed:</strong>
+    for each live booking (statuses <code>confirmed / payment_verified / checked_in / payment_uploaded / pending_payment</code>),
+    we run <code>folio_balance(booking)</code> — the sum of non-voided <code>FolioItem.total_amount</code>.
+    Discounts and posted payments are stored as negative amounts, so the balance naturally goes to zero
+    when the guest has paid in full. Voided items don't count.
+  </div>
+</div>
+{% endblock %}

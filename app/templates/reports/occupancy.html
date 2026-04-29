@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Reports — Occupancy{% endblock %}
+{% block content %}
+<div class="rp-shell">
+  {% include 'reports/_layout.html' %}
+
+  <div class="rp-kpis">
+    <div class="rp-kpi"><span class="label">Occupancy %</span><span class="value">{{ summary.occupancy_pct }}%</span><span class="meta">{{ summary.range.days }} day{{ 's' if summary.range.days != 1 else '' }} · weighted</span></div>
+    <div class="rp-kpi"><span class="label">Room nights sold</span><span class="value">{{ summary.room_nights_sold }}</span><span class="meta">checked-in or checked-out</span></div>
+    <div class="rp-kpi"><span class="label">Available room nights</span><span class="value">{{ summary.available_room_nights }}</span><span class="meta">active rooms × days</span></div>
+    <div class="rp-kpi"><span class="label">Avg sold per day</span><span class="value">{{ '%.1f'|format(summary.room_nights_sold / summary.range.days) }}</span></div>
+  </div>
+
+  <div class="rp-card">
+    <h3>Occupancy by day</h3>
+    {% if summary.series %}
+    <table class="rp-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="num">Occupied</th>
+          <th class="num">Total rooms</th>
+          <th class="num">Occupancy %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in summary.series %}
+        <tr>
+          <td>{{ s.date.strftime('%a · %b %-d, %Y') }}</td>
+          <td class="num">{{ s.rooms_occupied }}</td>
+          <td class="num">{{ s.rooms_total }}</td>
+          <td class="num">
+            {% if s.occupancy_pct >= 80 %}
+              <span style="color:#16a34a; font-weight:700;">{{ s.occupancy_pct }}%</span>
+            {% elif s.occupancy_pct >= 50 %}
+              <span style="color:#0f172a;">{{ s.occupancy_pct }}%</span>
+            {% else %}
+              <span style="color:#94a3b8;">{{ s.occupancy_pct }}%</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-slate-400 italic">No data for this range.</p>
+    {% endif %}
+  </div>
+
+  <div class="rp-source">
+    <strong>What counts as a room night sold:</strong>
+    a booking with status <code>checked_in</code> or <code>checked_out</code> that covers the date.
+    Confirmed-but-not-arrived bookings do <em>not</em> count toward historical occupancy — reports show
+    what actually happened, not what was planned. ADR / RevPAR are deliberately deferred until a stable
+    "rooms available" definition handles maintenance + out-of-order consistently.
+  </div>
+</div>
+{% endblock %}
