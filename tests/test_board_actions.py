@@ -506,6 +506,40 @@ class RemoveBlockTests(_RouteBase):
 # 5) Board still renders + integration smoke
 # ─────────────────────────────────────────────────────────────────────
 
+class DrawerMoveTileMarkupTests(_RouteBase):
+    """Regression tests for the move-bug fix: the drawer's "Move room" /
+    "Extend stay" tiles must use data-board-action attributes (NOT inline
+    onclick="..." with JSON.stringify, which broke the HTML attribute
+    boundary because of unescaped " characters)."""
+
+    def setUp(self):
+        super().setUp()
+        self._login(self.admin_id)
+
+    def test_board_html_has_no_inline_modal_onclick(self):
+        # The bug: onclick="closeDrawer(); openMoveModal(8, "BK001", ..."
+        # The fix: data-board-action="move-room" + delegated JS handler.
+        r = self.client.get('/board')
+        self.assertEqual(r.status_code, 200)
+        # Inline onclick that opens move/extend modals must be GONE.
+        self.assertNotIn(b"openMoveModal('", r.data)
+        self.assertNotIn(b'openMoveModal("', r.data)
+        # The current implementation builds the markup string in JS and
+        # tags the tile with data-board-action so the regression marker
+        # we want to see is the JS source mentioning the attribute.
+        self.assertIn(b'data-board-action="move-room"', r.data)
+        self.assertIn(b'data-board-action="extend-stay"', r.data)
+
+    def test_board_html_includes_delegated_handler(self):
+        r = self.client.get('/board')
+        # The single delegated click handler that resolves the action.
+        self.assertIn(b'currentBooking', r.data)
+        self.assertIn(b'getAttribute(\'data-board-action\')', r.data)
+        # The Move/Extend handlers still exist as openMoveModal/openExtendModal.
+        self.assertIn(b'window.openMoveModal', r.data)
+        self.assertIn(b'window.openExtendModal', r.data)
+
+
 class BoardRenderingWithBlocksTests(_RouteBase):
 
     def setUp(self):

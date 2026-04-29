@@ -2007,6 +2007,12 @@
     var BOOKINGS = {};
     try { BOOKINGS = JSON.parse(rawData) || {}; } catch (e) { console.warn('board: bookings JSON parse failed', e); }
 
+    // The booking currently displayed in the drawer. Set when openDrawer
+    // fires; used by the delegated click handler so the Move / Extend
+    // tiles know which booking they're acting on without any inline
+    // attribute injection.
+    var currentBooking = null;
+
     var statusLabels = {
       'new_request':       'New request',
       'pending_payment':   'Pending payment',
@@ -2207,15 +2213,16 @@
     function buildActionsSection(b) {
       var actions = [];
 
-      // Phase A: Move to another room (opens modal)
+      // Phase A: Move to another room (opens modal via delegated handler)
+      // NOTE: we do NOT use inline onclick="..." here because b.ref / b.guest
+      // contain " characters (from JSON.stringify) that break the HTML
+      // attribute boundary when set via innerHTML. Instead, we mark the
+      // tile with data-board-action="move-room" and a global delegated
+      // click handler reads the *currently open* booking from the
+      // currentBooking closure variable. This was the bug behind
+      // "Bookings cannot be moved from the board".
       actions.push(
-        '<a href="javascript:void(0)" class="drawer-action"' +
-        ' onclick="closeDrawer(); openMoveModal(' + b.id + ', ' +
-                                                  JSON.stringify(b.ref) + ', ' +
-                                                  JSON.stringify(b.guest) + ', ' +
-                                                  JSON.stringify(b.checkIn) + ', ' +
-                                                  JSON.stringify(b.checkOut) + ', ' +
-                                                  JSON.stringify(b.room) + ');">' +
+        '<a href="javascript:void(0)" class="drawer-action" data-board-action="move-room">' +
           '<span class="drawer-action-icon" style="background:#f0fdfa;color:#0f766e;">' +
             '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>' +
           '</span>' +
@@ -2224,14 +2231,9 @@
         '</a>'
       );
 
-      // Phase B: Extend / shorten stay (opens modal)
+      // Phase B: Extend / shorten stay (opens modal via delegated handler)
       actions.push(
-        '<a href="javascript:void(0)" class="drawer-action"' +
-        ' onclick="closeDrawer(); openExtendModal(' + b.id + ', ' +
-                                                    JSON.stringify(b.ref) + ', ' +
-                                                    JSON.stringify(b.guest) + ', ' +
-                                                    JSON.stringify(b.checkOut) + ', ' +
-                                                    JSON.stringify(b.room) + ');">' +
+        '<a href="javascript:void(0)" class="drawer-action" data-board-action="extend-stay">' +
           '<span class="drawer-action-icon" style="background:#fffbeb;color:#a16207;">' +
             '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
           '</span>' +
@@ -2345,11 +2347,49 @@
       bodyEl.innerHTML = bodyHtml;
       bodyEl.scrollTop = 0;
 
+      // Track the booking currently in the drawer so the delegated
+      // click handler can resolve "Move room" / "Extend stay" actions
+      // back to the right booking ID.
+      currentBooking = b;
+
       document.getElementById('drawerOpenLink').href = '/bookings/' + b.id;
       document.body.classList.add('drawer-open');
       document.getElementById('boardDrawer').setAttribute('aria-hidden', 'false');
       return false;
     };
+
+    // Delegated click handler — bound ONCE on the drawer body. Reads
+    // [data-board-action] off the clicked element and dispatches to
+    // the right modal opener using currentBooking. This replaces the
+    // inline onclick="" attributes that were silently broken by the
+    // " characters in JSON.stringify output.
+    document.getElementById('drawerBody').addEventListener('click', function(e) {
+      var target = e.target.closest('[data-board-action]');
+      if (!target || !currentBooking) return;
+      var action = target.getAttribute('data-board-action');
+      if (action === 'move-room') {
+        e.preventDefault();
+        closeDrawer();
+        openMoveModal(
+          currentBooking.id,
+          currentBooking.ref,
+          currentBooking.guest,
+          currentBooking.checkIn,
+          currentBooking.checkOut,
+          currentBooking.room
+        );
+      } else if (action === 'extend-stay') {
+        e.preventDefault();
+        closeDrawer();
+        openExtendModal(
+          currentBooking.id,
+          currentBooking.ref,
+          currentBooking.guest,
+          currentBooking.checkOut,
+          currentBooking.room
+        );
+      }
+    });
 
     window.closeDrawer = function() {
       document.body.classList.remove('drawer-open');
