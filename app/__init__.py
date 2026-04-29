@@ -54,6 +54,7 @@ def create_app(config_class=Config):
     from .routes.reports import reports_bp
     from .routes.pos import pos_bp
     from .routes.menu_orders import menu_bp
+    from .routes.groups import groups_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -77,6 +78,7 @@ def create_app(config_class=Config):
     app.register_blueprint(reports_bp)
     app.register_blueprint(pos_bp)
     app.register_blueprint(menu_bp)
+    app.register_blueprint(groups_bp)
 
     # Register the business-date context processor so every template
     # can read {{ business_date }} without explicit passthrough.

@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+{% block title %}{{ group.group_code }} — {{ group.group_name }}{% endblock %}
+{% block content %}
+{% include 'groups/_styles.html' %}
+
+<div class="g-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="g-h1">
+        {{ group.group_name }}
+        <span class="pill muted" style="font-size:11px; vertical-align: middle;">{{ group.group_code }}</span>
+      </h1>
+      <p class="g-sub">
+        {% if summary.member_count > 0 %}
+          {{ summary.member_count }} booking{{ 's' if summary.member_count != 1 else '' }}
+          {% if summary.earliest_check_in %}
+            · {{ summary.earliest_check_in.strftime('%b %-d') }} → {{ summary.latest_check_out.strftime('%b %-d') }}
+          {% endif %}
+        {% else %}
+          No bookings yet.
+        {% endif %}
+        · billing mode: <strong>{{ group.billing_mode }}</strong>
+        ·
+        {% if group.status == 'active' %}<span class="pill ok">active</span>
+        {% elif group.status == 'cancelled' %}<span class="pill bad">cancelled</span>
+        {% else %}<span class="pill muted">completed</span>{% endif %}
+      </p>
+    </div>
+    <div class="g-actions">
+      <a class="btn-secondary" href="{{ url_for('groups.index') }}">← Groups</a>
+      <a class="btn-secondary" href="{{ url_for('groups.edit', group_id=group.id) }}">Edit</a>
+      {% if group.status == 'active' %}
+        <form method="POST" action="{{ url_for('groups.complete', group_id=group.id) }}" class="inline">
+          <button class="btn-secondary" type="submit">Mark completed</button>
+        </form>
+        <form method="POST" action="{{ url_for('groups.cancel', group_id=group.id) }}" class="inline"
+              onsubmit="return confirm('Mark group {{ group.group_code }} as CANCELLED?');">
+          <button class="btn-danger" type="submit">Cancel group</button>
+        </form>
+      {% else %}
+        <form method="POST" action="{{ url_for('groups.reactivate', group_id=group.id) }}" class="inline">
+          <button class="btn-secondary" type="submit">Reactivate</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if group.primary_contact %}
+  <div class="g-card">
+    <h3 class="g-sub" style="margin: 0 0 4px;">Primary contact</h3>
+    <strong>{{ group.primary_contact.full_name }}</strong>
+    {% if group.primary_contact.phone %} · {{ group.primary_contact.phone }}{% endif %}
+    {% if group.primary_contact.email %} · {{ group.primary_contact.email }}{% endif %}
+  </div>
+  {% endif %}
+
+  {% if group.notes %}
+  <div class="g-card">
+    <h3 class="g-sub" style="margin: 0 0 4px;">Notes</h3>
+    <div style="font-size: 13px; white-space: pre-wrap;">{{ group.notes }}</div>
+  </div>
+  {% endif %}
+
+  <div class="g-kpis">
+    <div class="g-kpi">
+      <span class="label">Members</span>
+      <span class="value">{{ summary.member_count }}</span>
+    </div>
+    <div class="g-kpi">
+      <span class="label">Sum room revenue</span>
+      <span class="value">${{ '%.2f'|format(summary.sum_room_revenue) }}</span>
+      <span class="meta">Booking.total_amount × N</span>
+    </div>
+    <div class="g-kpi">
+      <span class="label">Outstanding (all)</span>
+      <span class="value" style="color: {% if summary.sum_outstanding > 0 %}#ca8a04{% else %}#16a34a{% endif %};">
+        ${{ '%.2f'|format(summary.sum_outstanding) }}
+      </span>
+      <span class="meta">sum of folio balances &gt; 0</span>
+    </div>
+    <div class="g-kpi">
+      <span class="label">Master folio balance</span>
+      <span class="value">
+        {% if summary.master_booking %}
+          ${{ '%.2f'|format(summary.sum_master_balance) }}
+        {% else %}
+          <span class="g-sub" style="font-size:14px;">no master</span>
+        {% endif %}
+      </span>
+      <span class="meta">members billing → master</span>
+    </div>
+  </div>
+
+  {# ── Master billing booking ── #}
+  <div class="g-card">
+    <h3 class="g-sub" style="margin: 0 0 8px; font-weight: 800; color: #475569; text-transform: uppercase;">Master billing booking</h3>
+    {% if summary.master_booking %}
+      {# Master booking's own folio balance is one of the rows in summary.rows. #}
+      {% set master_row = (summary.rows|selectattr('is_master')|list|first) %}
+      <div style="font-size: 14px;">
+        <strong>{{ summary.master_booking.booking_ref }}</strong>
+        · #{{ summary.master_booking.room.number if summary.master_booking.room else '?' }}
+        · {{ summary.master_booking.guest.full_name if summary.master_booking.guest else '?' }}
+        · folio balance ${{ '%.2f'|format(master_row.folio_balance if master_row else 0) }}
+        — <a class="text-blue-700" href="{{ url_for('bookings.detail', booking_id=summary.master_booking.id) }}">open →</a>
+      </div>
+    {% else %}
+      <p class="g-sub">No master billing booking set. All members pay individually.</p>
+    {% endif %}
+
+    {% if summary.member_count > 0 %}
+    <form method="POST" action="{{ url_for('groups.set_master', group_id=group.id) }}"
+          class="g-actions" style="margin-top: 10px;">
+      <select name="booking_id" style="flex: 1; min-width: 220px;">
+        <option value="0">— Clear master —</option>
+        {% for row in summary.rows %}
+          <option value="{{ row.booking.id }}"
+            {% if row.is_master %}selected{% endif %}>
+            {{ row.booking.booking_ref }}
+            · #{{ row.booking.room.number if row.booking.room else '?' }}
+            · {{ row.booking.guest.full_name if row.booking.guest else '?' }}
+          </option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-primary">Set master</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {# ── Members ── #}
+  <div class="g-card">
+    <h3 class="g-sub" style="margin: 0 0 8px; font-weight: 800; color: #475569; text-transform: uppercase;">Members</h3>
+    {% if summary.rows %}
+    <table class="g-table">
+      <thead>
+        <tr>
+          <th>Booking</th>
+          <th>Guest</th>
+          <th>Room</th>
+          <th>Stay</th>
+          <th>Status</th>
+          <th>Billing target</th>
+          <th class="num">Folio balance</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in summary.rows %}
+        <tr {% if row.is_master %}class="is-master"{% endif %}>
+          <td>
+            <strong>{{ row.booking.booking_ref }}</strong>
+            {% if row.is_master %}<span class="pill master" style="font-size:9px;">MASTER</span>{% endif %}
+          </td>
+          <td>{{ row.booking.guest.full_name if row.booking.guest else '—' }}</td>
+          <td>#{{ row.booking.room.number if row.booking.room else '?' }}</td>
+          <td>{{ row.booking.check_in_date }} → {{ row.booking.check_out_date }}</td>
+          <td><span class="g-sub">{{ row.booking.status.replace('_',' ') }}</span></td>
+          <td>
+            <form method="POST" action="{{ url_for('groups.set_member_billing_target', group_id=group.id) }}"
+                  class="inline">
+              <input type="hidden" name="booking_id" value="{{ row.booking.id }}">
+              <select name="billing_target" onchange="this.form.submit();" style="width:auto; min-height:30px;">
+                {% for t in billing_targets %}
+                  <option value="{{ t }}" {% if row.booking.billing_target == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+          <td class="num"><strong>${{ '%.2f'|format(row.folio_balance) }}</strong></td>
+          <td>
+            <a class="btn-secondary" href="{{ url_for('bookings.detail', booking_id=row.booking.id) }}">Open</a>
+            {% if not row.is_master %}
+              <form method="POST" action="{{ url_for('groups.remove_booking', group_id=group.id) }}"
+                    class="inline"
+                    onsubmit="return confirm('Remove {{ row.booking.booking_ref }} from this group?');">
+                <input type="hidden" name="booking_id" value="{{ row.booking.id }}">
+                <button class="btn-danger" type="submit">Remove</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="g-sub">No member bookings yet. Use the form below to attach one.</p>
+    {% endif %}
+  </div>
+
+  {# ── Add booking ── #}
+  {% if group.status == 'active' and candidates %}
+  <div class="g-card">
+    <h3 class="g-sub" style="margin: 0 0 8px; font-weight: 800; color: #475569; text-transform: uppercase;">Attach a booking</h3>
+    <form method="POST" action="{{ url_for('groups.add_booking', group_id=group.id) }}"
+          class="g-actions">
+      <select name="booking_id" required style="flex: 1; min-width: 240px;">
+        <option value="">— select booking —</option>
+        {% for b in candidates %}
+          <option value="{{ b.id }}">
+            {{ b.booking_ref }}
+            · #{{ b.room.number if b.room else '?' }}
+            · {{ b.guest.full_name if b.guest else '?' }}
+            · {{ b.check_in_date }} → {{ b.check_out_date }}
+            · {{ b.status.replace('_',' ') }}
+          </option>
+        {% endfor %}
+      </select>
+      <select name="billing_target">
+        {% for t in billing_targets %}
+          <option value="{{ t }}">{{ t }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-primary">Attach</button>
+    </form>
+    <p class="g-sub" style="margin-top: 8px;">
+      Showing recent + upcoming non-cancelled bookings (max 120).
+    </p>
+  </div>
+  {% endif %}
+
+  {# ── Anti-double-count notice ── #}
+  <div class="g-card" style="background: #f8fafc; border-style: dashed;">
+    <p class="g-sub">
+      <strong>Anti-double-count guarantee:</strong>
+      every <code>FolioItem</code> belongs to exactly one booking. The
+      group summary aggregates folio balances across members without
+      copying any rows. Room revenue (<code>Booking.total_amount</code>)
+      stays on its booking. The "Master folio balance" is the sum of folio
+      balances on members whose <em>billing target</em> is "master" —
+      operators choose the target per charge when they post it.
+    </p>
+  </div>
+</div>
+{% endblock %}

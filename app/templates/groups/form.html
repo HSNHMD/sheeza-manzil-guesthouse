@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit Group' if group else 'New Group' }}{% endblock %}
+{% block content %}
+{% include 'groups/_styles.html' %}
+
+<div class="g-shell">
+  <h1 class="g-h1">{{ 'Edit ' + group.group_code if group else 'New booking group' }}</h1>
+
+  <form method="POST" class="g-form">
+    {% if not group %}
+    <div>
+      <label for="group_code">Group code *</label>
+      <input type="text" id="group_code" name="group_code" required maxlength="40"
+             placeholder="e.g. MARWED-2026"
+             value="{{ form.get('group_code', '') }}"
+             style="text-transform: uppercase;">
+      <p class="g-sub" style="margin-top:4px;">Letters / digits / dash / underscore. 2–40 chars.</p>
+    </div>
+    {% else %}
+    <div>
+      <label>Code (immutable)</label>
+      <input type="text" disabled value="{{ group.group_code }}">
+    </div>
+    {% endif %}
+
+    <div>
+      <label for="group_name">Group name *</label>
+      <input type="text" id="group_name" name="group_name" required maxlength="160"
+             value="{{ group.group_name if group else form.get('group_name', '') }}">
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="billing_mode">Billing mode *</label>
+        <select id="billing_mode" name="billing_mode">
+          {% for m in billing_modes %}
+            <option value="{{ m }}"
+              {% if group and group.billing_mode == m %}selected{% elif form.get('billing_mode') == m %}selected{% endif %}>
+              {{ m }}
+            </option>
+          {% endfor %}
+        </select>
+        <p class="g-sub" style="margin-top:4px;">
+          <strong>individual</strong>: each booking pays its own folio.
+          <strong>master</strong>: charges default to the master booking.
+          <strong>mixed</strong>: per-booking opt-in.
+        </p>
+      </div>
+      <div>
+        <label for="primary_contact_guest_id">Primary contact (optional)</label>
+        <select id="primary_contact_guest_id" name="primary_contact_guest_id">
+          <option value="0">— None —</option>
+          {% for g in contacts %}
+            <option value="{{ g.id }}"
+              {% if group and group.primary_contact_guest_id == g.id %}selected{% elif form.get('primary_contact_guest_id')|string == g.id|string %}selected{% endif %}>
+              {{ g.full_name }}{% if g.phone %} · {{ g.phone }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3" maxlength="2000">{{ group.notes if group else form.get('notes', '') }}</textarea>
+    </div>
+
+    <div class="g-actions">
+      <button type="submit" class="btn-primary">{{ 'Save' if group else 'Create group' }}</button>
+      <a class="btn-secondary"
+         href="{{ url_for('groups.detail', group_id=group.id) if group else url_for('groups.index') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

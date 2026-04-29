@@ -14,6 +14,20 @@
         <span class="text-xs px-2 py-0.5 rounded-full font-medium {{ status_badge(booking.status, _payment_status, booking.invoice) }}">
           {{ status_label(booking.status, _payment_status, booking.invoice) }}
         </span>
+        {% if booking.booking_group %}
+          {# Group Bookings V1 — surface membership prominently #}
+          <a href="{{ url_for('groups.detail', group_id=booking.booking_group.id) }}"
+             class="inline-flex items-center gap-1 ml-1 text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+             title="Member of group {{ booking.booking_group.group_code }}">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Group · {{ booking.booking_group.group_code }}
+            {% if booking.booking_group.master_booking_id == booking.id %}
+              <span style="background:#fef9c3; color:#854d0e; padding:0 4px; border-radius:4px;">MASTER</span>
+            {% elif booking.billing_target == 'master' %}
+              <span style="opacity:.8;">→ master</span>
+            {% endif %}
+          </a>
+        {% endif %}
       </div>
     </div>
     {% if booking.invoice %}

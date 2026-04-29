@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Booking Groups{% endblock %}
+{% block content %}
+{% include 'groups/_styles.html' %}
+
+<div class="g-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="g-h1">Booking Groups</h1>
+      <p class="g-sub">{{ counts.total }} group{{ 's' if counts.total != 1 else '' }} ({{ counts.active }} active).</p>
+    </div>
+    <div class="g-actions">
+      <a href="{{ url_for('groups.new') }}" class="btn-primary">+ New group</a>
+    </div>
+  </div>
+
+  <div class="g-actions">
+    {% set base = url_for('groups.index') %}
+    <a class="btn-secondary {% if not status_filter %}is-active{% endif %}" href="{{ base }}">All ({{ counts.total }})</a>
+    {% for s in ['active','cancelled','completed'] %}
+      <a class="btn-secondary" href="{{ base }}?status={{ s }}">{{ s.title() }} ({{ counts[s] }})</a>
+    {% endfor %}
+  </div>
+
+  {% if groups %}
+  <table class="g-table">
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Members</th>
+        <th>Billing mode</th>
+        <th>Master booking</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in groups %}
+      <tr>
+        <td><strong>{{ g.group_code }}</strong></td>
+        <td>{{ g.group_name }}</td>
+        <td>{{ g.bookings.count() }}</td>
+        <td><span class="pill muted">{{ g.billing_mode }}</span></td>
+        <td>
+          {% if g.master_booking %}
+            {{ g.master_booking.booking_ref }}
+          {% else %}
+            <span class="g-sub">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if g.status == 'active' %}<span class="pill ok">active</span>
+          {% elif g.status == 'cancelled' %}<span class="pill bad">cancelled</span>
+          {% else %}<span class="pill muted">completed</span>{% endif %}
+        </td>
+        <td><a class="btn-secondary" href="{{ url_for('groups.detail', group_id=g.id) }}">Open →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="g-sub">No groups{% if status_filter %} match this filter{% endif %}.</p>
+  {% endif %}
+</div>
+{% endblock %}

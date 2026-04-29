@@ -146,8 +146,25 @@ class Booking(db.Model):
     id_card_drive_id      = db.Column(db.String(255))
     payment_slip_drive_id = db.Column(db.String(255))
 
+    # Group Bookings V1 — both nullable so standalone bookings stay
+    # unchanged. `booking_group_id` is set when the booking is
+    # attached to a group; `billing_target` controls whether ad-hoc
+    # folio items default to this booking ('individual') or to the
+    # group's master_booking ('master'). V1 never auto-rolls existing
+    # rows — operators still pick the target per charge.
+    booking_group_id = db.Column(
+        db.Integer, db.ForeignKey('booking_groups.id', ondelete='SET NULL'),
+        nullable=True, index=True,
+    )
+    billing_target = db.Column(db.String(20), nullable=False,
+                                default='individual')
+
     invoice = db.relationship('Invoice', backref='booking', uselist=False)
     creator = db.relationship('User', foreign_keys=[created_by])
+    booking_group = db.relationship(
+        'BookingGroup', foreign_keys=[booking_group_id],
+        backref=db.backref('bookings', lazy='dynamic'),
+    )
 
     @property
     def nights(self):
@@ -1125,3 +1142,79 @@ class GuestOrderItem(db.Model):
     def __repr__(self):
         return (f'<GuestOrderItem {self.item_name_snapshot}× {self.quantity} '
                 f'@{self.unit_price}>')
+
+
+# ── Group Bookings / Master Folios V1 ───────────────────────────────
+#
+# A `BookingGroup` ties multiple `Booking` rows together under one
+# operational identity (a wedding party, a tour, a corporate stay).
+# Each member booking can opt in to MASTER billing (`billing_target=
+# 'master'`) or stay on its own folio (`billing_target='individual'`).
+#
+# Master billing is implemented by designating ONE member booking as
+# the group's billing account (`group.master_booking_id`). Operators
+# explicitly choose where to post each ad-hoc charge — V1 NEVER auto-
+# rolls items between folios. Each FolioItem has exactly one booking_id,
+# so a charge can never be counted twice.
+#
+# Mixed billing (some charges to master, others to individual) IS
+# supported by virtue of the explicit-target rule; what is DEFERRED is
+# automatic split-billing of room revenue (Phase 2). For V1, room
+# revenue (Booking.total_amount) stays tied to its booking; only ad-
+# hoc folio items can flow to the master account.
+
+
+class BookingGroup(db.Model):
+    """A group of linked bookings with optional master-folio billing."""
+    __tablename__ = 'booking_groups'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    # Short, unique, operator-friendly code (e.g. "MARWED-2026").
+    group_code  = db.Column(db.String(40), unique=True, nullable=False,
+                            index=True)
+    group_name  = db.Column(db.String(160), nullable=False)
+
+    # Optional contact guest — usually the trip organizer / wedding
+    # planner. Not necessarily a member booking's guest.
+    primary_contact_guest_id = db.Column(
+        db.Integer, db.ForeignKey('guests.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    # The "billing account" booking. NULL means no master-folio
+    # billing is in effect; all members bill to themselves regardless
+    # of `billing_target`. When set, member bookings whose
+    # `billing_target='master'` post their ad-hoc charges to this row.
+    master_booking_id = db.Column(
+        db.Integer, db.ForeignKey('bookings.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    # 'individual' (V1 default), 'master', 'mixed'. The column is a
+    # high-level intent indicator; the per-charge routing is decided
+    # by Booking.billing_target + operator UI.
+    billing_mode = db.Column(db.String(20), nullable=False,
+                             default='individual')
+
+    # 'active' | 'cancelled' | 'completed'
+    status      = db.Column(db.String(20), nullable=False, default='active')
+
+    notes       = db.Column(db.Text, nullable=True)
+    metadata_json = db.Column(db.Text, nullable=True)
+
+    primary_contact = db.relationship(
+        'Guest', foreign_keys=[primary_contact_guest_id])
+    master_booking  = db.relationship(
+        'Booking', foreign_keys=[master_booking_id],
+        post_update=True,
+    )
+
+    # Member bookings — backref defined on Booking below.
+
+    def __repr__(self):
+        return f'<BookingGroup {self.group_code}: {self.group_name}>'
