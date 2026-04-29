@@ -48,6 +48,7 @@ def create_app(config_class=Config):
     from .routes.reservation_board import board_bp
     from .routes.front_office import front_office_bp
     from .routes.cashiering import cashiering_bp
+    from .routes.night_audit import night_audit_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -65,6 +66,19 @@ def create_app(config_class=Config):
     app.register_blueprint(board_bp)
     app.register_blueprint(front_office_bp)
     app.register_blueprint(cashiering_bp)
+    app.register_blueprint(night_audit_bp)
+
+    # Register the business-date context processor so every template
+    # can read {{ business_date }} without explicit passthrough.
+    # Defaults to today's date if the singleton row is missing
+    # (defensive — surfaces as a Night Audit blocker).
+    @app.context_processor
+    def _inject_business_date():
+        from .services.night_audit import current_business_date
+        try:
+            return {'business_date': current_business_date()}
+        except Exception:
+            return {'business_date': None}
 
     from flask import request, redirect
     from flask_login import current_user

@@ -633,3 +633,101 @@ class CashierTransaction(db.Model):
                 f'booking_id={self.booking_id} '
                 f'{self.transaction_type} {self.amount} {self.currency} '
                 f'via {self.payment_method} status={self.status}>')
+
+
+# ── Business Date State (Night Audit V1) ─────────────────────────────
+#
+# Single-row table holding the property's current "business date" —
+# the operator-controlled date that does NOT auto-follow server clock
+# midnight. Business date advances only when Night Audit completes.
+#
+# Why this matters: hospitality operations span midnight. A 02:30 late
+# checkout on June 1 server time is still operationally "May 31" until
+# the operator runs Night Audit. Reports filter on business_date, NOT
+# created_at, so the day's revenue stays whole.
+#
+# See docs/accounts_business_date_night_audit_plan.md §3.
+class BusinessDateState(db.Model):
+    __tablename__ = 'business_date_state'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    current_business_date = db.Column(db.Date, nullable=False)
+
+    # Last completed Night Audit (None on fresh install)
+    last_audit_run_at         = db.Column(db.DateTime, nullable=True)
+    last_audit_run_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    # Concurrent-run guard. Set True at the start of a Night Audit;
+    # cleared on completion OR explicit abort. Prevents two operators
+    # from racing the close.
+    audit_in_progress         = db.Column(db.Boolean, nullable=False,
+                                          default=False)
+    audit_started_at          = db.Column(db.DateTime, nullable=True)
+    audit_started_by_user_id  = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    last_audit_run_by  = db.relationship('User', foreign_keys=[last_audit_run_by_user_id])
+    audit_started_by   = db.relationship('User', foreign_keys=[audit_started_by_user_id])
+
+    def __repr__(self):
+        return (f'<BusinessDateState business_date={self.current_business_date} '
+                f'audit_in_progress={self.audit_in_progress}>')
+
+
+# ── Night Audit Run (immutable history) ──────────────────────────────
+#
+# One row per Night Audit run (started, blocked, completed, failed).
+# Completed rows are immutable — corrections happen via adjustment
+# folio items in the next business date, never by editing this row.
+#
+# Reports about "what happened on day X" eventually read from
+# daily_revenue_snapshots (Phase 6 of the planning doc). For V1, this
+# table is the audit trail of every close attempt.
+class NightAuditRun(db.Model):
+    __tablename__ = 'night_audit_runs'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    business_date_closed = db.Column(db.Date, nullable=False)
+    next_business_date   = db.Column(db.Date, nullable=False)
+
+    run_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    # started → blocked | completed | failed
+    status = db.Column(db.String(20), nullable=False, default='started')
+
+    summary_json    = db.Column(db.Text, nullable=True)
+    exception_count = db.Column(db.Integer, nullable=False, default=0)
+    warning_count   = db.Column(db.Integer, nullable=False, default=0)
+
+    notes = db.Column(db.String(500), nullable=True)
+
+    run_by = db.relationship('User', foreign_keys=[run_by_user_id])
+
+    __table_args__ = (
+        db.Index('ix_night_audit_runs_business_date',
+                 'business_date_closed'),
+        db.Index('ix_night_audit_runs_status',
+                 'status'),
+    )
+
+    def __repr__(self):
+        return (f'<NightAuditRun id={self.id} '
+                f'closed={self.business_date_closed} → {self.next_business_date} '
+                f'status={self.status}>')

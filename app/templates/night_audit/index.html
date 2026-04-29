@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+{% block title %}Night Audit — {{ brand.short_name }}{% endblock %}
+
+{% block content %}
+<div class="space-y-4 max-w-4xl">
+
+  <!-- Header -->
+  <div>
+    <div class="text-[10px] uppercase tracking-[0.10em] font-semibold text-slate-400">
+      Admin · Night Audit
+    </div>
+    <h1 class="text-xl font-bold text-slate-900 leading-tight">
+      Close the day &amp; roll forward
+    </h1>
+    <p class="text-xs text-slate-500 mt-0.5">
+      Night Audit is human-confirmed. AI may summarize later, but the
+      click that flips the business date stays here.
+    </p>
+  </div>
+
+  <!-- Date strip -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <!-- Current business date (the one being closed) -->
+    <div class="bg-white rounded-xl border-2 border-teal-300 p-4">
+      <div class="text-[10px] uppercase tracking-wider text-teal-700 font-semibold">Current business date</div>
+      <div class="text-2xl font-bold text-teal-900 mt-1">
+        {% if business_date %}{{ business_date.strftime('%a %b %-d, %Y') }}{% else %}— missing —{% endif %}
+      </div>
+      <div class="text-[11px] text-slate-500 mt-1">This day will be closed.</div>
+    </div>
+
+    <!-- Server clock -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Server time (UTC)</div>
+      <div class="text-2xl font-bold text-slate-900 mt-1">
+        {{ server_now.strftime('%a %b %-d, %Y') }}
+      </div>
+      <div class="text-[11px] text-slate-500 mt-1">{{ server_now.strftime('%H:%M:%S UTC') }}</div>
+    </div>
+
+    <!-- Next business date -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Next business date</div>
+      <div class="text-2xl font-bold text-slate-900 mt-1">
+        {% if next_business_date %}{{ next_business_date.strftime('%a %b %-d, %Y') }}{% else %}—{% endif %}
+      </div>
+      <div class="text-[11px] text-slate-500 mt-1">After audit completes.</div>
+    </div>
+  </div>
+
+  {% if state and state.audit_in_progress %}
+  <div class="bg-amber-50 border border-amber-300 rounded-xl p-4">
+    <div class="flex items-start gap-3">
+      <svg class="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <div>
+        <p class="font-semibold text-amber-900">Audit in progress</p>
+        <p class="text-sm text-amber-800 mt-1">
+          Started {{ state.audit_started_at.strftime('%H:%M UTC') if state.audit_started_at else '(unknown)' }}
+          by {{ state.audit_started_by.username if state.audit_started_by else '(unknown)' }}.
+          Wait for completion or ask an admin to clear the flag.
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Issue panels -->
+  {% if blocking_issues %}
+  <div class="bg-white rounded-xl border-2 border-red-300 overflow-hidden">
+    <div class="bg-red-50 px-4 py-2 border-b border-red-200">
+      <h2 class="text-sm font-bold text-red-900 flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+        Blocking issues — must resolve before closing
+        <span class="ml-auto text-xs px-2 py-0.5 rounded-full bg-red-200 text-red-900">{{ blocking_issues|length }}</span>
+      </h2>
+    </div>
+    <ul class="divide-y divide-red-100">
+      {% for issue in blocking_issues %}
+      <li class="px-4 py-3">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-red-900 text-sm">{{ issue.title }}</p>
+            <p class="text-xs text-red-800 mt-0.5">{{ issue.detail }}</p>
+            {% if issue.refs %}
+            <p class="text-[11px] text-red-700 mt-1 font-mono">
+              {{ issue.refs[:6]|join(', ') }}{% if issue.refs|length > 6 %} +{{ issue.refs|length - 6 }} more{% endif %}
+            </p>
+            {% endif %}
+            {% if issue.fix_hint %}
+            <p class="text-[11px] text-red-600 mt-1 italic">→ {{ issue.fix_hint }}</p>
+            {% endif %}
+          </div>
+          <span class="text-[10px] font-mono text-red-400 flex-shrink-0">{{ issue.code }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if warning_issues %}
+  <div class="bg-white rounded-xl border border-amber-200 overflow-hidden">
+    <div class="bg-amber-50 px-4 py-2 border-b border-amber-200">
+      <h2 class="text-sm font-bold text-amber-900 flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Warnings — review and proceed
+        <span class="ml-auto text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">{{ warning_issues|length }}</span>
+      </h2>
+    </div>
+    <ul class="divide-y divide-amber-100">
+      {% for issue in warning_issues %}
+      <li class="px-4 py-3">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-amber-900 text-sm">{{ issue.title }}</p>
+            <p class="text-xs text-amber-800 mt-0.5">{{ issue.detail }}</p>
+            {% if issue.refs %}
+            <p class="text-[11px] text-amber-700 mt-1 font-mono">
+              {{ issue.refs[:6]|join(', ') }}{% if issue.refs|length > 6 %} +{{ issue.refs|length - 6 }} more{% endif %}
+            </p>
+            {% endif %}
+            {% if issue.fix_hint %}
+            <p class="text-[11px] text-amber-700 mt-1 italic">→ {{ issue.fix_hint }}</p>
+            {% endif %}
+          </div>
+          <span class="text-[10px] font-mono text-amber-400 flex-shrink-0">{{ issue.code }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if not blocking_issues and not warning_issues %}
+  <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+    <p class="font-semibold text-emerald-900 text-sm">
+      ✓ All clear — no blocking or warning issues.
+    </p>
+    <p class="text-xs text-emerald-800 mt-1">
+      Ready to close {{ business_date.strftime('%b %-d, %Y') if business_date else 'business date' }}.
+    </p>
+  </div>
+  {% endif %}
+
+  <!-- Run panel -->
+  <div class="bg-white rounded-xl border border-slate-200 p-5">
+    <h2 class="text-sm font-bold text-slate-900 mb-2">Run Night Audit</h2>
+    <div class="text-xs text-slate-600 space-y-1 mb-4">
+      <p>What happens when you run:</p>
+      <ul class="list-disc pl-5 space-y-0.5">
+        <li>Business date advances from <strong>{{ business_date }}</strong> to <strong>{{ next_business_date }}</strong>.</li>
+        <li>A NightAuditRun row is created (immutable history).</li>
+        <li>The pre-check snapshot above is saved with the run.</li>
+        <li>ActivityLog rows: <code>night_audit.completed</code> + <code>business_date.rolled</code>.</li>
+      </ul>
+      <p class="text-slate-500 italic mt-2">
+        V1 does NOT auto-checkout guests, settle folios, post room
+        charges, or change payment status. Operator handles those
+        manually before audit.
+      </p>
+    </div>
+
+    {% if can_run %}
+    <form method="POST" action="{{ url_for('night_audit.run') }}"
+          onsubmit="return confirm('Close {{ business_date }} and advance to {{ next_business_date }}? This is recorded in audit history and cannot be undone.');"
+          class="space-y-3">
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+          Confirm closing date
+        </label>
+        <input type="text" name="confirm_date" required
+               placeholder="{{ business_date.isoformat() }}"
+               pattern="\d{4}-\d{2}-\d{2}"
+               class="w-full max-w-xs h-10 px-3 border border-slate-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+               autocomplete="off">
+        <p class="text-[11px] text-slate-500 mt-1">
+          Type <code class="font-mono bg-slate-100 px-1 rounded">{{ business_date.isoformat() }}</code> to confirm.
+        </p>
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+          Notes (optional)
+        </label>
+        <textarea name="notes" rows="2" maxlength="500"
+                  placeholder="Optional cashier note for this audit run."
+                  class="w-full max-w-md border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"></textarea>
+      </div>
+      <button type="submit"
+              class="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm px-4 py-2.5 rounded-lg">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        Close {{ business_date.strftime('%b %-d') if business_date else '' }} &amp; roll forward
+      </button>
+    </form>
+    {% else %}
+    <div class="bg-slate-100 border border-slate-200 rounded-lg p-3 text-sm text-slate-600">
+      <strong class="text-slate-900">Run is disabled.</strong>
+      Resolve all blocking issues above first.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- History -->
+  {% if history %}
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+      <h2 class="text-sm font-bold text-slate-900">Recent runs</h2>
+      <span class="text-[11px] text-slate-500">last {{ history|length }}</span>
+    </div>
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50">
+        <tr class="text-left">
+          <th class="py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">When</th>
+          <th class="py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">Closed</th>
+          <th class="py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+          <th class="py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider text-right">Issues</th>
+          <th class="py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">By</th>
+        </tr>
+      </thead>
+      <tbody class="text-slate-800">
+        {% for r in history %}
+        <tr class="border-t border-slate-100">
+          <td class="py-2 px-3 font-mono">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="py-2 px-3 font-mono">{{ r.business_date_closed }}</td>
+          <td class="py-2 px-3">
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide
+              {% if r.status == 'completed' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+              {% elif r.status == 'blocked' %}bg-red-50 text-red-700 border border-red-200
+              {% elif r.status == 'failed' %}bg-rose-50 text-rose-700 border border-rose-200
+              {% else %}bg-amber-50 text-amber-700 border border-amber-200{% endif %}">
+              {{ r.status }}
+            </span>
+          </td>
+          <td class="py-2 px-3 text-right">
+            {% if r.exception_count %}<span class="text-red-600">{{ r.exception_count }} blk</span>{% endif %}
+            {% if r.exception_count and r.warning_count %} · {% endif %}
+            {% if r.warning_count %}<span class="text-amber-600">{{ r.warning_count }} warn</span>{% endif %}
+            {% if not r.exception_count and not r.warning_count %}<span class="text-slate-400">—</span>{% endif %}
+          </td>
+          <td class="py-2 px-3 text-slate-500">
+            {{ r.run_by.username if r.run_by else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
