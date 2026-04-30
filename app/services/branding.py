@@ -52,17 +52,25 @@ _DEFAULT_PRIMARY_COLOR = '#7B3F00'
 def get_brand() -> dict:
     """Return the active brand identity as a dict.
 
-    V1 (Property Settings Foundation): reads from the
-    `property_settings` singleton row first; falls back to env-var
-    defaults if the DB is unavailable (fresh install, test DB before
-    migrations, transient failure). The returned dict is a SUPERSET
-    of the legacy keys — older templates referencing
+    V1 / V2 (Property Settings + Multi-Property Foundation): reads
+    from the active Property's settings (via `services.property
+    .current_property()`), falling back to PropertySettings then to
+    env-var defaults if the DB is unavailable. The returned dict is
+    a SUPERSET of the legacy keys — older templates referencing
     `{{ brand.name / short_name / tagline / logo_path / primary_color }}`
     keep working unchanged.
 
+    Multi-property note: when a request resolves to a specific
+    Property, the brand context follows automatically because
+    services.property_settings.get_branding() reads from the
+    PropertySettings row linked to that Property. In V2 with a
+    single property the path collapses to a single PropertySettings
+    lookup — same answer.
+
     Pure function. Safe to call from any request.
     """
-    # Prefer the DB-backed settings.
+    # Prefer the DB-backed settings, which themselves now respect the
+    # active property.
     try:
         from .property_settings import get_branding as _db_branding
         return _db_branding()

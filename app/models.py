@@ -6,6 +6,17 @@ from werkzeug.security import generate_password_hash, check_password_hash
 db = SQLAlchemy()
 
 
+# Note: `property_id` columns on wave-1 models do NOT carry a Python
+# `default=` callable. Instead the migration sets `server_default='1'`
+# at the DB level, so any INSERT that doesn't supply `property_id`
+# transparently lands on the singleton property in V1. This keeps the
+# default resolution OUT of SQLAlchemy's flush hot-path (where calling
+# db.session.flush() recursively triggers "Session is already
+# flushing" errors). Multi-property V2 will replace the server_default
+# with explicit property_id assignment in route handlers, sourced from
+# `services.property.current_property_id()`.
+
+
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -33,6 +44,13 @@ class User(UserMixin, db.Model):
 class Room(db.Model):
     __tablename__ = 'rooms'
     id = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — every Room belongs to one Property. Default
+    # resolves to the singleton in single-property environments.
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     number = db.Column(db.String(10), unique=True, nullable=False)
     name = db.Column(db.String(100))
     # Legacy free-text column. Kept for backwards compat with existing
@@ -127,6 +145,14 @@ class Guest(db.Model):
 class Booking(db.Model):
     __tablename__ = 'bookings'
     id = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — denormalized for query speed in reports +
+    # board views. Always equal to the Room's property_id for the
+    # bound room.
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     booking_ref = db.Column(db.String(20), unique=True, nullable=False)
     room_id = db.Column(db.Integer, db.ForeignKey('rooms.id'), nullable=False)
     guest_id = db.Column(db.Integer, db.ForeignKey('guests.id'), nullable=False)
@@ -181,6 +207,12 @@ class Booking(db.Model):
 class Invoice(db.Model):
     __tablename__ = 'invoices'
     id = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — denormalized.
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     invoice_number = db.Column(db.String(20), unique=True, nullable=False)
     booking_id = db.Column(db.Integer, db.ForeignKey('bookings.id'), nullable=False)
     issue_date = db.Column(db.Date, default=date.today)
@@ -329,6 +361,13 @@ class WhatsAppMessage(db.Model):
     __tablename__ = 'whatsapp_messages'
 
     id            = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — every message belongs to one property's
+    # inbox. Future: webhook routes by destination phone number.
+    property_id   = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     created_at    = db.Column(db.DateTime, default=datetime.utcnow,
                               nullable=False, index=True)
     direction     = db.Column(db.String(10), nullable=False)
@@ -405,6 +444,13 @@ class FolioItem(db.Model):
     __tablename__ = 'folio_items'
 
     id          = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — denormalized for report scoping speed.
+    # Always equal to Booking.property_id at write time.
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     created_at  = db.Column(db.DateTime, default=datetime.utcnow,
                             nullable=False, index=True)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
@@ -525,6 +571,12 @@ class RoomBlock(db.Model):
     __tablename__ = 'room_blocks'
 
     id          = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — equal to Room.property_id of the bound room.
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     created_at  = db.Column(db.DateTime, default=datetime.utcnow,
                             nullable=False, index=True)
 
@@ -606,6 +658,13 @@ class CashierTransaction(db.Model):
     __tablename__ = 'cashier_transactions'
 
     id          = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — denormalized so cashier reports filter by
+    # property without joining bookings (some txns have NULL booking).
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     created_at  = db.Column(db.DateTime, default=datetime.utcnow,
                             nullable=False, index=True)
 
@@ -811,6 +870,12 @@ class RoomType(db.Model):
     __tablename__ = 'room_types'
 
     id          = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1.
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     code        = db.Column(db.String(20), unique=True, nullable=False)
     name        = db.Column(db.String(100), nullable=False)
     max_occupancy = db.Column(db.Integer, nullable=False, default=2)
@@ -844,6 +909,12 @@ class RatePlan(db.Model):
     __tablename__ = 'rate_plans'
 
     id           = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1.
+    property_id  = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     code         = db.Column(db.String(30), unique=True, nullable=False)
     name         = db.Column(db.String(100), nullable=False)
     room_type_id = db.Column(
@@ -880,6 +951,12 @@ class RateOverride(db.Model):
     __tablename__ = 'rate_overrides'
 
     id           = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — denormalized; equal to RoomType.property_id.
+    property_id  = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     room_type_id = db.Column(
         db.Integer, db.ForeignKey('room_types.id', ondelete='CASCADE'),
         nullable=False,
@@ -918,6 +995,12 @@ class RateRestriction(db.Model):
     __tablename__ = 'rate_restrictions'
 
     id           = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — denormalized.
+    property_id  = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     room_type_id = db.Column(
         db.Integer, db.ForeignKey('room_types.id', ondelete='CASCADE'),
         nullable=False,
@@ -1169,6 +1252,13 @@ class BookingGroup(db.Model):
     __tablename__ = 'booking_groups'
 
     id          = db.Column(db.Integer, primary_key=True)
+    # Multi-Property V1 — a group lives entirely on one property.
+    # All member bookings must share this property_id.
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True,
+        server_default='1',
+    )
     created_at  = db.Column(db.DateTime, default=datetime.utcnow,
                             nullable=False)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
@@ -1300,3 +1390,78 @@ class PropertySettings(db.Model):
 
     def __repr__(self):
         return f'<PropertySettings id={self.id} name={self.property_name!r}>'
+
+
+# ── Multi-Property Foundation V1 ────────────────────────────────────
+#
+# `Property` is the canonical lightweight identity row that every
+# operational model in the platform points at via `property_id`.
+# `PropertySettings` (introduced in Property Settings V1) is the
+# rich config singleton — branding text, bank account, payment
+# instructions, policies. The two are linked 1:1 via
+# `Property.settings_id`.
+#
+# WHY TWO TABLES:
+#   - `Property` is short, indexable, FK-pointed-at by ~12 tables.
+#     Keeping it lean keeps the FK indexes small and queries fast.
+#   - `PropertySettings` is wide and edited only via /admin/property-
+#     settings/. Decoupling avoids "every booking's FK target row
+#     gets bumped every time someone edits the wifi password."
+#
+# V1 STATIC: there is exactly one Property row per environment. The
+# migration seeds it. Multi-property activation (a second row + UI
+# switcher + per-property roles) is a deliberate Phase 6 effort
+# documented in docs/multi_property_migration_strategy.md.
+#
+# The two tables MAY be merged later, but only after multi-property
+# is fully shipped and we have signal on edit-frequency vs
+# query-load.
+
+
+class Property(db.Model):
+    __tablename__ = 'properties'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    # Short URL-safe identifier (e.g. 'sheeza', 'maakanaa'). Reserved
+    # for future /p/<code>/* URL routing. V1 always 'default'.
+    code        = db.Column(db.String(40), unique=True, nullable=False,
+                            index=True)
+
+    # Display name + short name. These mirror PropertySettings at seed
+    # time so we have a name even if settings_id is somehow NULL. The
+    # PropertySettings row is the canonical source for the UI.
+    name        = db.Column(db.String(160), nullable=False)
+    short_name  = db.Column(db.String(80),  nullable=True)
+
+    # Operational defaults. Mirror PropertySettings on seed so a
+    # Property without settings still has answers.
+    timezone      = db.Column(db.String(64), nullable=False,
+                              default='Indian/Maldives')
+    currency_code = db.Column(db.String(8), nullable=False, default='USD')
+
+    # Soft-disable lever. Disabled properties keep their data but
+    # block writes (Phase 6 enforcement; harmless V1).
+    is_active   = db.Column(db.Boolean, nullable=False, default=True)
+
+    notes       = db.Column(db.Text, nullable=True)
+
+    # 1:1 link to the PropertySettings row that holds the rich
+    # branding/billing/policy config. Nullable for safety during
+    # migration — the seed migration sets it to PropertySettings #1.
+    settings_id = db.Column(
+        db.Integer, db.ForeignKey('property_settings.id',
+                                  ondelete='SET NULL'),
+        nullable=True, index=True,
+    )
+
+    settings = db.relationship('PropertySettings',
+                                foreign_keys=[settings_id],
+                                lazy='joined')
+
+    def __repr__(self):
+        return f'<Property id={self.id} code={self.code!r} name={self.name!r}>'

@@ -131,7 +131,10 @@ def get_settings(*, autoseed: bool = True):
         is_active=True,
     )
     db.session.add(s)
-    db.session.commit()
+    # flush() rather than commit() — nested auto-seeds during another
+    # transaction (e.g. tests mid-INSERT) must not close that
+    # transaction. flush() gives us s.id without committing.
+    db.session.flush()
     return s
 
 

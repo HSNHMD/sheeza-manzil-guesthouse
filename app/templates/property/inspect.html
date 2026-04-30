@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Property — {{ prop.name }}{% endblock %}
+{% block content %}
+<style>
+  .pi-shell { display: flex; flex-direction: column; gap: 14px; max-width: 720px; }
+  .pi-h1 { font-size: 1.3rem; font-weight: 800; color: #0f172a; margin: 0; }
+  .pi-sub { color: #64748b; font-size: 12.5px; }
+  .pi-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 16px;
+  }
+  .pi-card h2 {
+    font-size: 12px; font-weight: 800; color: #475569;
+    text-transform: uppercase; letter-spacing: .05em; margin: 0 0 12px;
+  }
+  .pi-row { display: grid; grid-template-columns: 160px 1fr; gap: 8px;
+            padding: 6px 0; border-bottom: 1px dashed #e2e8f0;
+            font-size: 14px; }
+  .pi-row:last-child { border-bottom: 0; }
+  .pi-row .label { color: #64748b; font-size: 12.5px; }
+  .pi-row .value { color: #0f172a; font-weight: 600; }
+  .pi-row .value.mono { font-family: ui-monospace, monospace; font-size: 13px; }
+  .pi-pill {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; letter-spacing: .03em;
+  }
+  .pi-pill.active { background: #dcfce7; color: #166534; }
+  .pi-pill.inactive { background: #fee2e2; color: #991b1b; }
+
+  .pi-counts { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 600px) { .pi-counts { grid-template-columns: 1fr 1fr; } }
+  .pi-count {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .pi-count .label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; font-weight: 700; }
+  .pi-count .value { font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 2px; }
+
+  .pi-info {
+    background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px;
+    padding: 10px 12px; font-size: 12.5px; color: #78350f;
+    line-height: 1.5;
+  }
+</style>
+
+<div class="pi-shell">
+  <div>
+    <h1 class="pi-h1">Property</h1>
+    <p class="pi-sub">
+      Single-property foundation (V1). Multi-property switching is deferred
+      to a future sprint — see <code>docs/multi_property_foundation_plan.md</code>.
+    </p>
+  </div>
+
+  <div class="pi-card">
+    <h2>Identity</h2>
+    <div class="pi-row">
+      <span class="label">Code</span>
+      <span class="value mono">{{ prop.code }}</span>
+    </div>
+    <div class="pi-row">
+      <span class="label">Name</span>
+      <span class="value">{{ prop.name }}</span>
+    </div>
+    <div class="pi-row">
+      <span class="label">Short name</span>
+      <span class="value">{{ prop.short_name or '—' }}</span>
+    </div>
+    <div class="pi-row">
+      <span class="label">Status</span>
+      <span class="value">
+        {% if prop.is_active %}<span class="pi-pill active">active</span>
+        {% else %}<span class="pi-pill inactive">inactive</span>
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
+  <div class="pi-card">
+    <h2>Operational defaults</h2>
+    <div class="pi-row">
+      <span class="label">Timezone</span>
+      <span class="value mono">{{ prop.timezone }}</span>
+    </div>
+    <div class="pi-row">
+      <span class="label">Currency</span>
+      <span class="value mono">{{ prop.currency_code }}</span>
+    </div>
+    <div class="pi-row">
+      <span class="label">Settings linked</span>
+      <span class="value">
+        {% if prop.settings_id %}
+          PropertySettings #{{ prop.settings_id }} —
+          <a class="text-blue-700" href="{{ url_for('property_settings.edit') }}">edit branding / bank / policies →</a>
+        {% else %}
+          <span class="pi-pill inactive">no settings linked</span>
+        {% endif %}
+      </span>
+    </div>
+    <div class="pi-row">
+      <span class="label">Created</span>
+      <span class="value">{{ prop.created_at.strftime('%a, %b %-d %Y · %H:%M') if prop.created_at else '—' }}</span>
+    </div>
+    <div class="pi-row">
+      <span class="label">Updated</span>
+      <span class="value">{{ prop.updated_at.strftime('%a, %b %-d %Y · %H:%M') if prop.updated_at else '—' }}</span>
+    </div>
+  </div>
+
+  <div class="pi-card">
+    <h2>Property-scoped record counts</h2>
+    <div class="pi-counts">
+      {% for label, k in [
+          ('Rooms','rooms'),
+          ('Room types','room_types'),
+          ('Rate plans','rate_plans'),
+          ('Bookings','bookings'),
+          ('Booking groups','booking_groups'),
+          ('Invoices','invoices'),
+          ('Folio items','folio_items'),
+          ('Cashier txns','cashier_transactions'),
+          ('WhatsApp msgs','whatsapp_messages'),
+      ] %}
+      <div class="pi-count">
+        <div class="label">{{ label }}</div>
+        <div class="value">
+          {% if counts[k] is none %}
+            <span class="pi-sub" style="font-size: 14px;">—</span>
+          {% else %}
+            {{ counts[k] }}
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if prop.notes %}
+  <div class="pi-card">
+    <h2>Notes</h2>
+    <div style="font-size: 13px; white-space: pre-wrap;">{{ prop.notes }}</div>
+  </div>
+  {% endif %}
+
+  <div class="pi-info">
+    <strong>What this page shows:</strong>
+    the lightweight identity row that every operational table now points
+    at via <code>property_id</code>. Edit the rich settings (branding,
+    bank account, payment instructions, policies) at
+    <a href="{{ url_for('property_settings.edit') }}">/admin/property-settings/</a>.
+    Adding a second property + a property switcher UI is deliberately
+    deferred — see the multi-property foundation plan doc.
+  </div>
+</div>
+{% endblock %}
