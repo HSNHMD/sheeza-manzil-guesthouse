@@ -212,8 +212,288 @@ def brand_set(name, short, tagline, color, logo_path, invoice_name):
     click.echo('      sudo systemctl restart sheeza.service')
 
 
+# ── flask staging ──────────────────────────────────────────────────────────
+#
+# Idempotent staging-only data seeding. Every command in this group refuses
+# to run unless STAGING=1 is set in the environment — production (which
+# never sets STAGING) is structurally protected even if someone copy-paste-
+# runs a command in the wrong shell.
+import os
+import json
+
+staging_cli = AppGroup(
+    'staging',
+    help='Staging-only data seeding (rooms, room types, POS catalog).'
+)
+
+
+def _require_staging():
+    """Refuse to run unless STAGING=1. Production safety lock."""
+    if os.environ.get('STAGING') != '1':
+        click.echo(
+            '  ✗ refusing to run — STAGING=1 not set in environment.\n'
+            '    These commands mutate seed data and must NEVER touch '
+            'production.',
+            err=True,
+        )
+        raise click.Abort()
+
+
+# ── Room layout (35 rooms, 5 types) ─────────────────────────────────────────
+#
+# Type tuple: (number, type_code, name, floor, capacity, price_mvr)
+# Floors:
+#   1 → 101-110 (10 Standard)
+#   2 → 201-212 (10 Deluxe + 2 Twin)
+#   3 → 301-311 (6 Family + 4 Deluxe + 1 Twin)
+#   4 → 401-402 (2 Suite)
+_ROOM_LAYOUT = (
+    # Floor 1 — Standard
+    *[(f'{100+i}', 'STD', 'Standard Room', 1, 2, 800.0) for i in range(1, 11)],
+    # Floor 2 — Deluxe (10) + Twin (2)
+    *[(f'{200+i}', 'DEL', 'Deluxe Room',   2, 2, 1200.0) for i in range(1, 11)],
+    *[(f'{200+i}', 'TWI', 'Twin Room',     2, 2, 1100.0) for i in range(11, 13)],
+    # Floor 3 — Family (6) + Deluxe (4) + Twin (1)
+    *[(f'{300+i}', 'FAM', 'Family Room',   3, 4, 1800.0) for i in range(1, 7)],
+    *[(f'{300+i}', 'DEL', 'Deluxe Room',   3, 2, 1200.0) for i in range(7, 11)],
+    ('311',       'TWI', 'Twin Room',     3, 2, 1100.0),
+    # Floor 4 — Suite
+    ('401',       'STE', 'Suite',         4, 4, 3500.0),
+    ('402',       'STE', 'Suite',         4, 4, 3500.0),
+)
+
+
+# Room types catalog. (code, name, base_capacity, max_occupancy)
+_ROOM_TYPES = (
+    ('STD', 'Standard',  2, 2),
+    ('DEL', 'Deluxe',    2, 2),
+    ('TWI', 'Twin',      2, 2),
+    ('FAM', 'Family',    4, 4),
+    ('STE', 'Suite',     4, 4),
+)
+
+
+@staging_cli.command('seed-rooms')
+def staging_seed_rooms():
+    """Reseed staging rooms to 35 across 4 floors with 5 room types.
+
+    Renumbers existing rooms 1-8 to 101-108 (preserves any booking
+    FKs since FK is via rooms.id, not the number string). Adds 27
+    more rooms to reach 35. Idempotent: safe to re-run.
+    """
+    _require_staging()
+
+    from .models import db, Room, RoomType
+
+    # 1. Ensure RoomType catalog has all 5 types.
+    type_ids = {}
+    for code, name, base_cap, max_cap in _ROOM_TYPES:
+        rt = RoomType.query.filter_by(code=code).first()
+        if rt is None:
+            rt = RoomType(code=code, name=name,
+                          base_capacity=base_cap, max_occupancy=max_cap,
+                          is_active=True)
+            db.session.add(rt)
+            db.session.flush()
+            click.echo(f'  + room_type {code} {name!r}')
+        else:
+            # Refresh metadata in case the names drifted.
+            rt.name = name
+            rt.base_capacity = base_cap
+            rt.max_occupancy = max_cap
+            rt.is_active = True
+        type_ids[code] = rt.id
+    db.session.commit()
+
+    # 2. Renumber legacy rooms 1-8 to 101-108. Maps to the first 8 of
+    #    the Floor-1 Standard layout, so existing bookings on the
+    #    "Deluxe" rooms 1-6 will now show as Standard rooms 101-106.
+    #    This is an intentional staging rebrand — historical bookings
+    #    keep working but the type/floor catches up to the new layout.
+    renumber = {str(i): f'10{i}' for i in range(1, 9)}  # 1→101 … 8→108
+    for old, new in renumber.items():
+        r = Room.query.filter_by(number=old).first()
+        if r is None:
+            continue
+        # Don't collide with a room already at the new number.
+        if Room.query.filter_by(number=new).first():
+            continue
+        r.number = new
+        click.echo(f'  ↻ room {old} → {new}')
+    db.session.flush()
+
+    # 3. Apply the canonical layout to every target row (insert or
+    #    update).
+    for number, code, name, floor, cap, price in _ROOM_LAYOUT:
+        r = Room.query.filter_by(number=number).first()
+        if r is None:
+            r = Room(
+                number=number, name=name, room_type=name,
+                room_type_id=type_ids[code],
+                floor=floor, capacity=cap, price_per_night=price,
+                amenities='WiFi, AC, TV, En-suite Bathroom',
+                is_active=True,
+            )
+            db.session.add(r)
+            click.echo(f'  + room {number} {name} (floor {floor})')
+        else:
+            r.name = name
+            r.room_type = name
+            r.room_type_id = type_ids[code]
+            r.floor = floor
+            r.capacity = cap
+            r.price_per_night = price
+            r.is_active = True
+    db.session.commit()
+
+    total = Room.query.filter_by(is_active=True).count()
+    click.echo(f'  ✓ {total} active rooms on staging '
+               f'({len(_ROOM_LAYOUT)} in canonical layout)')
+
+
+# ── POS catalog ─────────────────────────────────────────────────────────────
+
+# 13 categories — sort_order spaced by 10 so the operator can insert
+# new categories between existing ones without renumbering.
+_POS_CATEGORIES = (
+    ( 10, 'Soups & Starters'),
+    ( 20, 'Salads'),
+    ( 30, 'Chicken Mains'),
+    ( 40, 'Beef & Lamb Mains'),
+    ( 50, 'Fish & Seafood'),
+    ( 60, 'Pasta, Rice & Pizza'),
+    ( 70, 'Breakfast'),
+    ( 80, 'Desserts'),
+    ( 90, 'Hot Beverages'),
+    (100, 'Cold Coffee & Shakes'),
+    (110, 'Juices & Smoothies'),
+    (120, 'Sodas & Water'),
+    (130, 'Specialty'),
+)
+
+
+@staging_cli.command('seed-pos-categories')
+def staging_seed_pos_categories():
+    """Create the 13 staging POS categories.
+
+    Idempotent: existing rows with the same name are updated in
+    place (sort_order, is_active). New rows are inserted.
+    """
+    _require_staging()
+
+    from .models import db, PosCategory
+
+    for sort_order, name in _POS_CATEGORIES:
+        c = PosCategory.query.filter_by(name=name).first()
+        if c is None:
+            c = PosCategory(name=name, sort_order=sort_order, is_active=True)
+            db.session.add(c)
+            click.echo(f'  + category {name!r}')
+        else:
+            c.sort_order = sort_order
+            c.is_active = True
+    db.session.commit()
+
+    total = PosCategory.query.filter_by(is_active=True).count()
+    click.echo(f'  ✓ {total} active POS categories')
+
+
+@staging_cli.command('import-pos-items')
+@click.argument('json_path', type=click.Path(exists=True, dir_okay=False))
+@click.option('--deactivate-missing', is_flag=True,
+              help='Mark items not in the JSON as is_active=False '
+                   '(for clean reseeding).')
+def staging_import_pos_items(json_path, deactivate_missing):
+    """Import POS menu items from a JSON file.
+
+    JSON shape:
+
+        {
+          "Soups & Starters": [
+            {"name": "Chicken Soup", "price": 95.0, "description": "..."},
+            ...
+          ],
+          "Hot Beverages": [
+            {"name": "Espresso",     "price": 35.0}
+          ]
+        }
+
+    Categories must already exist (run `seed-pos-categories` first).
+    Items are upserted by (category_id, name) pair: existing rows
+    have their price/description/sort_order updated, missing rows
+    are inserted.
+    """
+    _require_staging()
+
+    from .models import db, PosCategory, PosItem
+
+    with open(json_path, 'r', encoding='utf-8') as fh:
+        data = json.load(fh)
+
+    if not isinstance(data, dict):
+        click.echo('  ✗ JSON must be an object {category: [items]}', err=True)
+        raise click.Abort()
+
+    inserted = 0
+    updated = 0
+    skipped_missing_cat = []
+    seen_pairs = set()
+
+    for cat_name, items in data.items():
+        cat = PosCategory.query.filter_by(name=cat_name).first()
+        if cat is None:
+            skipped_missing_cat.append(cat_name)
+            continue
+        for sort_idx, raw in enumerate(items, start=1):
+            name = (raw.get('name') or '').strip()
+            if not name:
+                continue
+            try:
+                price = float(raw.get('price', 0))
+            except (TypeError, ValueError):
+                click.echo(f'  ! {cat_name} / {name}: bad price '
+                           f'{raw.get("price")!r}', err=True)
+                continue
+            description = (raw.get('description') or '').strip() or None
+            seen_pairs.add((cat.id, name))
+
+            existing = PosItem.query.filter_by(
+                category_id=cat.id, name=name
+            ).first()
+            if existing is None:
+                db.session.add(PosItem(
+                    category_id=cat.id, name=name, price=price,
+                    description=description,
+                    sort_order=sort_idx * 10,
+                    is_active=True,
+                ))
+                inserted += 1
+            else:
+                existing.price = price
+                existing.description = description
+                existing.sort_order = sort_idx * 10
+                existing.is_active = True
+                updated += 1
+
+    deactivated = 0
+    if deactivate_missing:
+        for it in PosItem.query.all():
+            if (it.category_id, it.name) not in seen_pairs and it.is_active:
+                it.is_active = False
+                deactivated += 1
+
+    db.session.commit()
+
+    click.echo(f'  ✓ inserted {inserted}, updated {updated}, '
+               f'deactivated {deactivated}')
+    if skipped_missing_cat:
+        click.echo(f'  ! categories not found (run seed-pos-categories '
+                   f'first): {sorted(set(skipped_missing_cat))}', err=True)
+
+
 # ── Registration ────────────────────────────────────────────────────────────
 def register_cli(app):
-    """Attach the `admin` and `brand` command groups to the Flask app's CLI."""
+    """Attach the `admin`, `brand`, and `staging` command groups."""
     app.cli.add_command(admin_cli)
     app.cli.add_command(brand_cli)
+    app.cli.add_command(staging_cli)
