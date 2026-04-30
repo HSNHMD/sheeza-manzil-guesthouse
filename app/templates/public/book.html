@@ -152,13 +152,19 @@
         <div>
           <p class="font-bold text-amber-900 mb-2">To confirm your booking, please transfer the total amount to:</p>
           <div class="bg-white rounded-lg border border-amber-200 px-4 py-3 mb-3 text-sm space-y-1">
+            {% if brand.bank_name %}
+            <div class="flex gap-3">
+              <span class="text-amber-700 w-36 shrink-0">Bank</span>
+              <span class="font-bold text-gray-900">{{ brand.bank_name }}</span>
+            </div>
+            {% endif %}
             <div class="flex gap-3">
               <span class="text-amber-700 w-36 shrink-0">Account Name</span>
-              <span class="font-bold text-gray-900">SHEEZA IMAD / MOHAMED S.R.</span>
+              <span class="font-bold text-gray-900">{{ brand.bank_account_name or '—' }}</span>
             </div>
             <div class="flex gap-3">
               <span class="text-amber-700 w-36 shrink-0">Account Number</span>
-              <span class="font-bold text-gray-900 tracking-wider">7770000212622</span>
+              <span class="font-bold text-gray-900 tracking-wider">{{ brand.bank_account_number or '—' }}</span>
             </div>
           </div>
           <p class="text-sm text-amber-800">Then upload your payment slip below to speed up confirmation.</p>

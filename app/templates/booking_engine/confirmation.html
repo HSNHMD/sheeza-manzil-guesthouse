@@ -48,15 +48,17 @@
     <h3>How to confirm your booking</h3>
     <p>Please transfer the booking total to our account and reply with the payment reference. We'll mark your booking as confirmed within a few hours.</p>
     <ul style="margin-top:6px; padding-left:18px;">
-      <li>Bank: BML (Bank of Maldives)</li>
-      <li>Account: <code>{{ brand.bank_account or '7770-000000-001' }}</code></li>
-      <li>Account name: {{ brand.name }}</li>
+      {% if brand.bank_name %}<li>Bank: {{ brand.bank_name }}</li>{% endif %}
+      <li>Account: <code>{{ brand.bank_account_number or '—' }}</code></li>
+      <li>Account name: {{ brand.bank_account_name or brand.name }}</li>
       <li>Reference: <code>{{ booking.booking_ref }}</code></li>
     </ul>
+    {% if brand.whatsapp_number or brand.contact_phone %}
     <p style="margin-top:8px;">
-      Or contact us on WhatsApp at <strong>{{ brand.contact_phone or '+960 737 5797' }}</strong>
+      Or contact us on WhatsApp at <strong>{{ brand.whatsapp_number or brand.contact_phone }}</strong>
       with your booking ref to arrange payment.
     </p>
+    {% endif %}
   </div>
 </div>
 

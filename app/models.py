@@ -1218,3 +1218,85 @@ class BookingGroup(db.Model):
 
     def __repr__(self):
         return f'<BookingGroup {self.group_code}: {self.group_name}>'
+
+
+# ── Property Settings / Branding Foundation V1 ──────────────────────
+#
+# A SINGLETON row that holds property-wide branding + operational
+# settings (name, contact, currency, bank details, tax rates,
+# policies). Replaces a scattered web of env vars and hardcoded
+# constants with one editable source of truth.
+#
+# V1 deliberately stays single-property — there is at most one
+# `PropertySettings` row per environment. The migration seeds the
+# row at upgrade time so every read path always finds something.
+# Future multi-property work will extend this with a property_id
+# foreign key everywhere; for now, the single-row pattern keeps the
+# blast radius small.
+#
+# Sensitive note on bank details:
+#   `bank_account_number` is moderately sensitive. The audit row
+#   written by `services.property_settings.update_settings` records
+#   ONLY the list of changed field names, never the values.
+
+
+class PropertySettings(db.Model):
+    __tablename__ = 'property_settings'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    # ── Branding ───────────────────────────────────────────────
+    property_name        = db.Column(db.String(160), nullable=False)
+    short_name           = db.Column(db.String(80),  nullable=True)
+    tagline              = db.Column(db.String(255), nullable=True)
+    logo_path            = db.Column(db.String(255), nullable=True)
+    primary_color        = db.Column(db.String(16),  nullable=True)
+    website_url          = db.Column(db.String(255), nullable=True)
+
+    # ── Contact ────────────────────────────────────────────────
+    email                = db.Column(db.String(120), nullable=True)
+    phone                = db.Column(db.String(40),  nullable=True)
+    whatsapp_number      = db.Column(db.String(40),  nullable=True)
+    address              = db.Column(db.String(255), nullable=True)
+    city                 = db.Column(db.String(80),  nullable=True)
+    country              = db.Column(db.String(80),  nullable=True)
+
+    # ── Operational ────────────────────────────────────────────
+    currency_code        = db.Column(db.String(8),   nullable=False,
+                                     default='USD')
+    timezone             = db.Column(db.String(64),  nullable=False,
+                                     default='Indian/Maldives')
+    check_in_time        = db.Column(db.String(8),   nullable=True)
+                            # e.g. '14:00', stored as string for V1
+    check_out_time       = db.Column(db.String(8),   nullable=True)
+
+    # ── Billing ────────────────────────────────────────────────
+    invoice_display_name = db.Column(db.String(160), nullable=True)
+    payment_instructions_text = db.Column(db.Text,   nullable=True)
+    bank_name            = db.Column(db.String(120), nullable=True)
+    bank_account_name    = db.Column(db.String(120), nullable=True)
+    bank_account_number  = db.Column(db.String(60),  nullable=True)
+
+    # ── Tax / service charge (basics) ─────────────────────────
+    # Coarse fields for V1 — see docs/channel_manager_architecture.md
+    # §2 for the full TaxRule design that comes later.
+    tax_name             = db.Column(db.String(40),  nullable=True)
+    tax_rate             = db.Column(db.Float,       nullable=True)
+                            # percentage e.g. 12.0 for 12%
+    service_charge_rate  = db.Column(db.Float,       nullable=True)
+
+    # ── Policies (free-form for V1) ───────────────────────────
+    booking_terms        = db.Column(db.Text, nullable=True)
+    cancellation_policy  = db.Column(db.Text, nullable=True)
+    wifi_info            = db.Column(db.Text, nullable=True)
+
+    # ── Lifecycle ─────────────────────────────────────────────
+    is_active            = db.Column(db.Boolean, nullable=False,
+                                     default=True)
+
+    def __repr__(self):
+        return f'<PropertySettings id={self.id} name={self.property_name!r}>'

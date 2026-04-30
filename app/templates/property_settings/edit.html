@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{% block title %}Property Settings{% endblock %}
+{% block content %}
+<style>
+  .ps-shell { display: flex; flex-direction: column; gap: 14px; max-width: 880px; }
+  .ps-h1 { font-size: 1.3rem; font-weight: 800; color: #0f172a; margin: 0; }
+  .ps-sub { color: #64748b; font-size: 12.5px; }
+
+  .ps-section {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 18px;
+  }
+  .ps-section h2 {
+    font-size: 12px; font-weight: 800; color: #475569;
+    text-transform: uppercase; letter-spacing: .05em; margin: 0 0 14px;
+  }
+  .ps-section .help {
+    font-size: 11.5px; color: #94a3b8; margin: -8px 0 12px; line-height: 1.4;
+  }
+  .ps-row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 600px) { .ps-row { grid-template-columns: 1fr; } }
+  label { font-size: 12px; font-weight: 600; color: #475569; display: block;
+          margin-bottom: 4px; }
+  input[type=text], input[type=tel], input[type=email], input[type=url],
+  input[type=number], input[type=time], textarea, select {
+    width: 100%; padding: 9px 10px; border-radius: 8px;
+    border: 1px solid #cbd5e1; font-size: 14px; background: #fff;
+  }
+  textarea { min-height: 80px; resize: vertical; }
+  textarea.tall { min-height: 120px; }
+
+  .ps-actions {
+    position: sticky; bottom: 0; background: #f8fafc;
+    border-top: 1px solid #e2e8f0; padding: 12px;
+    border-radius: 0 0 12px 12px;
+    display: flex; gap: 10px; align-items: center;
+  }
+  .btn-primary {
+    background: #0f766e; color: #fff; border: 1px solid #0f766e;
+    padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 13px;
+    cursor: pointer;
+  }
+  .btn-secondary {
+    background: #fff; color: #475569; border: 1px solid #cbd5e1;
+    padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px;
+  }
+  .ps-mono { font-family: ui-monospace, monospace; }
+</style>
+
+<form method="POST" action="{{ url_for('property_settings.save') }}" class="ps-shell">
+
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="ps-h1">Property Settings</h1>
+      <p class="ps-sub">
+        Single property singleton — last updated
+        {{ settings.updated_at.strftime('%a, %b %-d %Y · %H:%M') if settings.updated_at else '—' }}.
+      </p>
+    </div>
+  </div>
+
+  <div class="ps-section">
+    <h2>Branding</h2>
+    <div class="ps-row">
+      <div>
+        <label for="property_name">Property name *</label>
+        <input type="text" id="property_name" name="property_name" maxlength="160"
+               required value="{{ as_dict.property_name or '' }}">
+      </div>
+      <div>
+        <label for="short_name">Short name</label>
+        <input type="text" id="short_name" name="short_name" maxlength="80"
+               value="{{ as_dict.short_name or '' }}">
+      </div>
+    </div>
+
+    <div style="margin-top: 10px;">
+      <label for="tagline">Tagline</label>
+      <input type="text" id="tagline" name="tagline" maxlength="255"
+             value="{{ as_dict.tagline or '' }}">
+    </div>
+
+    <div class="ps-row" style="margin-top: 10px;">
+      <div>
+        <label for="logo_path">Logo path</label>
+        <input type="text" id="logo_path" name="logo_path" maxlength="255"
+               class="ps-mono" value="{{ as_dict.logo_path or '' }}">
+        <p class="help">URL or static path served by the app, e.g. <code>/static/img/logo.png</code>.</p>
+      </div>
+      <div>
+        <label for="primary_color">Primary color</label>
+        <input type="text" id="primary_color" name="primary_color" maxlength="16"
+               class="ps-mono" value="{{ as_dict.primary_color or '' }}">
+        <p class="help">Hex with leading <code>#</code>. Used in headers + buttons.</p>
+      </div>
+    </div>
+
+    <div style="margin-top: 10px;">
+      <label for="website_url">Website URL</label>
+      <input type="url" id="website_url" name="website_url" maxlength="255"
+             value="{{ as_dict.website_url or '' }}">
+    </div>
+  </div>
+
+  <div class="ps-section">
+    <h2>Contact</h2>
+    <div class="ps-row">
+      <div>
+        <label for="phone">Phone</label>
+        <input type="tel" id="phone" name="phone" maxlength="40"
+               value="{{ as_dict.phone or '' }}">
+      </div>
+      <div>
+        <label for="whatsapp_number">WhatsApp number</label>
+        <input type="tel" id="whatsapp_number" name="whatsapp_number" maxlength="40"
+               value="{{ as_dict.whatsapp_number or '' }}">
+      </div>
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" maxlength="120"
+             value="{{ as_dict.email or '' }}">
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="address">Address</label>
+      <input type="text" id="address" name="address" maxlength="255"
+             value="{{ as_dict.address or '' }}">
+    </div>
+    <div class="ps-row" style="margin-top: 10px;">
+      <div>
+        <label for="city">City / Island</label>
+        <input type="text" id="city" name="city" maxlength="80"
+               value="{{ as_dict.city or '' }}">
+      </div>
+      <div>
+        <label for="country">Country</label>
+        <input type="text" id="country" name="country" maxlength="80"
+               value="{{ as_dict.country or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="ps-section">
+    <h2>Operational</h2>
+    <div class="ps-row">
+      <div>
+        <label for="currency_code">Currency *</label>
+        <input type="text" id="currency_code" name="currency_code" maxlength="8"
+               required class="ps-mono"
+               value="{{ as_dict.currency_code or 'USD' }}">
+        <p class="help">3-letter ISO code (USD, MVR, EUR…).</p>
+      </div>
+      <div>
+        <label for="timezone">Timezone *</label>
+        <input type="text" id="timezone" name="timezone" maxlength="64"
+               required class="ps-mono"
+               value="{{ as_dict.timezone or 'Indian/Maldives' }}">
+        <p class="help">IANA tz, e.g. <code>Indian/Maldives</code>, <code>Asia/Dubai</code>.</p>
+      </div>
+    </div>
+    <div class="ps-row" style="margin-top: 10px;">
+      <div>
+        <label for="check_in_time">Check-in time</label>
+        <input type="time" id="check_in_time" name="check_in_time"
+               value="{{ as_dict.check_in_time or '14:00' }}">
+      </div>
+      <div>
+        <label for="check_out_time">Check-out time</label>
+        <input type="time" id="check_out_time" name="check_out_time"
+               value="{{ as_dict.check_out_time or '11:00' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="ps-section">
+    <h2>Billing &amp; payment</h2>
+    <div>
+      <label for="invoice_display_name">Invoice display name</label>
+      <input type="text" id="invoice_display_name" name="invoice_display_name"
+             maxlength="160" value="{{ as_dict.invoice_display_name or '' }}">
+      <p class="help">Defaults to the property name. Override only if invoices need a different legal name.</p>
+    </div>
+
+    <div style="margin-top: 10px;">
+      <label for="payment_instructions_text">Payment instructions text</label>
+      <textarea id="payment_instructions_text" name="payment_instructions_text"
+                class="tall ps-mono" maxlength="4000">{{ as_dict.payment_instructions_text or '' }}</textarea>
+      <p class="help">
+        Multi-line text shown to guests in AI drafts and confirmation pages.
+        Leave empty to auto-build from the bank fields below.
+      </p>
+    </div>
+
+    <div class="ps-row" style="margin-top: 10px;">
+      <div>
+        <label for="bank_name">Bank name</label>
+        <input type="text" id="bank_name" name="bank_name" maxlength="120"
+               value="{{ as_dict.bank_name or '' }}">
+      </div>
+      <div>
+        <label for="bank_account_name">Account name</label>
+        <input type="text" id="bank_account_name" name="bank_account_name"
+               maxlength="120" value="{{ as_dict.bank_account_name or '' }}">
+      </div>
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="bank_account_number">Account number</label>
+      <input type="text" id="bank_account_number" name="bank_account_number"
+             maxlength="60" class="ps-mono"
+             value="{{ as_dict.bank_account_number or '' }}">
+      <p class="help">Stored on disk; never logged in plain text by the audit trail.</p>
+    </div>
+  </div>
+
+  <div class="ps-section">
+    <h2>Tax &amp; service charge (basics)</h2>
+    <p class="help">
+      V1 supports a single tax + service-charge percentage. Per-line
+      tax rules are tracked separately in the future Channel Manager
+      foundation (see <code>docs/channel_manager_architecture.md</code>).
+    </p>
+    <div class="ps-row" style="margin-top: 10px;">
+      <div>
+        <label for="tax_name">Tax name</label>
+        <input type="text" id="tax_name" name="tax_name" maxlength="40"
+               value="{{ as_dict.tax_name or '' }}">
+      </div>
+      <div>
+        <label for="tax_rate">Tax rate (%)</label>
+        <input type="number" id="tax_rate" name="tax_rate" min="0" max="100" step="0.1"
+               value="{{ as_dict.tax_rate if as_dict.tax_rate is not none else '' }}">
+      </div>
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="service_charge_rate">Service charge rate (%)</label>
+      <input type="number" id="service_charge_rate" name="service_charge_rate"
+             min="0" max="100" step="0.1"
+             value="{{ as_dict.service_charge_rate if as_dict.service_charge_rate is not none else '' }}">
+    </div>
+  </div>
+
+  <div class="ps-section">
+    <h2>Policies &amp; guest info</h2>
+    <div>
+      <label for="booking_terms">Booking terms</label>
+      <textarea id="booking_terms" name="booking_terms" class="tall"
+                maxlength="4000">{{ as_dict.booking_terms or '' }}</textarea>
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="cancellation_policy">Cancellation policy</label>
+      <textarea id="cancellation_policy" name="cancellation_policy" class="tall"
+                maxlength="4000">{{ as_dict.cancellation_policy or '' }}</textarea>
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="wifi_info">WiFi info (shown in guest emails / pages later)</label>
+      <textarea id="wifi_info" name="wifi_info"
+                maxlength="1000">{{ as_dict.wifi_info or '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="ps-actions">
+    <button type="submit" class="btn-primary">Save settings</button>
+    <a href="{{ url_for('property_settings.edit') }}" class="btn-secondary">Reload</a>
+    <span class="ps-sub" style="margin-left: auto;">
+      Audit trail records changed field names only.
+    </span>
+  </div>
+</form>
+{% endblock %}

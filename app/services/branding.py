@@ -52,10 +52,25 @@ _DEFAULT_PRIMARY_COLOR = '#7B3F00'
 def get_brand() -> dict:
     """Return the active brand identity as a dict.
 
-    Pure function. Reads env vars on each call so service restart picks
-    up changes without code edits. All keys are always present; empty
-    string is a valid value for ``tagline``.
+    V1 (Property Settings Foundation): reads from the
+    `property_settings` singleton row first; falls back to env-var
+    defaults if the DB is unavailable (fresh install, test DB before
+    migrations, transient failure). The returned dict is a SUPERSET
+    of the legacy keys — older templates referencing
+    `{{ brand.name / short_name / tagline / logo_path / primary_color }}`
+    keep working unchanged.
+
+    Pure function. Safe to call from any request.
     """
+    # Prefer the DB-backed settings.
+    try:
+        from .property_settings import get_branding as _db_branding
+        return _db_branding()
+    except Exception:
+        # Falls through to env defaults — keeps the page rendering
+        # if the DB is mid-migration or completely unavailable.
+        pass
+
     name        = (os.environ.get('BRAND_NAME')          or _DEFAULT_NAME).strip()
     short_name  = (os.environ.get('BRAND_SHORT_NAME')    or _DEFAULT_SHORT_NAME).strip()
     tagline     = (os.environ.get('BRAND_TAGLINE')       or _DEFAULT_TAGLINE).strip()
@@ -71,6 +86,24 @@ def get_brand() -> dict:
         'tagline':        tagline,
         'logo_path':      logo_path,
         'primary_color':  color,
+        # Sensible empty defaults for the new keys so old code that
+        # falls through to env-vars still gets a stable shape.
+        'phone':                '',
+        'contact_phone':        '',
+        'whatsapp_number':      '',
+        'email':                '',
+        'website_url':          '',
+        'address':              '',
+        'city':                 '',
+        'country':              '',
+        'currency_code':        'USD',
+        'check_in_time':        '14:00',
+        'check_out_time':       '11:00',
+        'bank_name':            '',
+        'bank_account_name':    '',
+        'bank_account_number':  '',
+        'bank_account':         '',
+        'invoice_display_name': name,
     }
 
 

@@ -236,13 +236,19 @@
       <p class="text-xs font-bold text-black uppercase tracking-widest mb-2">Payment Details</p>
       <p class="text-sm text-black mb-1">Bank Transfer to:</p>
       <table class="text-sm">
+        {% if brand.bank_name %}
+        <tr>
+          <td class="text-black pr-4 py-0.5 whitespace-nowrap">Bank</td>
+          <td class="font-semibold text-black">{{ brand.bank_name }}</td>
+        </tr>
+        {% endif %}
         <tr>
           <td class="text-black pr-4 py-0.5 whitespace-nowrap">Account Name</td>
-          <td class="font-semibold text-black">SHEEZA IMAD / MOHAMED S.R.</td>
+          <td class="font-semibold text-black">{{ brand.bank_account_name or '—' }}</td>
         </tr>
         <tr>
           <td class="text-black pr-4 py-0.5 whitespace-nowrap">Account Number</td>
-          <td class="font-semibold text-black tracking-wider">7770000212622</td>
+          <td class="font-semibold text-black tracking-wider">{{ brand.bank_account_number or '—' }}</td>
         </tr>
       </table>
     </div>
