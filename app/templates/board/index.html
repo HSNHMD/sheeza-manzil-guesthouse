@@ -243,14 +243,26 @@
   }
   .board-grid {
     display: grid;
+    /* Fluid-width fix:
+       Day columns now use minmax(var(--day-w), 1fr) so they GROW to
+       fill the wrapper when the viewport is wider than the configured
+       minimum, eliminating the dead space on the right that appeared
+       in Ultra+30d. They still snap to the configured --day-w as a
+       hard floor, so when the window is narrower than the total
+       intrinsic width the parent .board-scroll's overflow:auto kicks
+       in horizontal scrolling instead of squashing columns. */
     grid-template-columns:
       [room-col] var(--room-w)
-      repeat({{ span }}, var(--day-w));
+      repeat({{ span }}, minmax(var(--day-w), 1fr));
     grid-template-rows:
       [head] var(--header-h)
       {%- for entry in row_plan %}
       {%- if entry.type == 'group' %} 30px {%- else %} var(--row-h) {%- endif %}
       {%- endfor %};
+    /* Stretch the grid to fill its scroll wrapper. Without this, the
+       grid sizes to the sum of intrinsic columns (var(--day-w) × span)
+       and leaves blank space on the right. */
+    min-width: 100%;
   }
 
   /* Sticky corner */
@@ -2992,7 +3004,24 @@
     }
   }
 
-  const dayWidthPx = parseFloat(getComputedStyle(shell).getPropertyValue('--day-w')) || 84;
+  /* Fluid-width fix: --day-w is now the MINIMUM column width, not the
+     actual rendered width. Day columns use minmax(--day-w, 1fr) so
+     they grow when the viewport is wider than the configured floor.
+     Read the actual rendered width from the grid's resolved
+     gridTemplateColumns at gesture-start so resize-snap math stays
+     accurate even when the window is wider than the intrinsic grid
+     OR when the user resizes the window mid-session. */
+  const grid = document.querySelector('.board-grid');
+  function actualDayWidth() {
+    if (!grid) {
+      return parseFloat(getComputedStyle(shell).getPropertyValue('--day-w')) || 84;
+    }
+    const tracks = getComputedStyle(grid).gridTemplateColumns.split(/\s+/).map(parseFloat);
+    // Track 0 is the room rail; track 1 is the first day column.
+    const dayTrack = tracks[1];
+    if (Number.isFinite(dayTrack) && dayTrack > 0) return dayTrack;
+    return parseFloat(getComputedStyle(shell).getPropertyValue('--day-w')) || 84;
+  }
 
   // Anchor date for the current view = the leftmost day shown.
   const startDateStr = "{{ start.isoformat() }}";
@@ -3117,6 +3146,12 @@
         startWidth: rect.width,
         leftX:      rect.left,
         nightsOriginal: parseInt(bar.dataset.nights || '0', 10),
+        // Fluid-width fix: capture the rendered day-column width at
+        // gesture start. With minmax(var(--day-w), 1fr) day columns
+        // grow to fill the viewport, so reading the CSS variable
+        // alone would under-count the snap distance and the bar
+        // would jump multiple days per pixel of cursor movement.
+        dayWidth:   actualDayWidth(),
       };
       bar.classList.add('is-resizing');
       handle.setPointerCapture(e.pointerId);
@@ -3125,10 +3160,11 @@
     handle.addEventListener('pointermove', e => {
       if (!resizeCtx) return;
       const dx = e.clientX - resizeCtx.startX;
-      let nights = resizeCtx.nightsOriginal + Math.round(dx / dayWidthPx);
+      const dw = resizeCtx.dayWidth;
+      let nights = resizeCtx.nightsOriginal + Math.round(dx / dw);
       if (nights < 1) nights = 1;
       const newCheckOut = addDays(new Date(resizeCtx.startISO + 'T00:00:00'), nights);
-      const newWidth = nights * dayWidthPx;
+      const newWidth = nights * dw;
       resizeCtx.bar.style.gridColumnEnd = '';
       resizeCtx.bar.style.width = newWidth + 'px';
       resizeCtx.proposedCheckOut = isoOf(newCheckOut);

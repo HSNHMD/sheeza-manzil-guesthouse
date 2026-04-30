@@ -169,5 +169,80 @@ class BoardRendersAtEachDensityTests(unittest.TestCase):
         self.assertLessEqual(int(m.group(1)), 110)
 
 
+# ── Fluid-width regression guards ─────────────────────────────────
+
+class FluidWidthGridTests(unittest.TestCase):
+    """The grid-template-columns expression must use minmax(...,1fr)
+    for day columns so the timeline expands into available width
+    instead of leaving blank space on the right. The grid must also
+    stretch via min-width:100% to fill its scroll wrapper."""
+
+    def setUp(self):
+        self.app = create_app(_TestConfig)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        admin = User(username='admin', email='a@x', role='admin')
+        admin.set_password('aaaaaaaaaa1')
+        db.session.add(admin)
+        db.session.commit()
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess['_user_id'] = str(admin.id)
+            sess['_fresh'] = True
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def test_grid_uses_minmax_1fr_day_columns(self):
+        # Across every density × view combo, the rendered CSS for
+        # .board-grid must wrap day columns in minmax(...,1fr).
+        for density in ('standard', 'compact', 'ultra'):
+            for view in ('day', '7d', '14d', '30d'):
+                with self.subTest(density=density, view=view):
+                    r = self.client.get(
+                        f'/board?density={density}&view={view}'
+                    )
+                    self.assertEqual(r.status_code, 200)
+                    # Look for the literal expression inside the
+                    # inline <style> block (Jinja renders the span
+                    # count but the minmax wrapper is unchanged).
+                    self.assertIn(
+                        b'minmax(var(--day-w), 1fr)',
+                        r.data,
+                        f'fluid grid expression missing for '
+                        f'density={density} view={view}',
+                    )
+                    # Static `repeat(N, var(--day-w))` would be a
+                    # regression — fail loudly if it sneaks back in.
+                    self.assertNotIn(
+                        b'repeat({{ span }}, var(--day-w))', r.data,
+                    )
+
+    def test_board_grid_has_min_width_100_percent(self):
+        # Without min-width:100% the grid sizes to its intrinsic
+        # column sum, leaving blank space on the right of the
+        # wrapper. Pinning min-width:100% forces it to fill.
+        r = self.client.get('/board?density=ultra&view=30d')
+        self.assertEqual(r.status_code, 200)
+        # The CSS rule lives in the inline <style> block of the
+        # template — match the property in the .board-grid block.
+        self.assertIn(b'min-width: 100%', r.data)
+
+    def test_resize_js_reads_actual_day_width(self):
+        # The fluid grid means var(--day-w) is now a MINIMUM, not the
+        # rendered width. The drag-resize JS must read the actual
+        # column track width via gridTemplateColumns at gesture start
+        # so snapping stays accurate across viewport sizes.
+        r = self.client.get('/board')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'function actualDayWidth()', r.data)
+        # And the resize pointermove must use the captured dayWidth
+        # from resizeCtx, not a stale module-level constant.
+        self.assertIn(b'resizeCtx.dayWidth', r.data)
+
+
 if __name__ == '__main__':
     unittest.main()
