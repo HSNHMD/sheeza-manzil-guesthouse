@@ -8,6 +8,33 @@ auth_bp = Blueprint('auth', __name__)
 
 # ── Admin login (/appadmin) ──────────────────────────────────────────────────
 
+# Allow-list of post-login `?next=` paths. flask-login auto-appends
+# ?next=<original-path> when an unauthenticated user hits a protected
+# route, but if the original path was /rooms/ (the legacy default
+# landing) the user ends up RIGHT BACK on /rooms/ after login — the
+# fix to admin_login() to redirect to dashboard.index is bypassed.
+# We ignore /rooms/ specifically (and the empty string) so the post-
+# login experience is consistent: every login lands on the Dashboard.
+_BANNED_NEXT_PATHS = ('', '/', '/rooms/', '/rooms', '/staff/dashboard')
+
+
+def _post_login_target() -> str:
+    """Return the URL the user should land on after successful login.
+
+    Always /dashboard/ unless the caller passed an explicit ?next=
+    pointing somewhere meaningful that is NOT a banned path. This
+    guarantees a consistent post-login experience even when the
+    browser had a stale URL like /rooms/?next=/rooms/.
+    """
+    nxt = (request.args.get('next') or '').strip()
+    if nxt in _BANNED_NEXT_PATHS or nxt.startswith('http'):
+        return url_for('dashboard.index')
+    # Only honour relative same-origin paths
+    if not nxt.startswith('/'):
+        return url_for('dashboard.index')
+    return nxt
+
+
 @auth_bp.route('/appadmin', methods=['GET', 'POST'])
 def admin_login():
     # IA cleanup: both admin and staff land on the unified Dashboard
@@ -26,8 +53,7 @@ def admin_login():
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):
             login_user(user, remember=remember)
-            next_page = request.args.get('next') or url_for('dashboard.index')
-            return redirect(next_page)
+            return redirect(_post_login_target())
         flash('Invalid username or password.', 'error')
 
     return render_template('auth/login.html')
@@ -46,7 +72,7 @@ def console_login():
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):
             login_user(user)
-            return redirect(url_for('dashboard.index'))
+            return redirect(_post_login_target())
         flash('Invalid username or password.', 'error')
 
     return render_template('staff/login.html')
@@ -148,7 +174,7 @@ def change_password():
             current_user.set_password(new_pw)
             db.session.commit()
             flash('Password changed successfully.', 'success')
-            return redirect(url_for('staff.dashboard') if not current_user.is_admin else url_for('rooms.index'))
+            return redirect(url_for('dashboard.index'))
 
     return render_template('auth/change_password.html')
 
@@ -270,5 +296,5 @@ def test_whatsapp():
     html += f'<a href="?action=send_template&tpl=booking_received" style="{btn}">Test booking_received</a>'
     html += f'<a href="?action=send_template&tpl=staff_new_booking" style="{btn}">Test staff_new_booking</a>'
     html += '</div>'
-    html += f'<p><a href="{url_for("rooms.index")}">← Back to dashboard</a></p></div>'
+    html += f'<p><a href="{url_for("dashboard.index")}">← Back to dashboard</a></p></div>'
     return html

@@ -317,8 +317,41 @@ a.ds-kpi:hover {
   color: var(--ds-ink-4) !important;
   text-transform: uppercase;
   letter-spacing: 0.08em !important;
-  padding: 14px 12px 4px !important;
+  padding: 18px 12px 6px !important;
   margin: 0 !important;
+  border-top: 1px solid var(--ds-line-soft);
+  margin-top: 6px !important;
+}
+/* The very first section in the sidebar (Front Office) doesn't need a
+   top divider — the Dashboard link above it serves as the separator. */
+.ds-sidebar-section:first-of-type {
+  border-top: 0;
+  margin-top: 4px !important;
+  padding-top: 14px !important;
+}
+
+/* Sidebar links — tighten spacing, refine active state, add subtle
+   left-edge accent on the active item. Targets the Tailwind classes
+   already on the <a> tags so we don't have to rewrite every link. */
+nav#sidebar a.flex.items-center {
+  position: relative;
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+  border-radius: 8px;
+  transition: background-color .12s ease, color .12s ease;
+}
+nav#sidebar a.flex.items-center:hover {
+  background-color: rgba(15, 23, 42, .04);
+}
+/* Active page (any tone variant — blue / teal / amber / emerald) gets
+   a stronger left rail. The bg-* class is set inline by base.html when
+   request.blueprint matches. */
+nav#sidebar a.bg-blue-50,
+nav#sidebar a.bg-teal-50,
+nav#sidebar a.bg-amber-50,
+nav#sidebar a.bg-emerald-50 {
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--ds-accent);
 }
 
 /* Top header refinement — applied via .ds-app-header in base.html */

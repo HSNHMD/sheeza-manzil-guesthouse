@@ -65,6 +65,17 @@
     font-size: 12.5px; color: var(--ds-ink-3);
   }
   .db-greet strong { color: var(--ds-ink); font-weight: 600; }
+
+  /* Quick actions row — primary CTAs sit above the KPI grid so the
+     operator can act with one click. Wraps to a tidy stack on mobile. */
+  .db-quick-actions {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: -4px 0 16px;
+  }
+  @media (max-width: 480px) {
+    .db-quick-actions { margin-bottom: 12px; }
+    .db-quick-actions .ds-btn { flex: 1 1 calc(50% - 4px); justify-content: center; }
+  }
 </style>
 
 {% call ui.page_header(
@@ -75,6 +86,34 @@
 ) %}
   <div class="db-greet">Welcome back, <strong>{{ current_user.username }}</strong></div>
 {% endcall %}
+
+{# ── Quick actions — primary CTAs above the fold ────────── #}
+<div class="db-quick-actions">
+  <a class="ds-btn ds-btn--primary" href="{{ url_for('bookings.new') }}">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+    New booking
+  </a>
+  {% if current_user.is_admin %}
+  <a class="ds-btn" href="{{ url_for('board.index') }}">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+    Reservation Board
+  </a>
+  {% endif %}
+  <a class="ds-btn" href="{{ url_for('front_office.arrivals') }}">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14"/></svg>
+    Today's arrivals
+  </a>
+  <a class="ds-btn" href="{{ url_for('housekeeping.index') }}">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+    Housekeeping
+  </a>
+  {% if current_user.is_admin %}
+  <a class="ds-btn" href="{{ url_for('night_audit.index') }}">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    Night Audit
+  </a>
+  {% endif %}
+</div>
 
 <div class="db-stack">
 

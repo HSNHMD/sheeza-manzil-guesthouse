@@ -261,6 +261,43 @@ class PostLoginLandingTests(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertIn('/dashboard', r.headers['Location'])
 
+    def test_login_ignores_next_rooms_query_string(self):
+        # Critical regression test: flask-login auto-appends ?next=/rooms/
+        # when an unauth user hits /rooms/. After login, the user must NOT
+        # land on /rooms/ — that was the legacy default landing and is
+        # explicitly being moved away from. The Dashboard wins.
+        for nxt in ('/rooms/', '/rooms', '/', '/staff/dashboard', ''):
+            with self.subTest(nxt=nxt):
+                r = self.client.post('/appadmin?next=' + nxt,
+                                     data={'username': 'admin',
+                                           'password': 'aaaaaaaaaa1'},
+                                     follow_redirects=False)
+                self.assertEqual(r.status_code, 302)
+                loc = r.headers['Location']
+                self.assertIn('/dashboard', loc,
+                              f'next={nxt!r} should be ignored, got {loc!r}')
+
+    def test_login_honours_meaningful_next(self):
+        # A real next= path (e.g. /bookings/) should still work — we only
+        # block the banned legacy defaults.
+        r = self.client.post('/appadmin?next=/bookings/',
+                             data={'username': 'admin',
+                                   'password': 'aaaaaaaaaa1'},
+                             follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/bookings/', r.headers['Location'])
+
+    def test_login_blocks_external_next(self):
+        # Open-redirect protection: a next= pointing at an external URL
+        # must be ignored.
+        r = self.client.post('/appadmin?next=https://evil.example.com/',
+                             data={'username': 'admin',
+                                   'password': 'aaaaaaaaaa1'},
+                             follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertNotIn('evil.example.com', r.headers['Location'])
+        self.assertIn('/dashboard', r.headers['Location'])
+
 
 if __name__ == '__main__':
     unittest.main()
