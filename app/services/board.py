@@ -45,8 +45,25 @@ VIEW_DAY_WIDTHS = {
 GROUPING_OPTIONS = ('none', 'floor', 'room_type')
 DEFAULT_GROUPING = 'none'
 
-DENSITY_OPTIONS = ('standard', 'compact')
+DENSITY_OPTIONS = ('standard', 'compact', 'ultra')
 DEFAULT_DENSITY = 'standard'
+
+# Per-density day-width multipliers. The base view-day-width (set in
+# VIEW_DAY_WIDTHS) is multiplied by this factor to give the final
+# CSS --day-w value. 'compact' shaves 25%, 'ultra' shaves 50%, so a
+# 14-day window in ultra fits roughly 2× more rooms before scrolling.
+DENSITY_DAY_WIDTH_MULT = {
+    'standard': 1.0,
+    'compact':  0.75,
+    'ultra':    0.55,
+}
+
+# Per-density row height in px. Used by the template's CSS variable.
+DENSITY_ROW_HEIGHT_PX = {
+    'standard': 56,
+    'compact':  46,
+    'ultra':    38,
+}
 
 
 def normalize_grouping(value) -> str:
@@ -140,6 +157,24 @@ def view_span_days(view: str) -> int:
 
 def view_day_width_px(view: str) -> int:
     return VIEW_DAY_WIDTHS.get(view, VIEW_DAY_WIDTHS[DEFAULT_VIEW])
+
+
+def effective_day_width_px(view: str, density: str = DEFAULT_DENSITY) -> int:
+    """Day-cell width in px after applying the density multiplier.
+
+    Use this from the route handler / template instead of the raw
+    `view_day_width_px` so 'compact' and 'ultra' modes actually narrow
+    the columns. Always returns an integer ≥ 18 — below that the day
+    labels stop being legible even on desktop.
+    """
+    base = view_day_width_px(view)
+    mult = DENSITY_DAY_WIDTH_MULT.get(density, 1.0)
+    return max(18, int(round(base * mult)))
+
+
+def density_row_height_px(density: str = DEFAULT_DENSITY) -> int:
+    """Row height in px for the chosen density."""
+    return DENSITY_ROW_HEIGHT_PX.get(density, DENSITY_ROW_HEIGHT_PX[DEFAULT_DENSITY])
 
 
 # ── Date range helpers ───────────────────────────────────────────────

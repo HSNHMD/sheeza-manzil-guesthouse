@@ -27,6 +27,8 @@ from ..services.board import (
     VIEW_SPANS,
     BookingBar,
     date_range,
+    density_row_height_px,
+    effective_day_width_px,
     filter_state_summary,
     group_rooms,
     in_house_today,
@@ -366,7 +368,8 @@ def index():
         end_inclusive=end - timedelta(days=1),
         today=today,
         days=days,
-        day_width_px=view_day_width_px(view),
+        day_width_px=effective_day_width_px(view, density),
+        row_height_px=density_row_height_px(density),
         rooms=rooms,
         bars_by_room=bars_by_room,
         badges=badges,
@@ -556,3 +559,140 @@ def _block_redirect(return_to):
     if return_to and return_to.startswith('/') and not return_to.startswith('//'):
         return redirect(return_to)
     return redirect(url_for('board.index'))
+
+
+# ── Phase B / C / D: booking mutations from the board ─────────────────
+#
+# Three JSON endpoints that the board's drag-drop / resize / split-stay
+# UI calls via fetch(). All are admin-only, all validate via the
+# existing services.board_actions conflict checks, all log ActivityLog
+# rows. Routes are intentionally thin — the heavy lifting lives in
+# services.board_mutations.
+
+def _board_json_payload():
+    """Read JSON body or fall back to form-encoded."""
+    from flask import request
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    return {k: v for k, v in (request.form.items() or [])}
+
+
+def _result_to_response(result):
+    """Translate a services.board_mutations.Result into a JSON response."""
+    from flask import jsonify
+    body = {'ok': result.ok, 'message': result.message, **result.extra}
+    return jsonify(body), (200 if result.ok else 400)
+
+
+@board_bp.route('/board/bookings/<int:booking_id>/move', methods=['POST'])
+@login_required
+@admin_required
+def move_booking(booking_id):
+    """Move a booking to a different room.
+
+    JSON body:
+      target_room_id (int, required)
+      note           (str, optional)
+    """
+    from flask import request
+    from flask_login import current_user
+    from ..services.board_mutations import apply_booking_room_move
+
+    payload = _board_json_payload()
+    try:
+        target = int(payload.get('target_room_id'))
+    except (TypeError, ValueError):
+        from flask import jsonify
+        return jsonify({'ok': False,
+                        'message': 'target_room_id is required.'}), 400
+
+    note = (payload.get('note') or '').strip() or None
+
+    result = apply_booking_room_move(
+        booking_id=booking_id,
+        target_room_id=target,
+        actor_user_id=getattr(current_user, 'id', None),
+        note=note,
+    )
+    return _result_to_response(result)
+
+
+@board_bp.route('/board/bookings/<int:booking_id>/resize', methods=['POST'])
+@login_required
+@admin_required
+def resize_booking(booking_id):
+    """Extend or shorten a booking's stay.
+
+    JSON body:
+      check_in_date  (YYYY-MM-DD, optional — keeps existing if absent)
+      check_out_date (YYYY-MM-DD, optional — keeps existing if absent)
+      note           (str, optional)
+    """
+    from flask import jsonify
+    from flask_login import current_user
+    from ..services.board_actions import parse_iso_date
+    from ..services.board_mutations import apply_stay_update
+
+    payload  = _board_json_payload()
+    new_in   = parse_iso_date(payload.get('check_in_date'))
+    new_out  = parse_iso_date(payload.get('check_out_date'))
+    if new_in is None and new_out is None:
+        return jsonify({
+            'ok': False,
+            'message': 'Provide check_in_date and/or check_out_date.',
+        }), 400
+
+    note = (payload.get('note') or '').strip() or None
+
+    result = apply_stay_update(
+        booking_id=booking_id,
+        new_check_in=new_in,
+        new_check_out=new_out,
+        actor_user_id=getattr(current_user, 'id', None),
+        note=note,
+    )
+    return _result_to_response(result)
+
+
+@board_bp.route('/board/bookings/<int:booking_id>/split', methods=['POST'])
+@login_required
+@admin_required
+def split_booking_stay(booking_id):
+    """Create two stay segments for a mid-stay room change.
+
+    JSON body:
+      split_date     (YYYY-MM-DD, required — between check_in/out)
+      target_room_id (int, required)
+      note           (str, optional)
+
+    V1 foundation only: the board still renders by Booking.room_id.
+    Segment-aware rendering ships in the next sprint. The created
+    StaySegment rows are queryable via Booking.stay_segments today.
+    """
+    from flask import jsonify
+    from flask_login import current_user
+    from ..services.board_actions import parse_iso_date
+    from ..services.board_mutations import split_stay
+
+    payload    = _board_json_payload()
+    split_date = parse_iso_date(payload.get('split_date'))
+    try:
+        target = int(payload.get('target_room_id'))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False,
+                        'message': 'target_room_id is required.'}), 400
+
+    if split_date is None:
+        return jsonify({'ok': False,
+                        'message': 'split_date is required (YYYY-MM-DD).'}), 400
+
+    note = (payload.get('note') or '').strip() or None
+
+    result = split_stay(
+        booking_id=booking_id,
+        split_date=split_date,
+        target_room_id=target,
+        actor_user_id=getattr(current_user, 'id', None),
+        note=note,
+    )
+    return _result_to_response(result)

@@ -1448,7 +1448,7 @@
         </div>
 
         <div class="seg" role="tablist" aria-label="Density">
-          {% for dn, label in [('standard','Standard'),('compact','Compact')] %}
+          {% for dn, label in [('standard','Standard'),('compact','Compact'),('ultra','Ultra')] %}
             <a href="{{ url_for('board.index', view=view, start=start.isoformat(), floor=floor, room_type=room_type, booking_status=booking_status, payment_status=payment_status, search=search, group=grouping, density=dn) }}"
                class="{% if density == dn %}is-active{% endif %}">
               {{ label }}
@@ -1627,6 +1627,18 @@
                    style="grid-row: {{ row_n }}; grid-column: {{ loop.index + 1 }};"></div>
             {% endfor %}
 
+            {# Phase B: invisible drop target spanning the room's full
+               row, used by the drag-and-drop JS to detect the target
+               room when a booking bar is released. pointer-events
+               default to none so it doesn't interfere with normal
+               clicks; the dragstart handler enables it. #}
+            <div class="row-drop-target"
+                 data-room-id="{{ r.id }}"
+                 data-room-number="{{ r.number }}"
+                 data-room-type="{{ r.room_type or '' }}"
+                 style="grid-row: {{ row_n }}; grid-column: 2 / -1;
+                        pointer-events: none; position: relative; z-index: 5;"></div>
+
             {# Room block bars (charcoal) — rendered BEFORE bookings so
                bookings layer on top if there's any visual collision #}
             {% for blk in entry.blocks %}
@@ -1647,6 +1659,15 @@
                  style="grid-row: {{ row_n }};
                         grid-column: {{ bar.grid_col_start }} / span {{ bar.grid_col_span }};"
                  data-booking-id="{{ bar.booking_id }}"
+                 data-booking-ref="{{ bar.booking_ref }}"
+                 data-guest="{{ bar.guest_name }}"
+                 data-room-id="{{ r.id }}"
+                 data-room-number="{{ r.number }}"
+                 data-room-type="{{ r.room_type or '' }}"
+                 data-check-in="{{ bar.check_in.isoformat() }}"
+                 data-check-out="{{ bar.check_out.isoformat() }}"
+                 data-nights="{{ bar.nights }}"
+                 data-status="{{ bar.booking_status }}"
                  href="{{ url_for('bookings.detail', booking_id=bar.booking_id) }}"
                  onclick="return openDrawer(event, {{ bar.booking_id }});"
                  title="{{ bar.guest_name }} · {{ bar.booking_ref }} · {{ bar.nights }} night{{ 's' if bar.nights != 1 else '' }}">
@@ -2493,5 +2514,506 @@
       if (el) el.classList.remove('is-open');
     };
   })();
+</script>
+
+{# ════════════════════════════════════════════════════════════════════
+   PHASE A · density modes (Standard / Compact / Ultra Compact)
+   PHASE B · drag-and-drop room move
+   PHASE C · resize-by-drag stay extension
+   ════════════════════════════════════════════════════════════════════ #}
+
+<style>
+  /* Density-aware row height. The route now passes row_height_px
+     based on the density toggle. Apply via .board-shell so the value
+     cascades. */
+  .board-shell { --row-h: {{ row_height_px or 56 }}px; }
+
+  /* Compact + Ultra: shorten room rail, shrink bar text, hide
+     subtitle in ultra. The actual class on the rail is .room-cell
+     and on the booking bar is .bar (not .room-rail-cell / .booking-bar). */
+  .board-grid[data-density="compact"] .room-cell,
+  .board-grid[data-density="ultra"]   .room-cell {
+    padding-top: 6px; padding-bottom: 6px;
+  }
+  .board-grid[data-density="ultra"] .room-cell .room-meta {
+    display: none;
+  }
+  .board-grid[data-density="ultra"] a.bar {
+    font-size: 11px; line-height: 1.1;
+  }
+  .board-grid[data-density="ultra"] a.bar .bar-meta {
+    display: none;
+  }
+  .board-grid[data-density="compact"] a.bar {
+    font-size: 12px;
+  }
+
+  /* Compact + Ultra: shorten the column-header date labels by hiding
+     the secondary line in dense modes. The day-grid CSS already
+     renders 2-line labels (weekday over date) — we hide the weekday
+     row in ultra to recover vertical space. */
+  .board-grid[data-density="ultra"] .day-header-weekday {
+    display: none;
+  }
+
+  /* Drag-drop affordances ─────────────────────────────────────────── */
+  a.bar { cursor: grab; }
+  a.bar.is-dragging { opacity: .55; cursor: grabbing; }
+  a.bar:active { cursor: grabbing; }
+
+  /* Drop-target ghost — applied to the invisible row-drop-target. */
+  .row-drop-target.drop-valid {
+    background: rgba(13, 148, 136, .14);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    border-radius: 4px;
+  }
+  .row-drop-target.drop-invalid {
+    background: rgba(220, 38, 38, .12);
+    box-shadow: inset 0 0 0 2px #dc2626;
+    cursor: not-allowed;
+    border-radius: 4px;
+  }
+
+  /* Right-edge resize grip on every booking bar. */
+  a.bar .bar-resize-handle {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: 8px;
+    cursor: ew-resize;
+    background: linear-gradient(90deg,
+      rgba(255,255,255,0) 0%, rgba(255,255,255,.65) 100%);
+    border-top-right-radius: inherit;
+    border-bottom-right-radius: inherit;
+    opacity: 0;
+    transition: opacity .15s ease;
+  }
+  a.bar:hover .bar-resize-handle { opacity: 1; }
+  a.bar.is-resizing { box-shadow: 0 0 0 2px var(--accent), 0 4px 14px -4px rgba(13,148,136,.45); }
+  a.bar.is-resizing .bar-resize-handle { opacity: 1; }
+
+  /* Resize ghost — shown live next to the cursor while dragging the
+     edge so the operator sees the projected new check-out date. */
+  .resize-ghost {
+    position: fixed; z-index: 80;
+    background: var(--ink); color: #fff;
+    font-size: 12px; font-weight: 600;
+    padding: 4px 8px; border-radius: 6px;
+    pointer-events: none;
+    box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  }
+
+  /* Confirmation modals reuse the existing .modal-* skin from the
+     drawer JS; we only need a tiny override so the move/resize
+     modals sit above the drawer overlay. */
+  .modal-move, .modal-resize { z-index: 90; }
+</style>
+
+{# ── Move-confirmation modal ─────────────────────────────────────── #}
+<div id="modal-move-booking"
+     class="modal modal-move"
+     style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(15,23,42,.45);">
+  <div class="modal-card"
+       style="background:#fff;border-radius:14px;width:min(440px,92vw);padding:20px;
+              box-shadow:0 24px 48px -12px rgba(0,0,0,.25);">
+    <h3 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#0f172a;">
+      Move reservation
+    </h3>
+    <p style="margin:0 0 16px;font-size:12.5px;color:#64748b;">
+      Confirm this room change before saving.
+    </p>
+    <dl id="moveCtx" style="font-size:13.5px;color:#334155;margin:0 0 14px;">
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">Booking</dt><dd style="margin:0;" id="mvBookingRef">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">Guest</dt><dd style="margin:0;" id="mvGuest">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">Dates</dt><dd style="margin:0;" id="mvDates">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">From room</dt><dd style="margin:0;" id="mvOldRoom">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;">
+        <dt style="color:#64748b;">To room</dt><dd style="margin:0;font-weight:700;" id="mvNewRoom">—</dd>
+      </div>
+    </dl>
+    <p id="mvTypeWarn"
+       style="display:none;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;
+              padding:8px 10px;border-radius:8px;font-size:12px;margin:0 0 12px;"></p>
+    <textarea id="mvNote" placeholder="Optional internal note (visible only to staff)…"
+              style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;
+                     font-size:12.5px;min-height:48px;resize:vertical;"></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+      <button type="button" onclick="window.boardOps.closeMove()"
+              style="border:1px solid #e5e7eb;background:#fff;padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;">
+        Cancel
+      </button>
+      <button type="button" id="mvConfirmBtn" onclick="window.boardOps.confirmMove()"
+              style="background:#0d9488;color:#fff;border:0;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+        Confirm move
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ── Resize-confirmation modal ───────────────────────────────────── #}
+<div id="modal-resize-booking"
+     class="modal modal-resize"
+     style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(15,23,42,.45);">
+  <div class="modal-card"
+       style="background:#fff;border-radius:14px;width:min(440px,92vw);padding:20px;
+              box-shadow:0 24px 48px -12px rgba(0,0,0,.25);">
+    <h3 style="margin:0 0 4px;font-size:16px;font-weight:700;color:#0f172a;">
+      Update stay length
+    </h3>
+    <p style="margin:0 0 16px;font-size:12.5px;color:#64748b;">
+      Confirm the new check-out date before saving.
+    </p>
+    <dl style="font-size:13.5px;color:#334155;margin:0 0 14px;">
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">Booking</dt><dd style="margin:0;" id="rsBookingRef">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">Room</dt><dd style="margin:0;" id="rsRoom">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">Old check-out</dt><dd style="margin:0;" id="rsOldOut">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px dashed #e5e7eb;">
+        <dt style="color:#64748b;">New check-out</dt><dd style="margin:0;font-weight:700;" id="rsNewOut">—</dd>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:16px;padding:5px 0;">
+        <dt style="color:#64748b;">Nights</dt><dd style="margin:0;" id="rsNights">—</dd>
+      </div>
+    </dl>
+    <textarea id="rsNote" placeholder="Optional internal note…"
+              style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:8px;
+                     font-size:12.5px;min-height:48px;resize:vertical;"></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+      <button type="button" onclick="window.boardOps.closeResize()"
+              style="border:1px solid #e5e7eb;background:#fff;padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;">
+        Cancel
+      </button>
+      <button type="button" id="rsConfirmBtn" onclick="window.boardOps.confirmResize()"
+              style="background:#0d9488;color:#fff;border:0;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+        Confirm
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+/*  Reservation Board — Phase B/C operational interactions.
+
+    All work goes through the existing services/board_actions
+    conflict checks; the JS only reads the same `--day-w` CSS variable
+    that powers the grid so day-snap math stays consistent across
+    density modes.
+
+    No external libs. Vanilla event listeners. Drag uses HTML5 dnd
+    for the move; resize uses pointermove (hand-rolled because the
+    native dnd API forces a "ghost" image we don't want for resize).
+*/
+(function(){
+  'use strict';
+
+  const shell = document.querySelector('.board-shell');
+  if (!shell) return;
+
+  const dayWidthPx = parseFloat(getComputedStyle(shell).getPropertyValue('--day-w')) || 84;
+
+  // Anchor date for the current view = the leftmost day shown.
+  const startDateStr = "{{ start.isoformat() }}";
+  const startDate = new Date(startDateStr + 'T00:00:00');
+
+  function isoOf(d) {
+    return d.getFullYear()
+      + '-' + String(d.getMonth() + 1).padStart(2, '0')
+      + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function addDays(d, n) {
+    const r = new Date(d.getTime());
+    r.setDate(r.getDate() + n);
+    return r;
+  }
+  function nightsBetween(a, b) {
+    return Math.round((b.getTime() - a.getTime()) / 86400000);
+  }
+
+  // ── Phase B: drag-and-drop room move ────────────────────────────
+  let dragCtx = null;
+
+  function findBookingBars() {
+    return shell.querySelectorAll('a.bar[data-booking-id]');
+  }
+  function findDropTargets() {
+    return shell.querySelectorAll('.row-drop-target[data-room-id]');
+  }
+  function setDropTargetsActive(on) {
+    findDropTargets().forEach(t => {
+      t.style.pointerEvents = on ? 'auto' : 'none';
+    });
+  }
+
+  findBookingBars().forEach(bar => {
+    // Don't make cancelled / rejected bookings draggable — they
+    // can't legally be moved.
+    const status = bar.dataset.status || '';
+    if (status === 'cancelled' || status === 'rejected') return;
+
+    bar.setAttribute('draggable', 'true');
+
+    bar.addEventListener('dragstart', e => {
+      // Skip drag if the user grabbed the resize handle.
+      if (e.target && e.target.classList && e.target.classList.contains('bar-resize-handle')) {
+        e.preventDefault();
+        return;
+      }
+      dragCtx = {
+        bookingId:     bar.dataset.bookingId,
+        bookingRef:    bar.dataset.bookingRef || '',
+        guest:         bar.dataset.guest || '',
+        oldRoomId:     bar.dataset.roomId || '',
+        oldRoomNumber: bar.dataset.roomNumber || '',
+        oldRoomType:   bar.dataset.roomType || '',
+        checkIn:       bar.dataset.checkIn || '',
+        checkOut:      bar.dataset.checkOut || '',
+      };
+      bar.classList.add('is-dragging');
+      try { e.dataTransfer.setData('text/plain', dragCtx.bookingId); } catch (_) {}
+      e.dataTransfer.effectAllowed = 'move';
+      setDropTargetsActive(true);
+    });
+    bar.addEventListener('dragend', () => {
+      bar.classList.remove('is-dragging');
+      findDropTargets().forEach(t =>
+        t.classList.remove('drop-valid', 'drop-invalid'));
+      setDropTargetsActive(false);
+    });
+  });
+
+  findDropTargets().forEach(target => {
+    target.addEventListener('dragover', e => {
+      if (!dragCtx) return;
+      e.preventDefault();
+      const sameRoom = target.dataset.roomId === dragCtx.oldRoomId;
+      target.classList.toggle('drop-valid',   !sameRoom);
+      target.classList.toggle('drop-invalid',  sameRoom);
+      e.dataTransfer.dropEffect = sameRoom ? 'none' : 'move';
+    });
+    target.addEventListener('dragleave', () => {
+      target.classList.remove('drop-valid', 'drop-invalid');
+    });
+    target.addEventListener('drop', e => {
+      if (!dragCtx) return;
+      e.preventDefault();
+      target.classList.remove('drop-valid', 'drop-invalid');
+      const targetRoomId     = target.dataset.roomId;
+      const targetRoomNumber = target.dataset.roomNumber || '';
+      const targetRoomType   = target.dataset.roomType   || '';
+      if (targetRoomId === dragCtx.oldRoomId) {
+        dragCtx = null;
+        return;
+      }
+      window.boardOps.openMove(dragCtx, targetRoomId, targetRoomNumber, targetRoomType);
+      dragCtx = null;
+    });
+  });
+
+  // ── Phase C: right-edge resize for stay extension ───────────────
+  let resizeCtx = null;
+  let resizeGhostEl = null;
+
+  findBookingBars().forEach(bar => {
+    const handle = document.createElement('span');
+    handle.className = 'bar-resize-handle';
+    handle.setAttribute('aria-label', 'Resize stay');
+    bar.appendChild(handle);
+
+    handle.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      const rect = bar.getBoundingClientRect();
+      resizeCtx = {
+        bar,
+        bookingId:  bar.dataset.bookingId,
+        bookingRef: bar.dataset.bookingRef || '',
+        roomNumber: bar.dataset.roomNumber || '',
+        startISO:   bar.dataset.checkIn  || '',
+        endISO:     bar.dataset.checkOut || '',
+        startX:     e.clientX,
+        startWidth: rect.width,
+        leftX:      rect.left,
+        nightsOriginal: parseInt(bar.dataset.nights || '0', 10),
+      };
+      bar.classList.add('is-resizing');
+      handle.setPointerCapture(e.pointerId);
+    });
+
+    handle.addEventListener('pointermove', e => {
+      if (!resizeCtx) return;
+      const dx = e.clientX - resizeCtx.startX;
+      let nights = resizeCtx.nightsOriginal + Math.round(dx / dayWidthPx);
+      if (nights < 1) nights = 1;
+      const newCheckOut = addDays(new Date(resizeCtx.startISO + 'T00:00:00'), nights);
+      const newWidth = nights * dayWidthPx;
+      resizeCtx.bar.style.gridColumnEnd = '';
+      resizeCtx.bar.style.width = newWidth + 'px';
+      resizeCtx.proposedCheckOut = isoOf(newCheckOut);
+      resizeCtx.proposedNights = nights;
+
+      // Ghost label
+      if (!resizeGhostEl) {
+        resizeGhostEl = document.createElement('div');
+        resizeGhostEl.className = 'resize-ghost';
+        document.body.appendChild(resizeGhostEl);
+      }
+      resizeGhostEl.textContent = nights + ' night' + (nights === 1 ? '' : 's')
+        + ' · checkout ' + resizeCtx.proposedCheckOut;
+      resizeGhostEl.style.left = (e.clientX + 14) + 'px';
+      resizeGhostEl.style.top  = (e.clientY + 14) + 'px';
+    });
+
+    handle.addEventListener('pointerup', e => {
+      if (!resizeCtx) return;
+      handle.releasePointerCapture(e.pointerId);
+      resizeCtx.bar.classList.remove('is-resizing');
+      // Reset visual width — board will repaint on success.
+      resizeCtx.bar.style.width = '';
+      if (resizeGhostEl) {
+        resizeGhostEl.remove();
+        resizeGhostEl = null;
+      }
+      if (resizeCtx.proposedCheckOut && resizeCtx.proposedCheckOut !== resizeCtx.endISO) {
+        window.boardOps.openResize(resizeCtx);
+      }
+      resizeCtx = null;
+    });
+
+    handle.addEventListener('pointercancel', () => {
+      if (resizeCtx) {
+        resizeCtx.bar.classList.remove('is-resizing');
+        resizeCtx.bar.style.width = '';
+      }
+      if (resizeGhostEl) { resizeGhostEl.remove(); resizeGhostEl = null; }
+      resizeCtx = null;
+    });
+  });
+
+  // ── Modal controllers + AJAX ────────────────────────────────────
+  const moveModal   = document.getElementById('modal-move-booking');
+  const resizeModal = document.getElementById('modal-resize-booking');
+
+  function showModal(el)  { el.style.display = 'flex'; }
+  function hideModal(el)  { el.style.display = 'none'; }
+
+  function fmtRange(a, b) {
+    return (a || '?') + ' → ' + (b || '?');
+  }
+
+  let pendingMove   = null;
+  let pendingResize = null;
+
+  window.boardOps = {
+    openMove(ctx, targetRoomId, targetRoomNumber, targetRoomType) {
+      pendingMove = Object.assign({}, ctx, {
+        targetRoomId, targetRoomNumber, targetRoomType,
+      });
+      document.getElementById('mvBookingRef').textContent = ctx.bookingRef || '—';
+      document.getElementById('mvGuest').textContent      = ctx.guest      || '—';
+      document.getElementById('mvDates').textContent      = fmtRange(ctx.checkIn, ctx.checkOut);
+      document.getElementById('mvOldRoom').textContent    = '#' + ctx.oldRoomNumber + ' · ' + (ctx.oldRoomType || '');
+      document.getElementById('mvNewRoom').textContent    = '#' + targetRoomNumber + ' · ' + (targetRoomType || '');
+      const warn = document.getElementById('mvTypeWarn');
+      if (ctx.oldRoomType && targetRoomType && ctx.oldRoomType !== targetRoomType) {
+        warn.style.display = 'block';
+        warn.textContent = 'Room type changes from ' + ctx.oldRoomType
+          + ' to ' + targetRoomType + ' — pricing/billing may differ.';
+      } else {
+        warn.style.display = 'none';
+      }
+      document.getElementById('mvNote').value = '';
+      showModal(moveModal);
+    },
+    closeMove() { hideModal(moveModal); pendingMove = null; },
+    confirmMove() {
+      if (!pendingMove) return;
+      const btn = document.getElementById('mvConfirmBtn');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      fetch('/board/bookings/' + pendingMove.bookingId + '/move', {
+        method:  'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          target_room_id: parseInt(pendingMove.targetRoomId, 10),
+          note: document.getElementById('mvNote').value.trim() || null,
+        }),
+      })
+      .then(r => r.json().then(j => ({ok: r.ok, body: j})))
+      .then(({ok, body}) => {
+        if (ok && body.ok) {
+          window.location.reload();
+        } else {
+          alert(body.message || 'Move failed.');
+          btn.disabled = false; btn.textContent = 'Confirm move';
+        }
+      })
+      .catch(err => {
+        alert('Network error: ' + err);
+        btn.disabled = false; btn.textContent = 'Confirm move';
+      });
+    },
+
+    openResize(ctx) {
+      pendingResize = ctx;
+      document.getElementById('rsBookingRef').textContent = ctx.bookingRef || '—';
+      document.getElementById('rsRoom').textContent       = '#' + (ctx.roomNumber || '—');
+      document.getElementById('rsOldOut').textContent     = ctx.endISO || '—';
+      document.getElementById('rsNewOut').textContent     = ctx.proposedCheckOut || '—';
+      document.getElementById('rsNights').textContent     =
+        ctx.proposedNights + ' (was ' + ctx.nightsOriginal + ')';
+      document.getElementById('rsNote').value = '';
+      showModal(resizeModal);
+    },
+    closeResize() { hideModal(resizeModal); pendingResize = null; },
+    confirmResize() {
+      if (!pendingResize) return;
+      const btn = document.getElementById('rsConfirmBtn');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      fetch('/board/bookings/' + pendingResize.bookingId + '/resize', {
+        method:  'POST',
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          check_out_date: pendingResize.proposedCheckOut,
+          note: document.getElementById('rsNote').value.trim() || null,
+        }),
+      })
+      .then(r => r.json().then(j => ({ok: r.ok, body: j})))
+      .then(({ok, body}) => {
+        if (ok && body.ok) {
+          window.location.reload();
+        } else {
+          alert(body.message || 'Resize failed.');
+          btn.disabled = false; btn.textContent = 'Confirm';
+        }
+      })
+      .catch(err => {
+        alert('Network error: ' + err);
+        btn.disabled = false; btn.textContent = 'Confirm';
+      });
+    },
+  };
+
+  // Click outside the card closes either modal.
+  [moveModal, resizeModal].forEach(m => {
+    m.addEventListener('click', e => {
+      if (e.target === m) {
+        if (m === moveModal) window.boardOps.closeMove();
+        else                 window.boardOps.closeResize();
+      }
+    });
+  });
+})();
 </script>
 {% endblock %}

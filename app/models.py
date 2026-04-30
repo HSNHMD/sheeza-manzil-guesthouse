@@ -1744,3 +1744,58 @@ class ChannelSyncLog(db.Model):
         return (f'<ChannelSyncLog id={self.id} '
                 f'entity={self.entity_type}#{self.entity_id} '
                 f'action={self.action!r} status={self.status!r}>')
+
+
+# ── Mid-stay room change / Stay Segments (foundation) ──────────────
+#
+# A booking can occupy Room A for part of its stay, then Room B for
+# the rest. We model this as one Booking row plus a sequence of
+# StaySegment rows, each describing which room hosts the guest for
+# which sub-range of the stay. The Booking remains the single source
+# of truth for guest, total dates, folio, payments, history.
+#
+# V1 deliberately stops at the foundation: every segment-aware code
+# path is gated behind `Booking.has_segments` (which is False for
+# every existing booking until split_stay() is called). The board
+# continues to render by Booking.room_id; segment-aware rendering is
+# scheduled for the next sprint. This keeps the schema additive and
+# safe to ship to staging without UX regressions.
+class StaySegment(db.Model):
+    __tablename__ = 'stay_segments'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    booking_id  = db.Column(db.Integer,
+                            db.ForeignKey('bookings.id', ondelete='CASCADE'),
+                            nullable=False, index=True)
+    room_id     = db.Column(db.Integer,
+                            db.ForeignKey('rooms.id', ondelete='RESTRICT'),
+                            nullable=False, index=True)
+    # Half-open interval matching Booking.check_in_date /
+    # check_out_date convention: end_date is the morning the guest
+    # leaves this segment (i.e. the next segment's start_date).
+    start_date  = db.Column(db.Date, nullable=False)
+    end_date    = db.Column(db.Date, nullable=False)
+    # Optional human note (e.g. "moved due to AC issue"). Stays
+    # internal — never surfaced to the guest.
+    notes       = db.Column(db.String(255), nullable=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    created_by_user_id = db.Column(db.Integer,
+                                    db.ForeignKey('users.id'),
+                                    nullable=True)
+
+    booking = db.relationship('Booking', backref=db.backref(
+        'stay_segments', lazy='dynamic',
+        cascade='all, delete-orphan',
+        order_by='StaySegment.start_date.asc()',
+    ))
+    room    = db.relationship('Room')
+
+    @property
+    def nights(self):
+        return (self.end_date - self.start_date).days
+
+    def __repr__(self):
+        return (f'<StaySegment booking={self.booking_id} '
+                f'room={self.room_id} '
+                f'{self.start_date}→{self.end_date}>')
