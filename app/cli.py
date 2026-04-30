@@ -140,7 +140,80 @@ def admin_reset_password(username: str):
     click.echo('  ✓ password reset')
 
 
+# ── flask brand ─────────────────────────────────────────────────────────────
+brand_cli = AppGroup(
+    'brand',
+    help='Property branding (display name, short name, color, logo).'
+)
+
+
+@brand_cli.command('show')
+def brand_show():
+    """Print the active PropertySettings row in human-readable form."""
+    from .services.property_settings import get_settings
+    s = get_settings()
+    click.echo(f'  PropertySettings row id={s.id}')
+    click.echo(f'    property_name : {s.property_name!r}')
+    click.echo(f'    short_name    : {s.short_name!r}')
+    click.echo(f'    tagline       : {s.tagline!r}')
+    click.echo(f'    primary_color : {s.primary_color!r}')
+    click.echo(f'    logo_path     : {s.logo_path!r}')
+    click.echo(f'    currency_code : {s.currency_code!r}')
+    click.echo(f'    timezone      : {s.timezone!r}')
+    click.echo(f'    updated_at    : {s.updated_at}')
+
+
+@brand_cli.command('set')
+@click.option('--name',          help='Full property name (e.g. "Maakanaa Village Hotel").')
+@click.option('--short',         help='Short name shown in the header (e.g. "Maakanaa").')
+@click.option('--tagline',       help='Optional tagline.')
+@click.option('--color',         help='Primary color (hex, e.g. #0d9488).')
+@click.option('--logo-path',     help='Static URL path to the logo image.')
+@click.option('--invoice-name',  help='Display name on invoices (defaults to --name).')
+def brand_set(name, short, tagline, color, logo_path, invoice_name):
+    """Update the singleton PropertySettings row.
+
+    Only fields you pass on the command line are touched. Values are
+    written to the DB (safe upsert via get_settings autoseed). Use
+    `flask brand show` first to see the current values.
+
+        flask --app run.py brand set \\
+            --name "Maakanaa Village Hotel" --short "Maakanaa"
+    """
+    from .services.property_settings import get_settings
+    s = get_settings()
+
+    fields = {
+        'property_name':        name,
+        'short_name':           short,
+        'tagline':              tagline,
+        'primary_color':        color,
+        'logo_path':            logo_path,
+        'invoice_display_name': invoice_name,
+    }
+    changed = []
+    for col, new_val in fields.items():
+        if new_val is None:
+            continue
+        new_val = new_val.strip()
+        if col == 'primary_color' and new_val and not new_val.startswith('#'):
+            new_val = '#' + new_val
+        if getattr(s, col) != new_val:
+            setattr(s, col, new_val)
+            changed.append(col)
+
+    if not changed:
+        click.echo('  · no changes (no flags supplied or values already match)')
+        return
+
+    db.session.commit()
+    click.echo(f'  ✓ updated {len(changed)} field(s): {", ".join(changed)}')
+    click.echo('    Run `flask brand show` to verify, then restart the app:')
+    click.echo('      sudo systemctl restart sheeza.service')
+
+
 # ── Registration ────────────────────────────────────────────────────────────
 def register_cli(app):
-    """Attach the `admin` command group to the Flask app's CLI."""
+    """Attach the `admin` and `brand` command groups to the Flask app's CLI."""
     app.cli.add_command(admin_cli)
+    app.cli.add_command(brand_cli)

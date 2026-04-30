@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% import '_components.html' as ui %}
+{% block title %}Deployment diag — {{ brand.short_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .diag-grid { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 880px) { .diag-grid { grid-template-columns: 1fr; } }
+  .diag-row {
+    display: grid; grid-template-columns: 180px 1fr; gap: 8px;
+    padding: 8px 0; border-bottom: 1px dashed var(--ds-line-soft);
+    font-size: 13px;
+  }
+  .diag-row:last-child { border-bottom: 0; }
+  .diag-row .k { color: var(--ds-ink-3); font-size: 12px; font-weight: 600; }
+  .diag-row .v { color: var(--ds-ink); font-family: var(--ds-font-mono); font-size: 12.5px; }
+  .diag-row .v.ok   { color: #166534; }
+  .diag-row .v.bad  { color: #991b1b; }
+  .diag-side { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+  .diag-side h4 {
+    font-size: 11px; font-weight: 700; color: var(--ds-ink-2);
+    text-transform: uppercase; letter-spacing: 0.06em; margin: 8px 0 4px;
+  }
+  .diag-side a {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 4px 0; color: var(--ds-ink); text-decoration: none;
+    border-bottom: 1px dashed var(--ds-line-soft);
+  }
+  .diag-side a:hover { color: var(--ds-accent-ink); }
+  .diag-side a code { color: var(--ds-ink-4); font-size: 11.5px; }
+</style>
+
+{{ ui.page_header(
+    'Deployment diag',
+    sub='Read-only view that proves what is actually running on this server. Use it to verify the IA cleanup, premium UI, and brand row landed cleanly after a deploy.',
+    eyebrow='Admin · Diagnostics'
+) }}
+
+<div class="diag-grid">
+
+  <section class="ds-card">
+    <div class="ds-card__title-row">
+      <h3 class="ds-card__title">Build · git</h3>
+      {% if info.staging %}{{ ui.chip('STAGING', tone='warn', dot=True) }}{% endif %}
+    </div>
+    <div class="diag-row">
+      <span class="k">git SHA</span>
+      <span class="v">{{ info.git_sha_short }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">full SHA</span>
+      <span class="v">{{ info.git_sha }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">APP_GIT_SHA env</span>
+      <span class="v">{{ info.env_app_git_sha }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">STAGING env</span>
+      <span class="v">{{ info.env_staging }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">design-system.css</span>
+      {% if info.css_present %}
+        <span class="v ok">present · {{ info.css_size_kb }} KB</span>
+      {% else %}
+        <span class="v bad">MISSING — check static path on server</span>
+      {% endif %}
+    </div>
+    <div class="diag-row">
+      <span class="k">login redirect</span>
+      <span class="v">{{ info.login_redirect }}</span>
+    </div>
+  </section>
+
+  <section class="ds-card">
+    <div class="ds-card__title-row">
+      <h3 class="ds-card__title">Brand · property settings</h3>
+      <a class="ds-btn ds-btn--sm" href="{{ url_for('property_settings.edit') }}">Edit →</a>
+    </div>
+    <div class="diag-row">
+      <span class="k">PropertySettings.id</span>
+      <span class="v">{{ info.brand_row_id }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">property_name</span>
+      <span class="v">{{ info.brand_property_name }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">short_name</span>
+      <span class="v">{{ info.brand_short_name or '(none)' }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">tagline</span>
+      <span class="v">{{ info.brand_tagline or '(none)' }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">primary_color</span>
+      <span class="v">
+        {{ info.brand_primary_color }}
+        <span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:{{ info.brand_primary_color }};vertical-align:middle;border:1px solid var(--ds-line);margin-left:4px;"></span>
+      </span>
+    </div>
+    <div class="diag-row">
+      <span class="k">updated_at</span>
+      <span class="v">{{ info.brand_updated_at }}</span>
+    </div>
+    <div class="diag-row">
+      <span class="k">BRAND_NAME env (legacy)</span>
+      <span class="v">{{ info.env_brand_name }}</span>
+    </div>
+  </section>
+
+  <section class="ds-card" style="grid-column: 1 / -1;">
+    <div class="ds-card__title-row">
+      <h3 class="ds-card__title">Sidebar · IA structure (live url_for resolution)</h3>
+    </div>
+    <div class="diag-grid" style="gap: 10px;">
+      {% for label, rows in info.sidebar %}
+      <div class="diag-side">
+        <h4>{{ label }}</h4>
+        {% for ep, url in rows %}
+        <a href="{{ url if url.startswith('/') else '#' }}">
+          <span>{{ ep }}</span>
+          <code>{{ url }}</code>
+        </a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="ds-card" style="grid-column: 1 / -1;">
+    <div class="ds-card__title-row">
+      <h3 class="ds-card__title">How to fix branding on this box</h3>
+    </div>
+    <div style="font-size:13px; color:var(--ds-ink-2); line-height:1.7;">
+      <p><strong>1. Update the property name.</strong> SSH to the staging server and run:</p>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;overflow:auto;font-size:12px;">cd /var/www/sheeza-manzil
+sudo -u www-data ./venv/bin/flask --app run.py brand show
+sudo -u www-data ./venv/bin/flask --app run.py brand set \
+    --name "Maakanaa Village Hotel" --short "Maakanaa"
+sudo systemctl restart sheeza.service</pre>
+      <p style="margin-top:10px;"><strong>2. Or use the admin UI:</strong> open
+        <a href="{{ url_for('property_settings.edit') }}" class="text-blue-700">/admin/property-settings/</a>
+        and edit <em>Property name</em> + <em>Short name</em>. No restart needed.</p>
+      <p style="margin-top:10px;"><strong>3. Verify:</strong> reload this page —
+        <code>property_name</code> above should show the new value, and the
+        sidebar / top header will pick it up automatically.</p>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

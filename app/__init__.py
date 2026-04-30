@@ -59,6 +59,7 @@ def create_app(config_class=Config):
     from .routes.property import property_bp
     from .routes.channels import channels_bp
     from .routes.dashboard import dashboard_bp
+    from .routes.diag import diag_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -87,6 +88,7 @@ def create_app(config_class=Config):
     app.register_blueprint(property_bp)
     app.register_blueprint(channels_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(diag_bp)
 
     # Register the business-date context processor so every template
     # can read {{ business_date }} without explicit passthrough.
@@ -100,6 +102,15 @@ def create_app(config_class=Config):
         except Exception:
             return {'business_date': None}
 
+    # Build/version stamp — exposed to every template as {{ deploy.sha }}
+    # and {{ deploy.staging }}. Used by base.html for the STAGING ribbon
+    # and the design-system.css cache-buster query param.
+    @app.context_processor
+    def _inject_deploy_info():
+        from .services.version import deployed_sha, is_staging
+        return {'deploy': {'sha': deployed_sha(short=True),
+                           'staging': is_staging()}}
+
     from flask import request, redirect
     from flask_login import current_user
 
@@ -110,7 +121,7 @@ def create_app(config_class=Config):
             return
         allowed = ('/staff', '/console', '/appadmin', '/logout', '/static',
                    '/public', '/privacy', '/account', '/admin/activity',
-                   '/admin/whatsapp', '/webhooks/whatsapp',
+                   '/admin/whatsapp', '/admin/diag', '/webhooks/whatsapp',
                    # Unified Dashboard — post-login landing for both
                    # admin and staff roles.
                    '/dashboard',
