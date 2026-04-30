@@ -488,28 +488,60 @@
   .bar.cuts-left::before  { left: 0;  background: linear-gradient(to right, currentColor 0%, transparent 100%); opacity: 0.10; }
   .bar.cuts-right::after  { right: 0; background: linear-gradient(to left,  currentColor 0%, transparent 100%); opacity: 0.10; }
 
-  /* Compact mode (30d view) */
-  .board-grid[data-view="30d"] { --row-h: 44px; }
-  .board-grid[data-view="30d"] .bar { margin: 3px 2px; padding: 3px 7px; }
+  /* View-specific bar polish — kept, but no longer overrides --row-h.
+     Density owns row-height; views just tweak bar typography for the
+     wider/narrower columns. */
+  .board-grid[data-view="30d"] .bar { margin: 2px 2px; padding: 2px 6px; }
   .board-grid[data-view="30d"] .bar .bar-meta { display: none; }
   .board-grid[data-view="30d"] .bar .bar-name { font-size: 11px; }
-  .board-grid[data-view="30d"] .bar .pay-dot { top: 4px; right: 4px; width: 6px; height: 6px; }
+  .board-grid[data-view="30d"] .bar .pay-dot { top: 3px; right: 3px; width: 5px; height: 5px; }
 
-  .board-grid[data-view="day"] { --row-h: 64px; }
-  .board-grid[data-view="day"] .bar { padding: 8px 14px; }
+  .board-grid[data-view="day"] .bar { padding: 6px 14px; }
   .board-grid[data-view="day"] .bar .bar-name { font-size: 13px; }
 
-  /* Density toggle (cumulative with view) */
-  .board-grid[data-density="compact"] { --row-h: 36px; --header-h: 50px; }
-  .board-grid[data-density="compact"] .room-cell { padding: 0 10px; gap: 8px; }
-  .board-grid[data-density="compact"] .room-cell .room-num { font-size: 12px; }
-  .board-grid[data-density="compact"] .room-cell .meta-line-1 { font-size: 10px; }
-  .board-grid[data-density="compact"] .room-cell .meta-line-2 { font-size: 9px; }
-  .board-grid[data-density="compact"] .bar { margin: 3px 2px; padding: 3px 8px; }
+  /* Density toggle — vertical-density sprint:
+       Standard: comfortable, default for management review
+       Compact:  ~70% more rooms per screen, rail still readable
+       Ultra:    maximum density, rail collapses to # + STD/DLX/etc.
+
+     The route now passes --row-h via DENSITY_ROW_HEIGHT_PX, but a
+     specificity backstop keeps the value pinned even when older
+     view-specific rules try to win. */
+  .board-grid[data-density="compact"] {
+    --row-h: 28px;
+    --header-h: 44px;
+  }
+  .board-grid[data-density="compact"] .room-cell { padding: 0 10px; gap: 6px; }
+  .board-grid[data-density="compact"] .room-cell .room-num    { font-size: 12px; }
+  .board-grid[data-density="compact"] .room-cell .meta-line-1 { font-size: 10px; line-height: 1.1; }
+  .board-grid[data-density="compact"] .room-cell .meta-line-2 { font-size: 9px;  line-height: 1.1; margin-top: 0; }
+  .board-grid[data-density="compact"] .bar { margin: 2px 2px; padding: 1px 7px; line-height: 1.1; }
   .board-grid[data-density="compact"] .bar .bar-name { font-size: 11px; }
   .board-grid[data-density="compact"] .bar .bar-meta { font-size: 9px; }
-  .board-grid[data-density="compact"] .day-head { padding: 4px 0; }
-  .board-grid[data-density="compact"] .day-head .num { font-size: 13px; }
+  .board-grid[data-density="compact"] .day-head { padding: 3px 0; }
+  .board-grid[data-density="compact"] .day-head .num { font-size: 12px; }
+  /* Tighter housekeeping pill in compact. */
+  .board-grid[data-density="compact"] .hk-rail {
+    font-size: 8.5px; padding: 0 4px; line-height: 1.3;
+  }
+
+  .board-grid[data-density="ultra"] {
+    --row-h: 22px;
+    --header-h: 38px;
+  }
+  .board-grid[data-density="ultra"] .room-cell {
+    padding: 0 8px; gap: 4px;
+  }
+  .board-grid[data-density="ultra"] .room-cell .room-num    { font-size: 11px; min-width: 32px; }
+  .board-grid[data-density="ultra"] .bar {
+    margin: 1px 1px; padding: 0 5px; line-height: 1.05;
+    border-radius: 4px;
+  }
+  .board-grid[data-density="ultra"] .bar .bar-name { font-size: 10.5px; }
+  .board-grid[data-density="ultra"] .bar .pay-dot { width: 4px; height: 4px; top: 2px; right: 2px; }
+  .board-grid[data-density="ultra"] .day-head { padding: 2px 0; }
+  .board-grid[data-density="ultra"] .day-head .num { font-size: 11px; }
+  .board-grid[data-density="ultra"] .status-dot { width: 5px; height: 5px; }
 
   /* Group headers — sticky-left, span all day columns visually */
   .group-header {

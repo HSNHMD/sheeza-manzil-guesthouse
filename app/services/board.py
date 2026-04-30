@@ -59,13 +59,23 @@ DENSITY_DAY_WIDTH_MULT = {
     'ultra':    0.42,
 }
 
-# Per-density row height in px. Compact + ultra get aggressive cuts so
-# more rooms fit in a viewport without losing tap-friendliness on
-# tablets (32 px is still a 2-finger comfortable height).
+# Per-density row height in px. The vertical-density sprint pushed
+# Compact + Ultra tighter so visibly more room rows fit in a viewport
+# without losing operational legibility:
+#
+#   Standard 48: comfortable, default for management-style review
+#   Compact  28: ~70% more rooms-per-screen; rail still readable
+#   Ultra    22: maximum density; rail collapses to room# + 3-letter
+#                code; bars use minimum vertical padding so the
+#                colored block dominates the row
+#
+# Tap-friendliness floor: 22 px is below Apple's 44-pt guideline but
+# this is a power-user desktop/tablet view; the drawer-open click
+# target on the bar is generous (the whole row is one tap).
 DENSITY_ROW_HEIGHT_PX = {
-    'standard': 56,
-    'compact':  40,
-    'ultra':    32,
+    'standard': 48,
+    'compact':  28,
+    'ultra':    22,
 }
 
 # Per-density room-rail width in px. The room rail is the leftmost

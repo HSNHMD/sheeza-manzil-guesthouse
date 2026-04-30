@@ -57,12 +57,19 @@ class DensityKnobsTests(unittest.TestCase):
         self.assertLessEqual(DENSITY_DAY_WIDTH_MULT['ultra'], 0.45)
 
     def test_row_heights_tightened(self):
+        # Vertical-density sprint pushed these tighter so significantly
+        # more rooms fit per viewport. Bands chosen so future drift
+        # back toward roomy values fails this test.
         from app.services.board import DENSITY_ROW_HEIGHT_PX
-        self.assertEqual(DENSITY_ROW_HEIGHT_PX['standard'], 56)
-        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['compact'], 42)
-        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 34)
-        # Stay tap-friendly enough on tablet (>= 28px).
-        self.assertGreaterEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 28)
+        # Standard stays comfortable for management review.
+        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['standard'], 50)
+        self.assertGreaterEqual(DENSITY_ROW_HEIGHT_PX['standard'], 44)
+        # Compact: ~70% more rooms per screen than standard.
+        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['compact'], 30)
+        # Ultra: maximum density, but keep ≥ 20 px so colored
+        # bars + payment dots remain visible.
+        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 24)
+        self.assertGreaterEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 20)
 
     def test_room_rail_widths_tightened(self):
         from app.services.board import (
