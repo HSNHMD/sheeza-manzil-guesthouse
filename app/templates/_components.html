@@ -1,0 +1,91 @@
+{# =========================================================================
+   Sheeza Manzil — Shared component macros
+   -------------------------------------------------------------------------
+   Import in any template:
+
+     {% import '_components.html' as ui %}
+     {{ ui.page_header('Bookings', sub='All reservations across properties.') }}
+
+   These macros render markup that the design-system.css stylesheet styles.
+   Touch the CSS to evolve the look — touch the macros to evolve structure.
+   ========================================================================= #}
+
+
+{# ── Page header ─────────────────────────────────────────────────────────
+   title:   string                — required
+   sub:     string                — optional one-line subtitle
+   eyebrow: string                — optional small uppercase label above title
+   actions: caller block          — optional buttons / chips on the right
+#}
+{% macro page_header(title, sub=None, eyebrow=None) %}
+<header class="ds-page-header">
+  <div class="ds-page-header__row">
+    <div>
+      {% if eyebrow %}<div class="ds-eyebrow">{{ eyebrow }}</div>{% endif %}
+      <h1>{{ title }}</h1>
+      {% if sub %}<p class="ds-page-sub">{{ sub }}</p>{% endif %}
+    </div>
+    {% if caller %}
+    <div class="ds-page-header__actions">{{ caller() }}</div>
+    {% endif %}
+  </div>
+</header>
+{% endmacro %}
+
+
+{# ── KPI tile ────────────────────────────────────────────────────────────
+   label, value: required
+   tone:  '', 'good', 'warn', 'bad', 'info', 'muted'
+   meta:  small caption beneath the value
+   href:  if provided, the tile is a clickable <a>
+#}
+{% macro kpi(label, value, tone='', meta=None, href=None) %}
+{% set cls = 'ds-kpi' + (' ds-kpi--' + tone if tone else '') %}
+{% if href %}
+<a class="{{ cls }}" href="{{ href }}">
+{% else %}
+<div class="{{ cls }}">
+{% endif %}
+  <span class="ds-kpi__label">{{ label }}</span>
+  <span class="ds-kpi__value">{{ value }}</span>
+  {% if meta %}<span class="ds-kpi__meta">{{ meta }}</span>{% endif %}
+{% if href %}</a>{% else %}</div>{% endif %}
+{% endmacro %}
+
+
+{# ── Chip / Badge ────────────────────────────────────────────────────────
+   tone: '', 'good', 'warn', 'bad', 'info', 'brand', 'solid'
+   dot:  if true, prepend a colored dot
+#}
+{% macro chip(label, tone='', dot=False) %}
+<span class="ds-chip{{ ' ds-chip--' + tone if tone else '' }}">
+  {% if dot %}<span class="ds-chip__dot"></span>{% endif %}
+  {{ label }}
+</span>
+{% endmacro %}
+
+
+{# ── Empty state ─────────────────────────────────────────────────────────
+   title:   bold one-liner
+   message: optional supporting text
+   icon_path: optional Heroicons-style stroke path (24x24 viewBox)
+#}
+{% macro empty_state(title, message=None, icon_path=None) %}
+<div class="ds-empty">
+  {% if icon_path %}
+  <svg class="ds-empty__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="{{ icon_path }}"/>
+  </svg>
+  {% endif %}
+  <div class="ds-empty__title">{{ title }}</div>
+  {% if message %}<div>{{ message }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{# ── Section heading ─────────────────────────────────────────────────────
+   small uppercase divider — use between groups of cards/tiles.
+#}
+{% macro section_heading(label) %}
+<h2 class="ds-section-h">{{ label }}</h2>
+{% endmacro %}

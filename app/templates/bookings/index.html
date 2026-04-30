@@ -1,41 +1,34 @@
 {% extends 'base.html' %}
+{% import '_components.html' as ui %}
 {% block title %}Bookings{% endblock %}
 {% block content %}
-<div class="space-y-5">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-xl font-bold text-gray-800">Bookings</h1>
-    <a href="{{ url_for('bookings.new') }}"
-      class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-      + New Booking
+<div class="space-y-4">
+
+  {% call ui.page_header('Bookings',
+      sub='All reservations across the property — search, filter, and open any folio.',
+      eyebrow='Front Office') %}
+    <a href="{{ url_for('bookings.new') }}" class="ds-btn ds-btn--primary">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+      New Booking
     </a>
-  </div>
+  {% endcall %}
 
   <!-- Stats -->
-  <div class="grid grid-cols-3 gap-3">
-    <div class="bg-blue-50 rounded-xl border border-blue-200 p-4 text-center">
-      <p class="text-xs text-blue-600 font-medium">Arrivals Today</p>
-      <p class="text-2xl font-bold text-blue-700 mt-1">{{ arrivals_today }}</p>
-    </div>
-    <div class="bg-green-50 rounded-xl border border-green-200 p-4 text-center">
-      <p class="text-xs text-green-600 font-medium">In-House</p>
-      <p class="text-2xl font-bold text-green-700 mt-1">{{ in_house }}</p>
-    </div>
-    <div class="bg-orange-50 rounded-xl border border-orange-200 p-4 text-center">
-      <p class="text-xs text-orange-600 font-medium">Departures</p>
-      <p class="text-2xl font-bold text-orange-700 mt-1">{{ departures_today }}</p>
-    </div>
+  <div class="ds-kpi-grid" style="grid-template-columns: repeat(3, minmax(0,1fr));">
+    {{ ui.kpi('Arrivals today', arrivals_today, tone='info') }}
+    {{ ui.kpi('In house',       in_house,       tone='good') }}
+    {{ ui.kpi('Departures today', departures_today, tone='warn') }}
   </div>
 
   <!-- Filters — two independent filters (booking_status + payment_status)
        populated from the lifecycle module's canonical tuples, plus the
        legacy 'unpaid' shortcut and date/search inputs. -->
-  <form method="GET" class="flex flex-wrap gap-2">
-    <input type="text" name="search" value="{{ search }}" placeholder="Search guest, ref, room..."
-      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto flex-1 min-w-48">
+  <form method="GET" class="ds-filter-bar">
+    <input type="text" name="search" value="{{ search }}" placeholder="Search guest, ref, room…"
+      class="ds-input ds-input--search">
 
     {# Booking-status filter (new vocab populated from BOOKING_STATUSES global) #}
-    <select name="booking_status" onchange="this.form.submit()"
-      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <select name="booking_status" onchange="this.form.submit()" class="ds-select">
       <option value="">All bookings</option>
       {% for s in BOOKING_STATUSES %}
         <option value="{{ s }}" {% if booking_status_filter == s %}selected{% endif %}>{{ status_label(s, None, None) }}</option>
@@ -43,8 +36,7 @@
     </select>
 
     {# Payment-status filter (new vocab populated from PAYMENT_STATUSES global) #}
-    <select name="payment_status" onchange="this.form.submit()"
-      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <select name="payment_status" onchange="this.form.submit()" class="ds-select">
       <option value="">All payments</option>
       {% for p in PAYMENT_STATUSES %}
         <option value="{{ p }}" {% if payment_status_filter == p %}selected{% endif %}>{{ p.replace('_',' ').title() }}</option>
@@ -52,17 +44,15 @@
     </select>
 
     {# Legacy single-axis 'unpaid' shortcut — kept for back-compat with bookmarks #}
-    <select name="status" onchange="this.form.submit()"
-      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <select name="status" onchange="this.form.submit()" class="ds-select">
       <option value="">— legacy —</option>
       <option value="unpaid" {% if status_filter=='unpaid' %}selected{% endif %}>⚠ Unpaid (any)</option>
     </select>
 
-    <input type="date" name="date" value="{{ date_filter }}"
-      class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-    <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Search</button>
+    <input type="date" name="date" value="{{ date_filter }}" class="ds-input" style="max-width:170px;">
+    <button type="submit" class="ds-btn">Search</button>
     {% if search or status_filter or booking_status_filter or payment_status_filter or date_filter %}
-    <a href="{{ url_for('bookings.index') }}" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg">Clear</a>
+    <a href="{{ url_for('bookings.index') }}" class="ds-btn ds-btn--ghost">Clear</a>
     {% endif %}
   </form>
 
@@ -155,10 +145,11 @@
       </table>
     </div>
     {% else %}
-    <div class="p-12 text-center">
-      <p class="text-gray-400 text-lg mb-2">No bookings found</p>
-      <a href="{{ url_for('bookings.new') }}" class="text-blue-600 hover:underline text-sm">Create a booking</a>
-    </div>
+    {{ ui.empty_state(
+        'No bookings found',
+        message='Adjust the filters above or create a new booking to get started.',
+        icon_path='M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
+    ) }}
     {% endif %}
   </div>
 </div>

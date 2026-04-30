@@ -1,288 +1,234 @@
 {% extends 'base.html' %}
+{% import '_components.html' as ui %}
 {% block title %}Dashboard — {{ brand.short_name }}{% endblock %}
+
 {% block content %}
+{# Premium command center. Visuals come from design-system.css; the only
+   bespoke style here is the small two-column grid that splits quick links
+   from alerts/feed on wide screens and stacks them on mobile. #}
 <style>
-  .db-shell { display: flex; flex-direction: column; gap: 16px; }
-  .db-h1 { font-size: 1.4rem; font-weight: 800; color: #0f172a; margin: 0; letter-spacing: -.01em; }
-  .db-sub { color: #64748b; font-size: 13px; }
-
-  /* KPI grid */
-  .db-kpis {
-    display: grid; gap: 10px;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  @media (max-width: 760px) { .db-kpis { grid-template-columns: repeat(2, 1fr); } }
-  .db-kpi {
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
-    padding: 14px 16px; display: flex; flex-direction: column; gap: 2px;
-    transition: transform .05s ease, border-color .15s ease;
-    text-decoration: none; color: inherit;
-  }
-  a.db-kpi:hover { border-color: #cbd5e1; transform: translateY(-1px); }
-  .db-kpi .label {
-    font-size: 10.5px; color: #64748b; text-transform: uppercase;
-    letter-spacing: .05em; font-weight: 700;
-  }
-  .db-kpi .value {
-    font-size: 26px; font-weight: 800; color: #0f172a;
-    letter-spacing: -.02em; line-height: 1;
-  }
-  .db-kpi .meta { font-size: 11.5px; color: #94a3b8; }
-  .db-kpi.is-positive .value { color: #16a34a; }
-  .db-kpi.is-warn     .value { color: #ca8a04; }
-  .db-kpi.is-bad      .value { color: #dc2626; }
-  .db-kpi.is-info     .value { color: #2563eb; }
-
-  .db-section-h {
-    font-size: 12px; font-weight: 800; color: #475569;
-    text-transform: uppercase; letter-spacing: .07em; margin: 8px 0 4px;
-  }
-
-  /* Two-column layout */
   .db-cols {
-    display: grid; gap: 14px;
+    display: grid; gap: 16px;
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   }
-  @media (max-width: 900px) { .db-cols { grid-template-columns: 1fr; } }
+  @media (max-width: 960px) { .db-cols { grid-template-columns: 1fr; } }
 
-  /* Quick links by group */
-  .db-card {
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
-    padding: 14px;
-  }
-  .db-card h3 {
-    font-size: 11px; font-weight: 800; color: #475569;
-    text-transform: uppercase; letter-spacing: .05em; margin: 0 0 10px;
-  }
+  .db-stack { display: flex; flex-direction: column; gap: 16px; }
+
   .db-link-grid {
-    display: grid; gap: 6px;
+    display: grid; gap: 8px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  @media (max-width: 480px) { .db-link-grid { grid-template-columns: 1fr; } }
+
   .db-link {
-    display: flex; align-items: center; gap: 8px;
-    padding: 9px 11px; min-height: 40px;
-    border: 1px solid #e2e8f0; border-radius: 8px;
-    background: #fff; color: #0f172a; text-decoration: none;
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 13px; min-height: 44px;
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    background: #fff; color: var(--ds-ink);
+    text-decoration: none;
     font-size: 13.5px; font-weight: 600;
-    transition: border-color .15s ease, background .15s ease;
+    transition: border-color .15s ease, background .15s ease, transform .05s ease;
   }
-  .db-link:hover { border-color: #94a3b8; background: #f8fafc; }
-  .db-link svg { width: 16px; height: 16px; color: #64748b; flex-shrink: 0; }
+  .db-link:hover { border-color: #cbd2da; background: #fbfcfd; }
+  .db-link:active { transform: translateY(1px); }
+  .db-link svg { width: 16px; height: 16px; color: var(--ds-ink-3); flex-shrink: 0; }
 
-  /* Activity feed */
-  .db-feed { font-size: 12.5px; color: #475569; }
-  .db-feed .row {
-    display: flex; justify-content: space-between; gap: 10px;
-    padding: 7px 0; border-bottom: 1px dashed #e2e8f0;
+  .db-feed-row {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--ds-line-soft);
+    font-size: 13px;
   }
-  .db-feed .row:last-child { border-bottom: 0; }
-  .db-feed .who { font-weight: 600; color: #0f172a; }
-  .db-feed .meta { font-size: 11px; color: #94a3b8; white-space: nowrap; }
-  .db-feed code { background:#f1f5f9; padding:1px 5px; border-radius:4px;
-                  font-size: 11px; }
+  .db-feed-row:last-child { border-bottom: 0; }
+  .db-feed-row .who { font-weight: 600; color: var(--ds-ink); }
+  .db-feed-row .meta { font-size: 11.5px; color: var(--ds-ink-4); white-space: nowrap; }
+  .db-feed-row code {
+    background: #f1f5f9; padding: 1.5px 6px; border-radius: 4px;
+    font-size: 11.5px; font-family: var(--ds-font-mono);
+    color: var(--ds-accent-ink);
+  }
+  .db-feed-row .desc { font-size: 12px; color: var(--ds-ink-3); margin-top: 3px; }
 
-  /* Alert chips */
-  .db-alert {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 999px; font-size: 11.5px;
-    font-weight: 700;
+  .db-mini-row {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 9px 0; border-bottom: 1px solid var(--ds-line-soft);
+    font-size: 13px; gap: 10px;
   }
-  .db-alert.has   { background: #fef3c7; color: #92400e; }
-  .db-alert.empty { background: #f1f5f9; color: #475569; }
+  .db-mini-row:last-child { border-bottom: 0; }
+  .db-mini-row strong { color: var(--ds-ink); font-weight: 600; }
+  .db-mini-row a.link-detail { color: var(--ds-accent-ink); text-decoration: none; font-size: 12px; }
+  .db-mini-row a.link-detail:hover { text-decoration: underline; }
+  .db-mini-row .preview { color: var(--ds-ink-3); font-size: 12px; margin-top: 2px; }
 
-  .db-mini-list {
-    font-size: 12.5px; color: #475569;
+  .db-greet {
+    font-size: 12.5px; color: var(--ds-ink-3);
   }
-  .db-mini-list .row {
-    display: flex; justify-content: space-between; padding: 6px 0;
-    border-bottom: 1px dashed #e2e8f0;
-  }
-  .db-mini-list .row:last-child { border-bottom: 0; }
-  .db-mini-list strong { color: #0f172a; }
-  .db-mini-list a { color: #0369a1; text-decoration: none; }
+  .db-greet strong { color: var(--ds-ink); font-weight: 600; }
 </style>
 
-<div class="db-shell">
+{% call ui.page_header(
+    'Dashboard',
+    sub=brand.name ~ ' · ' ~ snap.as_of.strftime('%A, %B %-d, %Y') ~
+        ((' · business date ' ~ business_date.strftime('%b %-d')) if business_date and business_date != snap.as_of else ''),
+    eyebrow='Today at a glance'
+) %}
+  <div class="db-greet">Welcome back, <strong>{{ current_user.username }}</strong></div>
+{% endcall %}
 
-  <div class="flex items-end justify-between flex-wrap gap-2">
-    <div>
-      <h1 class="db-h1">Dashboard</h1>
-      <p class="db-sub">
-        {{ brand.name }} · {{ snap.as_of.strftime('%a, %b %-d, %Y') }}
-        {% if business_date and business_date != snap.as_of %}
-          · business date <strong>{{ business_date.strftime('%b %-d') }}</strong>
-        {% endif %}
-      </p>
-    </div>
-    <div class="flex items-center gap-3 text-xs text-slate-500">
-      Welcome back, <strong class="text-slate-800">{{ current_user.username }}</strong>
-    </div>
+<div class="db-stack">
+
+  {# ── Operations ─────────────────────────────────────────── #}
+  {{ ui.section_heading('Today · operations') }}
+  <div class="ds-kpi-grid">
+    {{ ui.kpi('Arrivals today', snap.arrivals_today,
+              meta='expected to check in',
+              href=url_for('front_office.arrivals')) }}
+    {{ ui.kpi('Departures today', snap.departures_today,
+              meta='due to check out',
+              href=url_for('front_office.departures')) }}
+    {{ ui.kpi('In house', snap.in_house,
+              meta='guests staying tonight',
+              href=url_for('front_office.in_house')) }}
+    {% set occ_tone = 'good' if snap.occupancy_pct >= 80 else ('info' if snap.occupancy_pct >= 50 else '') %}
+    {{ ui.kpi('Occupancy', snap.occupancy_pct ~ '%',
+              tone=occ_tone,
+              meta=snap.occupied_rooms ~ ' / ' ~ snap.rooms_total ~ ' rooms',
+              href=(url_for('reports.occupancy') if current_user.is_admin else url_for('front_office.in_house'))) }}
   </div>
 
-  {# ── Operations row ── #}
-  <h2 class="db-section-h">Today · operations</h2>
-  <div class="db-kpis">
-    <a class="db-kpi" href="{{ url_for('front_office.arrivals') }}">
-      <span class="label">Arrivals today</span>
-      <span class="value">{{ snap.arrivals_today }}</span>
-      <span class="meta">expected to check in</span>
-    </a>
-    <a class="db-kpi" href="{{ url_for('front_office.departures') }}">
-      <span class="label">Departures today</span>
-      <span class="value">{{ snap.departures_today }}</span>
-      <span class="meta">due to check out</span>
-    </a>
-    <a class="db-kpi" href="{{ url_for('front_office.in_house') }}">
-      <span class="label">In house</span>
-      <span class="value">{{ snap.in_house }}</span>
-      <span class="meta">guests staying tonight</span>
-    </a>
-    <a class="db-kpi {% if snap.occupancy_pct >= 80 %}is-positive{% elif snap.occupancy_pct >= 50 %}is-info{% endif %}"
-       href="{% if current_user.is_admin %}{{ url_for('reports.occupancy') }}{% else %}{{ url_for('front_office.in_house') }}{% endif %}">
-      <span class="label">Occupancy</span>
-      <span class="value">{{ snap.occupancy_pct }}%</span>
-      <span class="meta">{{ snap.occupied_rooms }} / {{ snap.rooms_total }} rooms</span>
-    </a>
-  </div>
-
-  {# ── Rooms row ── #}
-  <h2 class="db-section-h">Rooms</h2>
-  <div class="db-kpis">
-    <a class="db-kpi" href="{{ url_for('housekeeping.index') }}">
-      <span class="label">Occupied</span>
-      <span class="value">{{ snap.occupied_rooms }}</span>
-    </a>
-    <a class="db-kpi is-positive" href="{{ url_for('housekeeping.index') }}">
-      <span class="label">Vacant</span>
-      <span class="value">{{ snap.vacant_rooms }}</span>
-    </a>
-    <a class="db-kpi {% if snap.dirty_rooms > 0 %}is-warn{% endif %}"
-       href="{{ url_for('housekeeping.index', view='dirty') }}">
-      <span class="label">Dirty</span>
-      <span class="value">{{ snap.dirty_rooms }}</span>
-      <span class="meta">need cleaning</span>
-    </a>
-    <a class="db-kpi {% if snap.out_of_order_rooms > 0 %}is-bad{% endif %}"
-       href="{{ url_for('housekeeping.index', view='out_of_order') }}">
-      <span class="label">Out of order</span>
-      <span class="value">{{ snap.out_of_order_rooms }}</span>
-      <span class="meta">unsellable</span>
-    </a>
+  {# ── Rooms ───────────────────────────────────────────────── #}
+  {{ ui.section_heading('Rooms') }}
+  <div class="ds-kpi-grid">
+    {{ ui.kpi('Occupied', snap.occupied_rooms,
+              href=url_for('housekeeping.index')) }}
+    {{ ui.kpi('Vacant', snap.vacant_rooms, tone='good',
+              href=url_for('housekeeping.index')) }}
+    {{ ui.kpi('Dirty', snap.dirty_rooms,
+              tone=('warn' if snap.dirty_rooms > 0 else ''),
+              meta='need cleaning',
+              href=url_for('housekeeping.index', view='dirty')) }}
+    {{ ui.kpi('Out of order', snap.out_of_order_rooms,
+              tone=('bad' if snap.out_of_order_rooms > 0 else ''),
+              meta='unsellable',
+              href=url_for('housekeeping.index', view='out_of_order')) }}
   </div>
 
   {% if current_user.is_admin %}
-  {# ── Money row (admin) ── #}
-  <h2 class="db-section-h">Money</h2>
-  <div class="db-kpis">
-    <a class="db-kpi {% if snap.outstanding_total > 0 %}is-warn{% endif %}"
-       href="{{ url_for('reports.outstanding') }}">
-      <span class="label">Outstanding</span>
-      <span class="value">${{ '%.2f'|format(snap.outstanding_total) }}</span>
-      <span class="meta">{{ snap.outstanding_count }} live booking{{ 's' if snap.outstanding_count != 1 else '' }}</span>
-    </a>
-    <a class="db-kpi {% if snap.pending_count > 0 %}is-warn{% endif %}"
-       href="{{ url_for('invoices.index') }}">
-      <span class="label">Pending review</span>
-      <span class="value">{{ snap.pending_count }}</span>
-      <span class="meta">invoices to verify</span>
-    </a>
-    <a class="db-kpi" href="{{ url_for('night_audit.index') }}">
-      <span class="label">Night Audit</span>
-      <span class="value" style="font-size: 18px;">Open →</span>
-      <span class="meta">close the day</span>
-    </a>
-    <a class="db-kpi" href="{{ url_for('reports.overview') }}">
-      <span class="label">Reports</span>
-      <span class="value" style="font-size: 18px;">Analytics →</span>
-      <span class="meta">revenue + occupancy</span>
-    </a>
+  {# ── Money (admin) ──────────────────────────────────────── #}
+  {{ ui.section_heading('Money') }}
+  <div class="ds-kpi-grid">
+    {{ ui.kpi('Outstanding',
+              '$' ~ '%.2f'|format(snap.outstanding_total),
+              tone=('warn' if snap.outstanding_total > 0 else ''),
+              meta=snap.outstanding_count ~ (' live booking' if snap.outstanding_count == 1 else ' live bookings'),
+              href=url_for('reports.outstanding')) }}
+    {{ ui.kpi('Pending review', snap.pending_count,
+              tone=('warn' if snap.pending_count > 0 else ''),
+              meta='invoices to verify',
+              href=url_for('invoices.index')) }}
+    {{ ui.kpi('Night Audit', 'Open →',
+              tone='muted',
+              meta='close the day',
+              href=url_for('night_audit.index')) }}
+    {{ ui.kpi('Reports', 'Analytics →',
+              tone='muted',
+              meta='revenue + occupancy',
+              href=url_for('reports.overview')) }}
   </div>
   {% endif %}
 
   <div class="db-cols">
 
-    {# ── LEFT col: quick links ── #}
-    <div style="display: flex; flex-direction: column; gap: 14px;">
+    {# ── LEFT: quick links ──────────────────────────────── #}
+    <div class="db-stack">
       {% for group_name, group_links in links_by_group.items() %}
-      <div class="db-card">
-        <h3>{{ group_name }} — quick links</h3>
+      <section class="ds-card">
+        <div class="ds-card__title-row">
+          <h3 class="ds-card__title">{{ group_name }} — quick links</h3>
+        </div>
         <div class="db-link-grid">
           {% for link in group_links %}
           <a class="db-link" href="{{ url_for(link.endpoint) }}">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ link.icon }}"/></svg>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="{{ link.icon }}"/>
+            </svg>
             {{ link.label }}
           </a>
           {% endfor %}
         </div>
-      </div>
+      </section>
       {% endfor %}
     </div>
 
-    {# ── RIGHT col: alerts + feed ── #}
-    <div style="display: flex; flex-direction: column; gap: 14px;">
+    {# ── RIGHT: alerts + feed ───────────────────────────── #}
+    <div class="db-stack">
 
       {% if new_orders_list %}
-      <div class="db-card">
-        <h3 style="display: flex; justify-content: space-between; align-items: center;">
-          <span>New online orders</span>
-          <span class="db-alert has">{{ new_orders_list|length }}</span>
-        </h3>
-        <div class="db-mini-list">
-          {% for o in new_orders_list %}
-          <div class="row">
-            <div>
-              <strong>#{{ o.id }}</strong> · ${{ '%.2f'|format(o.total_amount) }}
-              · {% if o.booking %}<a href="{{ url_for('bookings.detail', booking_id=o.booking.id) }}">{{ o.booking.booking_ref }}</a>{% else %}room {{ o.room_number_input or '?' }}{% endif %}
-            </div>
-            <a href="{{ url_for('menu.admin_order_detail', order_id=o.id) if current_user.is_admin else '#' }}"
-               class="text-xs">{{ o.created_at.strftime('%H:%M') if o.created_at else '' }}</a>
-          </div>
-          {% endfor %}
+      <section class="ds-card">
+        <div class="ds-card__title-row">
+          <h3 class="ds-card__title">New online orders</h3>
+          {{ ui.chip(new_orders_list|length, tone='warn', dot=True) }}
         </div>
-      </div>
+        {% for o in new_orders_list %}
+        <div class="db-mini-row">
+          <div>
+            <strong>#{{ o.id }}</strong> · ${{ '%.2f'|format(o.total_amount) }}
+            · {% if o.booking %}<a class="link-detail" href="{{ url_for('bookings.detail', booking_id=o.booking.id) }}">{{ o.booking.booking_ref }}</a>{% else %}room {{ o.room_number_input or '?' }}{% endif %}
+          </div>
+          {% if current_user.is_admin %}
+          <a class="link-detail" href="{{ url_for('menu.admin_order_detail', order_id=o.id) }}">
+            {{ o.created_at.strftime('%H:%M') if o.created_at else '' }}
+          </a>
+          {% else %}
+          <span class="meta">{{ o.created_at.strftime('%H:%M') if o.created_at else '' }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </section>
       {% endif %}
 
       {% if messages %}
-      <div class="db-card">
-        <h3 style="display: flex; justify-content: space-between; align-items: center;">
-          <span>Recent messages</span>
-          <span class="db-alert {% if messages|length > 0 %}has{% else %}empty{% endif %}">{{ messages|length }}</span>
-        </h3>
-        <div class="db-mini-list">
-          {% for m in messages %}
-          <div class="row">
-            <div>
-              {{ m.profile_name or '(unknown)' }} · last4 {{ m.from_phone_last4 or '—' }}
-              <div class="text-xs text-slate-500">{{ (m.body_preview or m.body_text or '')[:60] }}</div>
-            </div>
-            <span class="text-xs text-slate-400">{{ m.created_at.strftime('%H:%M') if m.created_at else '' }}</span>
-          </div>
-          {% endfor %}
+      <section class="ds-card">
+        <div class="ds-card__title-row">
+          <h3 class="ds-card__title">Recent messages</h3>
+          {{ ui.chip(messages|length, tone='brand', dot=True) }}
         </div>
-      </div>
+        {% for m in messages %}
+        <div class="db-mini-row">
+          <div>
+            <strong>{{ m.profile_name or '(unknown)' }}</strong>
+            <span class="meta" style="font-size:11.5px;color:var(--ds-ink-4);">· last4 {{ m.from_phone_last4 or '—' }}</span>
+            <div class="preview">{{ (m.body_preview or m.body_text or '')[:64] }}</div>
+          </div>
+          <span class="meta" style="font-size:11.5px;color:var(--ds-ink-4);">{{ m.created_at.strftime('%H:%M') if m.created_at else '' }}</span>
+        </div>
+        {% endfor %}
+      </section>
       {% endif %}
 
-      <div class="db-card">
-        <h3>Recent activity</h3>
-        {% if activity %}
-        <div class="db-feed">
-          {% for a in activity %}
-          <div class="row">
-            <div>
-              <span class="who">{{ a.actor_type }}</span>
-              · <code>{{ a.action }}</code>
-              {% if a.description %}
-                <div class="text-xs text-slate-500" style="margin-top:2px;">{{ a.description[:120] }}</div>
-              {% endif %}
-            </div>
-            <span class="meta">{{ a.created_at.strftime('%b %-d %H:%M') if a.created_at else '' }}</span>
-          </div>
-          {% endfor %}
+      <section class="ds-card">
+        <div class="ds-card__title-row">
+          <h3 class="ds-card__title">Recent activity</h3>
         </div>
+        {% if activity %}
+        {% for a in activity %}
+        <div class="db-feed-row">
+          <div>
+            <span class="who">{{ a.actor_type }}</span> · <code>{{ a.action }}</code>
+            {% if a.description %}<div class="desc">{{ a.description[:120] }}</div>{% endif %}
+          </div>
+          <span class="meta">{{ a.created_at.strftime('%b %-d %H:%M') if a.created_at else '' }}</span>
+        </div>
+        {% endfor %}
         {% else %}
-        <p class="db-sub">No recent activity yet.</p>
+        {{ ui.empty_state(
+            'No recent activity yet.',
+            message='New bookings, payments and audit events will show up here.',
+            icon_path='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'
+        ) }}
         {% endif %}
-      </div>
+      </section>
 
     </div>
 

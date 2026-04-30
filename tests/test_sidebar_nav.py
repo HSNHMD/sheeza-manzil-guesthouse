@@ -171,7 +171,7 @@ class SidebarDepartmentSectionsTests(unittest.TestCase):
         acc_idx = body.find(b'Accounting')
         # The Admin section uppercase label is the next department.
         # Use a substring that's unique to the sidebar Admin <p> tag.
-        admin_idx = body.find(b'tracking-wider px-3 pt-4 pb-1">Admin<')
+        admin_idx = body.find(b'ds-sidebar-section">Admin<')
         self.assertGreater(acc_idx, 0)
         self.assertGreater(admin_idx, 0,
                            'Admin section label missing from sidebar')
