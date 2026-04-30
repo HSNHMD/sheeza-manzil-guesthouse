@@ -398,6 +398,48 @@ def staging_seed_pos_categories():
     click.echo(f'  ✓ {total} active POS categories')
 
 
+@staging_cli.command('seed-scenarios')
+@click.option('--clean/--no-clean', default=True,
+              help='Wipe existing bookings/folios/orders before reseeding '
+                   '(default: --clean). Use --no-clean to add on top of '
+                   'existing demo data.')
+def staging_seed_scenarios(clean):
+    """Seed realistic boutique-island-property demo scenarios.
+
+    Creates ~30 guests and 33 bookings spanning every status (in-house,
+    arrivals/departures today, future confirmed, pending payment,
+    cancelled, checked-out), with folios, partial payments, a discount,
+    a void, housekeeping states, two out-of-order rooms, and ~9 POS
+    orders. Anchored on date.today() so the scenario stays realistic
+    on whatever day the seeder runs.
+    """
+    _require_staging()
+
+    from .services.staging_scenarios import run
+    summary = run(clean=clean)
+
+    click.echo(f'  ✓ scenario seeded for {summary["today"]}')
+    if summary.get('wiped'):
+        wiped_str = ', '.join(f'{k}={v}' for k, v in summary['wiped'].items() if v)
+        click.echo(f'  · wiped: {wiped_str}' if wiped_str else '  · wiped: nothing')
+    click.echo(f'  · guests created:    {summary["guests_created"]}')
+    click.echo(f'  · bookings total:    {summary["bookings_total"]}')
+    for status, count in sorted(summary['bookings_by_status'].items()):
+        click.echo(f'      {status:<24} {count}')
+    click.echo(f'  · in-house now:      {summary["in_house_now"]}')
+    click.echo(f'  · arrivals today:    {summary["arrivals_today"]}')
+    click.echo(f'  · departures today:  {summary["departures_today"]}')
+    click.echo(f'  · rooms dirty:       {summary["rooms_dirty"]}')
+    click.echo(f'  · rooms inspected:   {summary["rooms_inspected"]}')
+    click.echo(f'  · rooms out of order:{summary["rooms_out_of_order"]}')
+    click.echo(f'  · invoices paid/partial/unpaid: '
+               f'{summary["invoices_paid"]}/{summary["invoices_partial"]}/'
+               f'{summary["invoices_unpaid"]}')
+    click.echo(f'  · folio items total: {summary["folio_items_total"]} '
+               f'(voided: {summary["folio_items_voided"]})')
+    click.echo(f'  · POS orders:        {summary["pos_orders_total"]}')
+
+
 @staging_cli.command('import-pos-items')
 @click.argument('json_path', type=click.Path(exists=True, dir_okay=False))
 @click.option('--deactivate-missing', is_flag=True,
