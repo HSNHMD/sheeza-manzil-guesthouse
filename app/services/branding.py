@@ -49,31 +49,66 @@ _DEFAULT_LOGO_PATH     = '/static/img/logo.png'
 _DEFAULT_PRIMARY_COLOR = '#7B3F00'
 
 
+def _apply_env_overrides(branding: dict) -> dict:
+    """Stamp env-var overrides onto a resolved branding dict.
+
+    Three env vars take precedence OVER whatever is in the DB row —
+    this is the staging escape hatch. Production never sets these,
+    so the DB row remains the source of truth there. Override is
+    deliberately scoped to the "visible" fields a non-technical
+    operator cares about; bank details, addresses, etc. continue
+    to come from the DB.
+
+        BRAND_NAME_OVERRIDE         — full property name
+        BRAND_SHORT_NAME_OVERRIDE   — short name (header wordmark)
+        BRAND_PRIMARY_COLOR_OVERRIDE — hex accent color
+
+    Why "_OVERRIDE" suffixed: the bare `BRAND_NAME` env var still
+    exists as a *bootstrap* default (used only when the DB row is
+    seeded for the first time). The override variant is unambiguous
+    about its precedence — it always wins.
+    """
+    name_override   = (os.environ.get('BRAND_NAME_OVERRIDE') or '').strip()
+    short_override  = (os.environ.get('BRAND_SHORT_NAME_OVERRIDE') or '').strip()
+    color_override  = (os.environ.get('BRAND_PRIMARY_COLOR_OVERRIDE') or '').strip()
+
+    if name_override:
+        branding['name'] = name_override
+        # Keep invoice display name in sync unless it was explicitly
+        # set in the DB to something different — best to surface the
+        # override on every visible surface.
+        branding['invoice_display_name'] = name_override
+    if short_override:
+        branding['short_name'] = short_override
+    elif name_override and not branding.get('short_name'):
+        branding['short_name'] = name_override
+    if color_override:
+        if not color_override.startswith('#'):
+            color_override = '#' + color_override
+        branding['primary_color'] = color_override
+
+    return branding
+
+
 def get_brand() -> dict:
     """Return the active brand identity as a dict.
 
-    V1 / V2 (Property Settings + Multi-Property Foundation): reads
-    from the active Property's settings (via `services.property
-    .current_property()`), falling back to PropertySettings then to
-    env-var defaults if the DB is unavailable. The returned dict is
-    a SUPERSET of the legacy keys — older templates referencing
-    `{{ brand.name / short_name / tagline / logo_path / primary_color }}`
-    keep working unchanged.
+    Resolution order (first hit wins):
+      1. Env-var OVERRIDES (BRAND_*_OVERRIDE) — staging escape hatch.
+      2. PropertySettings DB row — production source of truth.
+      3. Env-var DEFAULTS (BRAND_*) — only used when DB is unavailable.
+      4. Hard-coded defaults — last-resort production identity.
 
-    Multi-property note: when a request resolves to a specific
-    Property, the brand context follows automatically because
-    services.property_settings.get_branding() reads from the
-    PropertySettings row linked to that Property. In V2 with a
-    single property the path collapses to a single PropertySettings
-    lookup — same answer.
+    The returned dict is a SUPERSET of the legacy keys — older
+    templates referencing `{{ brand.name / short_name / tagline /
+    logo_path / primary_color }}` keep working unchanged.
 
     Pure function. Safe to call from any request.
     """
-    # Prefer the DB-backed settings, which themselves now respect the
-    # active property.
+    # Prefer the DB-backed settings, then layer env overrides on top.
     try:
         from .property_settings import get_branding as _db_branding
-        return _db_branding()
+        return _apply_env_overrides(_db_branding())
     except Exception:
         # Falls through to env defaults — keeps the page rendering
         # if the DB is mid-migration or completely unavailable.
@@ -88,7 +123,7 @@ def get_brand() -> dict:
     if not color.startswith('#'):
         color = '#' + color
 
-    return {
+    return _apply_env_overrides({
         'name':           name,
         'short_name':     short_name,
         'tagline':        tagline,
@@ -112,7 +147,7 @@ def get_brand() -> dict:
         'bank_account_number':  '',
         'bank_account':         '',
         'invoice_display_name': name,
-    }
+    })
 
 
 def register_context_processor(app) -> None:

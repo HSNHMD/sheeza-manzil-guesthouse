@@ -14,11 +14,47 @@ from __future__ import annotations
 import os
 import pathlib
 
-from flask import Blueprint, render_template, abort, current_app
+from flask import Blueprint, render_template, abort, current_app, jsonify
 from flask_login import login_required, current_user
 
 
 diag_bp = Blueprint('diag', __name__)
+
+
+@diag_bp.route('/healthz')
+def healthz():
+    """Public deploy probe — no auth, returns JSON.
+
+    Designed for `curl https://<staging-host>/healthz` — gives the
+    operator instant proof of:
+      - which git commit is running
+      - what brand name is currently displayed (i.e. the override
+        chain has resolved correctly)
+      - whether STAGING=1 is set
+      - which endpoint login redirects to
+
+    No PII, no credentials, no DB row IDs — safe to expose.
+    """
+    from ..services.version import deployed_sha, is_staging
+    from ..services.branding import get_brand
+    from flask import url_for
+
+    b = get_brand()
+    try:
+        login_redirect = url_for('dashboard.index')
+    except Exception:
+        login_redirect = None
+
+    return jsonify({
+        'status':            'ok',
+        'sha':               deployed_sha(short=True),
+        'sha_full':          deployed_sha(short=False),
+        'staging':           is_staging(),
+        'brand_name':        b.get('name'),
+        'brand_short_name':  b.get('short_name'),
+        'login_redirect':    login_redirect,
+        'design_system_css': '/static/css/design-system.css',
+    })
 
 
 @diag_bp.route('/admin/diag')

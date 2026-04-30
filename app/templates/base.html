@@ -45,8 +45,14 @@
         </svg>
       </button>
       <img src="{{ brand.logo_path }}" alt="{{ brand.short_name }}" class="h-9 w-auto">
-      <span class="font-serif font-bold text-xl tracking-wide truncate"
+      {# Wordmark: small short_name on mobile, full property_name on desktop.
+         Full name is the unmistakable signal that the brand override has
+         landed — operators see "Maakanaa Village Hotel" in the chrome of
+         every page, not just on the login screen. #}
+      <span class="lg:hidden font-serif font-bold text-xl tracking-wide truncate"
             style="color:{{ brand.primary_color }}; letter-spacing:.01em;">{{ brand.short_name }}</span>
+      <span class="hidden lg:inline font-serif font-bold text-[1.35rem] tracking-wide truncate"
+            style="color:{{ brand.primary_color }}; letter-spacing:.005em;">{{ brand.name }}</span>
     </div>
     <div class="flex items-center gap-2">
       {% if business_date %}
@@ -80,7 +86,9 @@
        overflow-y-auto is a no-op. The fixed positioning + inset-y-0
        on mobile already constrains the nav to viewport height, so the
        inner area can scroll vertically within it. -->
-  <nav id="sidebar" class="fixed inset-y-0 left-0 z-30 w-60 bg-white border-r border-gray-200 transform -translate-x-full lg:translate-x-0 lg:static lg:inset-auto transition-transform duration-200 pt-14 lg:pt-0 flex flex-col">
+  <nav id="sidebar"
+       class="fixed inset-y-0 left-0 z-30 w-60 border-r border-gray-200 transform -translate-x-full lg:translate-x-0 lg:static lg:inset-auto transition-transform duration-200 pt-14 lg:pt-0 flex flex-col"
+       style="background: {% if deploy.staging %}#fdfaf2{% else %}#fff{% endif %};">
     <div class="p-4 pb-8 space-y-1 flex-1 overflow-y-auto overscroll-contain"
          style="-webkit-overflow-scrolling: touch;">
       {# ── DASHBOARD (top of sidebar — post-login landing) ── #}
