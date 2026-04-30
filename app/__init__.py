@@ -58,6 +58,7 @@ def create_app(config_class=Config):
     from .routes.property_settings import property_settings_bp
     from .routes.property import property_bp
     from .routes.channels import channels_bp
+    from .routes.dashboard import dashboard_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -85,6 +86,7 @@ def create_app(config_class=Config):
     app.register_blueprint(property_settings_bp)
     app.register_blueprint(property_bp)
     app.register_blueprint(channels_bp)
+    app.register_blueprint(dashboard_bp)
 
     # Register the business-date context processor so every template
     # can read {{ business_date }} without explicit passthrough.
@@ -109,6 +111,9 @@ def create_app(config_class=Config):
         allowed = ('/staff', '/console', '/appadmin', '/logout', '/static',
                    '/public', '/privacy', '/account', '/admin/activity',
                    '/admin/whatsapp', '/webhooks/whatsapp',
+                   # Unified Dashboard — post-login landing for both
+                   # admin and staff roles.
+                   '/dashboard',
                    # Housekeeping V1: the housekeeping board IS a staff
                    # workflow, not an admin-only screen. Staff are
                    # whitelisted here so the /housekeeping route group

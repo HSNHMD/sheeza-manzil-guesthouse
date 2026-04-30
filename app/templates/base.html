@@ -56,23 +56,28 @@
   <nav id="sidebar" class="fixed inset-y-0 left-0 z-30 w-60 bg-white border-r border-gray-200 transform -translate-x-full lg:translate-x-0 lg:static lg:inset-auto transition-transform duration-200 pt-14 lg:pt-0 flex flex-col">
     <div class="p-4 pb-8 space-y-1 flex-1 overflow-y-auto overscroll-contain"
          style="-webkit-overflow-scrolling: touch;">
-      {# ── FRONT OFFICE ───────────────────────────────────── #}
-      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-2 pb-1">Front Office</p>
-      <a href="{{ url_for('front_office.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.index' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      {# ── DASHBOARD (top of sidebar — post-login landing) ── #}
+      <a href="{{ url_for('dashboard.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors {% if request.blueprint == 'dashboard' %}bg-teal-50 text-teal-700{% else %}text-gray-700 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
         Dashboard
       </a>
+
+      {# ── FRONT OFFICE ───────────────────────────────────── #}
+      {# IA cleanup: Calendar removed from sidebar — Reservation Board IS
+         the operational calendar/availability surface. The /calendar/
+         route still resolves so any bookmarks keep working. #}
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">Front Office</p>
       {% if current_user.is_admin %}
-      <a href="{{ url_for('board.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'board' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('board.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'board' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
         Reservation Board
       </a>
       {% endif %}
-      <a href="{{ url_for('front_office.arrivals') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.arrivals' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('front_office.arrivals') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.arrivals' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14"/></svg>
         Arrivals
       </a>
-      <a href="{{ url_for('front_office.departures') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.departures' %}bg-sky-50 text-sky-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('front_office.departures') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'front_office.departures' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 8l4 4m0 0l-4 4m4-4H3"/></svg>
         Departures
       </a>
@@ -84,10 +89,6 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
         Bookings
       </a>
-      <a href="{{ url_for('cal.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'cal' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-        Calendar
-      </a>
       <a href="{{ url_for('guests.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'guests' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         Guests
@@ -97,8 +98,6 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         Groups
       </a>
-      {% endif %}
-      {% if current_user.is_admin %}
       <a href="{{ url_for('whatsapp.inbox') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'whatsapp' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
         Messages
@@ -107,56 +106,50 @@
 
       {# ── HOUSEKEEPING ────────────────────────────────────── #}
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">Housekeeping</p>
-      <a href="{{ url_for('rooms.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'rooms' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-        Rooms
-      </a>
       <a href="{{ url_for('housekeeping.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'housekeeping' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
         Housekeeping Board
       </a>
+      <a href="{{ url_for('rooms.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'rooms' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+        Rooms
+      </a>
 
-      {# ── RESTAURANT (placeholders — modules pending build) ── #}
+      {# ── RESTAURANT ──────────────────────────────────────── #}
+      {# IA cleanup: dropped 3 grayed-out "Coming Soon" placeholders.
+         All real restaurant entry points are admin-only except the
+         POS terminal which staff can also reach. #}
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">Restaurant</p>
-      <a href="{{ url_for('pos.terminal') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'pos' and request.endpoint != 'pos.admin_overview' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('pos.terminal') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'pos' and request.endpoint != 'pos.admin_overview' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 14h.01M11 14h.01M15 14h.01M3 6h18M3 14h18a2 2 0 002-2V8a2 2 0 00-2-2H3a2 2 0 00-2 2v4a2 2 0 002 2z"/></svg>
         POS Terminal
       </a>
       {% if current_user.is_admin %}
-      <a href="{{ url_for('menu.admin_queue') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'menu' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('menu.admin_queue') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'menu' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
         Online Orders
       </a>
-      {% endif %}
-      {% if current_user.is_admin %}
-      <a href="{{ url_for('pos.admin_overview') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'pos.admin_overview' or request.endpoint in ('pos.categories_list','pos.items_list') %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('pos.admin_overview') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'pos.admin_overview' or request.endpoint in ('pos.categories_list','pos.items_list') %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
         POS Catalog
       </a>
       {% endif %}
-      <span class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 cursor-not-allowed select-none" title="Coming soon">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-        Orders <span class="ml-auto text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">Soon</span>
-      </span>
-      <span class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 cursor-not-allowed select-none" title="Coming soon">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
-        Menu <span class="ml-auto text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">Soon</span>
-      </span>
-      <span class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 cursor-not-allowed select-none" title="Coming soon">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        Room Charges <span class="ml-auto text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">Soon</span>
-      </span>
 
       {% if current_user.is_admin %}
       {# ── ACCOUNTING ──────────────────────────────────────── #}
+      {# IA cleanup: Night Audit + Reports & Analytics moved here from
+         Admin since they're financial closing / reporting workflows.
+         The accounting module's own "Dashboard" is renamed "Overview"
+         to avoid clashing with the global Dashboard at the top of the
+         sidebar. #}
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">Accounting</p>
+      <a href="{{ url_for('accounting.dashboard') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'accounting.dashboard' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        Overview
+      </a>
       <a href="{{ url_for('invoices.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'invoices' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
         Invoices
-      </a>
-      <a href="{{ url_for('accounting.dashboard') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'accounting.dashboard' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-        Dashboard
       </a>
       <a href="{{ url_for('accounting.expenses') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'accounting.expenses' or request.endpoint == 'accounting.add_expense' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
@@ -178,21 +171,23 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
         Reports
       </a>
-
-      {# ── ADMIN & SETTINGS ───────────────────────────────── #}
-      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">Admin &amp; Settings</p>
-      <a href="{{ url_for('night_audit.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'night_audit' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('reports.overview') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'reports' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        Analytics
+      </a>
+      <a href="{{ url_for('night_audit.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'night_audit' %}bg-emerald-50 text-emerald-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         Night Audit
       </a>
-      <a href="{{ url_for('inventory.overview') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'inventory' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 18h18M3 6h18"/></svg>
-        Rates &amp; Inventory
-      </a>
-      <a href="{{ url_for('reports.overview') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'reports' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-        Reports &amp; Analytics
-      </a>
+
+      {# ── ADMIN ──────────────────────────────────────────── #}
+      {# IA cleanup: section renamed from "Admin & Settings" → "Admin".
+         Night Audit + Reports & Analytics moved to the Accounting
+         section (financial workflows). Order is property identity →
+         settings → rates → distribution → people → audit → integrations
+         → utilities. "Staff Users" renamed to "Users / Roles" and
+         "Activity Log" to "Audit Log" to match the IA spec. #}
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 pt-4 pb-1">Admin</p>
       <a href="{{ url_for('property.inspect') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'property' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
         Property
@@ -201,23 +196,27 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         Property Settings
       </a>
+      <a href="{{ url_for('inventory.overview') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'inventory' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 18h18M3 6h18"/></svg>
+        Rates &amp; Inventory
+      </a>
       <a href="{{ url_for('channels.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'channels' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
         Channels
       </a>
-      <a href="{{ url_for('auth.admin_users') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'auth.admin_users' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('auth.admin_users') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'auth.admin_users' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-        Staff Users
+        Users / Roles
       </a>
-      <a href="{{ url_for('activity.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'activity' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('activity.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'activity' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-        Activity Log
+        Audit Log
       </a>
-      <a href="{{ url_for('auth.test_whatsapp') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'auth.test_whatsapp' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('auth.test_whatsapp') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'auth.test_whatsapp' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
         WhatsApp Settings
       </a>
-      <a href="{{ url_for('auth.seed') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'auth.seed' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+      <a href="{{ url_for('auth.seed') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.endpoint == 'auth.seed' %}bg-teal-50 text-teal-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7M9 11l3 3 3-3M12 3v11"/></svg>
         Seed DB
       </a>

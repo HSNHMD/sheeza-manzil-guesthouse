@@ -10,10 +10,13 @@ auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/appadmin', methods=['GET', 'POST'])
 def admin_login():
+    # IA cleanup: both admin and staff land on the unified Dashboard
+    # after login. The previous behaviour bounced admins to
+    # rooms.index (Rooms list) which is not a real dashboard. Staff
+    # can still reach /staff/dashboard via direct URL but the
+    # post-login default is the cross-department command center.
     if current_user.is_authenticated:
-        if not current_user.is_admin:
-            return redirect(url_for('staff.dashboard'))
-        return redirect(url_for('rooms.index'))
+        return redirect(url_for('dashboard.index'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -23,9 +26,7 @@ def admin_login():
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):
             login_user(user, remember=remember)
-            next_page = request.args.get('next')
-            if not next_page:
-                next_page = url_for('staff.dashboard') if not user.is_admin else url_for('rooms.index')
+            next_page = request.args.get('next') or url_for('dashboard.index')
             return redirect(next_page)
         flash('Invalid username or password.', 'error')
 
@@ -37,9 +38,7 @@ def admin_login():
 @auth_bp.route('/console', methods=['GET', 'POST'])
 def console_login():
     if current_user.is_authenticated:
-        if current_user.is_admin:
-            return redirect(url_for('rooms.index'))
-        return redirect(url_for('staff.dashboard'))
+        return redirect(url_for('dashboard.index'))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -47,9 +46,7 @@ def console_login():
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):
             login_user(user)
-            if user.is_admin:
-                return redirect(url_for('rooms.index'))
-            return redirect(url_for('staff.dashboard'))
+            return redirect(url_for('dashboard.index'))
         flash('Invalid username or password.', 'error')
 
     return render_template('staff/login.html')
