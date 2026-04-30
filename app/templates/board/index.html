@@ -38,9 +38,9 @@
   }
 
   .board-shell {
-    --day-w: {{ day_width_px }}px;
-    --room-w: 232px;
-    --row-h: 56px;
+    --day-w:    {{ day_width_px }}px;
+    --room-w:   {{ room_rail_px or 232 }}px;
+    --row-h:    {{ row_height_px or 56 }}px;
     --header-h: 60px;
 
     background: var(--surface-page);
@@ -1455,6 +1455,25 @@
             </a>
           {% endfor %}
         </div>
+
+        {# Focus mode — collapses the global sidebar to icons-only and
+           shrinks page padding so the grid gets every available pixel.
+           Pure client-side toggle persisted in localStorage; URL stays
+           clean. Auto-engages on density=ultra (handled by inline JS). #}
+        <button type="button" id="focusToggleBtn"
+                class="seg-btn focus-toggle"
+                aria-pressed="false"
+                title="Collapse sidebar + shrink page padding for maximum board width">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="9 4 4 4 4 9"/>
+            <polyline points="20 9 20 4 15 4"/>
+            <polyline points="20 15 20 20 15 20"/>
+            <polyline points="4 15 4 20 9 20"/>
+          </svg>
+          <span>Focus</span>
+        </button>
       </div>
     </div>
 
@@ -1592,7 +1611,13 @@
 
             <div class="room-cell {% if zebra %}is-zebra{% endif %}"
                  style="grid-row: {{ row_n }};">
-              <div class="room-num">#{{ r.number }}</div>
+              <div class="room-num">
+                #{{ r.number }}
+                {# 3-letter type code for compact + ultra modes. Hidden
+                   in standard via CSS so the verbose meta-line-1 takes
+                   precedence there. #}
+                <span class="room-num-type" title="{{ r.room_type }}">{{ room_type_short(r.room_type) }}</span>
+              </div>
               <div class="room-meta">
                 <div class="meta-line-1">{{ r.room_type }}</div>
                 <div class="meta-line-2">
@@ -2523,37 +2548,178 @@
    ════════════════════════════════════════════════════════════════════ #}
 
 <style>
-  /* Density-aware row height. The route now passes row_height_px
-     based on the density toggle. Apply via .board-shell so the value
-     cascades. */
+  /* ════ Density overhaul — aggressive, board-first ════════════════════ */
+
+  /* Row height comes from the route now. Apply via .board-shell so
+     it cascades into both the room-cell and the day-cells. */
   .board-shell { --row-h: {{ row_height_px or 56 }}px; }
 
-  /* Compact + Ultra: shorten room rail, shrink bar text, hide
-     subtitle in ultra. The actual class on the rail is .room-cell
-     and on the booking bar is .bar (not .room-rail-cell / .booking-bar). */
-  .board-grid[data-density="compact"] .room-cell,
-  .board-grid[data-density="ultra"]   .room-cell {
-    padding-top: 6px; padding-bottom: 6px;
-  }
-  .board-grid[data-density="ultra"] .room-cell .room-meta {
-    display: none;
-  }
-  .board-grid[data-density="ultra"] a.bar {
-    font-size: 11px; line-height: 1.1;
-  }
-  .board-grid[data-density="ultra"] a.bar .bar-meta {
-    display: none;
-  }
-  .board-grid[data-density="compact"] a.bar {
-    font-size: 12px;
+  /* Hide the 3-letter type code (.room-num-type) by default — only
+     compact + ultra show it (verbose meta-line-1 is enough in
+     standard). */
+  .board-grid[data-density="standard"] .room-num-type { display: none; }
+  .room-num-type {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
+    color: var(--accent-strong); background: var(--accent-soft);
+    vertical-align: middle;
   }
 
-  /* Compact + Ultra: shorten the column-header date labels by hiding
-     the secondary line in dense modes. The day-grid CSS already
-     renders 2-line labels (weekday over date) — we hide the weekday
-     row in ultra to recover vertical space. */
-  .board-grid[data-density="ultra"] .day-header-weekday {
+  /* ── Compact ───────────────────────────────────────────────────── */
+  .board-grid[data-density="compact"] .room-cell {
+    padding: 4px 10px; gap: 6px;
+  }
+  .board-grid[data-density="compact"] .room-cell .room-num   { font-size: 12.5px; }
+  .board-grid[data-density="compact"] .room-cell .meta-line-1 {
+    font-size: 10px; opacity: .85;
+  }
+  /* In compact we keep ONE meta line. Drop the housekeeping pill row
+     since the dot in line-1 already shows operational status. */
+  .board-grid[data-density="compact"] .room-cell .meta-line-2:nth-of-type(2) {
     display: none;
+  }
+  .board-grid[data-density="compact"] .day-head { padding: 3px 0; }
+  .board-grid[data-density="compact"] .day-head .num    { font-size: 12px; }
+  .board-grid[data-density="compact"] .day-head .label  { font-size: 9px; }
+  .board-grid[data-density="compact"] a.bar {
+    margin: 2px 1px; padding: 2px 6px;
+    font-size: 11.5px; line-height: 1.15;
+  }
+  .board-grid[data-density="compact"] a.bar .bar-name { font-size: 11px; }
+  .board-grid[data-density="compact"] a.bar .bar-meta { font-size: 9.5px; }
+  .board-grid[data-density="compact"] .group-header { height: 22px; font-size: 9px; }
+
+  /* ── Ultra ──────────────────────────────────────────────────────── */
+  .board-grid[data-density="ultra"] .room-cell {
+    padding: 2px 8px; gap: 4px;
+  }
+  /* Ultra rail: only the room number + 3-letter type code remain. */
+  .board-grid[data-density="ultra"] .room-cell .room-num   { font-size: 12px; }
+  .board-grid[data-density="ultra"] .room-cell .room-meta  { display: none; }
+  .board-grid[data-density="ultra"] .room-num-type {
+    margin-left: 4px; padding: 1px 4px;
+    font-size: 9px; letter-spacing: .04em;
+  }
+  /* Ultra columns: drop the weekday text, smaller numbers. */
+  .board-grid[data-density="ultra"] .day-head             { padding: 2px 0; }
+  .board-grid[data-density="ultra"] .day-head .num        { font-size: 11px; }
+  .board-grid[data-density="ultra"] .day-head .label,
+  .board-grid[data-density="ultra"] .day-header-weekday   { display: none; }
+  /* Ultra bars: minimal label, no meta strip. */
+  .board-grid[data-density="ultra"] a.bar {
+    margin: 1px 1px; padding: 1px 4px;
+    font-size: 10.5px; line-height: 1.1;
+    border-radius: 5px;
+  }
+  .board-grid[data-density="ultra"] a.bar .bar-name {
+    font-size: 10.5px; font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .board-grid[data-density="ultra"] a.bar .bar-meta { display: none; }
+  /* In 30-day ultra, day cells are tiny — hide bar names entirely
+     when the bar spans only 1-2 days; the colored block alone signals
+     occupancy and the drawer surfaces the detail. */
+  .board-grid[data-density="ultra"][data-view="30d"] a.bar {
+    font-size: 0; padding: 1px 2px;
+  }
+  .board-grid[data-density="ultra"][data-view="30d"] a.bar .pay-dot {
+    width: 5px; height: 5px;
+  }
+  .board-grid[data-density="ultra"] .group-header { height: 20px; font-size: 8.5px; }
+
+  /* ── Toolbar compaction in ultra ──────────────────────────────── */
+  .board-grid[data-density="ultra"] ~ * .filt-row,
+  body[data-board-density="ultra"] .filt-row {
+    /* Filter row collapses behind a toggle in ultra (handled by JS).
+       Hide by default; .filt-show class on the row reveals it. */
+    display: none;
+  }
+  body[data-board-density="ultra"] .filt-row.filt-show {
+    display: flex;
+  }
+  body[data-board-density="ultra"] .filt-toggle-btn {
+    display: inline-flex !important;
+  }
+
+  /* ════ Focus mode — collapsible sidebar + reduced page padding ══════ */
+
+  .focus-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: 8px;
+    padding: 6px 10px; min-height: 30px;
+    border: 1px solid var(--line-mid, #e3e6eb);
+    border-radius: 8px;
+    background: #fff; color: var(--ink-muted, #475569);
+    font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .focus-toggle:hover { background: #f8fafc; border-color: #cbd5e1; }
+  .focus-toggle[aria-pressed="true"] {
+    background: var(--accent, #0d9488);
+    border-color: var(--accent, #0d9488);
+    color: #fff;
+  }
+
+  /* Filter-collapse toggle button (shown only in ultra). */
+  .filt-toggle-btn {
+    display: none;  /* shown via .filt-toggle-btn { display: inline-flex } */
+    align-items: center; gap: 4px;
+    margin-left: 8px;
+    padding: 5px 10px; min-height: 28px;
+    border: 1px solid #e3e6eb; border-radius: 6px;
+    background: #fff; color: #475569;
+    font-size: 11.5px; font-weight: 600; cursor: pointer;
+  }
+  .filt-toggle-btn:hover { background: #f8fafc; }
+
+  /* When body has .board-focus, collapse the global sidebar to icons
+     and shrink page padding so the board grid gets every available
+     horizontal pixel. The selectors target the existing base.html
+     markup (nav#sidebar, main containers in app shell) so we don't
+     have to touch base.html for this feature. */
+  body.board-focus nav#sidebar {
+    width: 56px !important;
+    transition: width .15s ease;
+  }
+  body.board-focus nav#sidebar a {
+    justify-content: center;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+  body.board-focus nav#sidebar a > :not(svg):not(img) {
+    /* Hide all link-text labels — keep only the icon (svg or img). */
+    display: none !important;
+  }
+  body.board-focus nav#sidebar .ds-sidebar-section {
+    /* Department headers go away; the icons are self-explanatory. */
+    display: none !important;
+  }
+  body.board-focus nav#sidebar svg {
+    width: 20px !important; height: 20px !important;
+  }
+  /* Reduce the main content padding so the board reaches the edges. */
+  body.board-focus main {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  body.board-focus .ds-app-header > div {
+    padding-left: 8px !important; padding-right: 8px !important;
+  }
+  /* In focus mode, hide the verbose top-header username + role chip
+     to save vertical real estate. Logout button stays. */
+  body.board-focus .ds-app-header span:not(.font-serif) { display: none !important; }
+  body.board-focus .ds-app-header .font-serif {
+    font-size: 1.05rem !important;
+  }
+
+  /* On narrow viewports, focus mode also stacks the day-grid cleaner
+     by removing the inner toolbar margin. */
+  @media (max-width: 1100px) {
+    body.board-focus main { padding-left: 4px !important; padding-right: 4px !important; }
   }
 
   /* Drag-drop affordances ─────────────────────────────────────────── */
@@ -2719,6 +2885,80 @@
 
   const shell = document.querySelector('.board-shell');
   if (!shell) return;
+
+  // ── Board-focus mode toggle ─────────────────────────────────────
+  // Collapses the global sidebar + shrinks main padding for maximum
+  // grid width. Persisted via localStorage so the operator's choice
+  // survives reloads. Auto-engages when density=ultra is selected
+  // for the first time.
+  const FOCUS_KEY = 'sm.boardFocus';
+  const ULTRA_AUTO_KEY = 'sm.boardFocusUltraAuto';
+  const focusBtn = document.getElementById('focusToggleBtn');
+  const grid = document.querySelector('.board-grid');
+  const currentDensity = grid ? (grid.getAttribute('data-density') || 'standard') : 'standard';
+  // Mirror density onto <body> so the global CSS can apply ultra-only
+  // toolbar rules without re-querying the grid attribute everywhere.
+  document.body.setAttribute('data-board-density', currentDensity);
+
+  function applyFocus(on) {
+    document.body.classList.toggle('board-focus', !!on);
+    if (focusBtn) focusBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  // Initial state: localStorage wins; ultra auto-engages once per
+  // session if the user hasn't explicitly toggled it off.
+  let focusOn = false;
+  try {
+    const stored = localStorage.getItem(FOCUS_KEY);
+    if (stored === '1') focusOn = true;
+    else if (stored === '0') focusOn = false;
+    else if (currentDensity === 'ultra' && !sessionStorage.getItem(ULTRA_AUTO_KEY)) {
+      focusOn = true;
+      sessionStorage.setItem(ULTRA_AUTO_KEY, '1');
+    }
+  } catch (_) { /* private mode etc. — ignore */ }
+  applyFocus(focusOn);
+
+  if (focusBtn) {
+    focusBtn.addEventListener('click', () => {
+      focusOn = !document.body.classList.contains('board-focus');
+      applyFocus(focusOn);
+      try { localStorage.setItem(FOCUS_KEY, focusOn ? '1' : '0'); } catch (_) {}
+    });
+  }
+
+  // ── Ultra: filter row collapse ──────────────────────────────────
+  // The .filt-row carries the advanced filter dropdowns. In ultra
+  // mode it's hidden by default and revealed via a "Filters" button
+  // injected next to the search input. We add the button and toggle
+  // dynamically so we don't have to touch the existing toolbar HTML.
+  if (currentDensity === 'ultra') {
+    const filtRows = document.querySelectorAll('.filt-row');
+    if (filtRows.length) {
+      // Inject one toggle button after the first toolbar group.
+      const anchor = document.querySelector('.toolbar-row .seg-group:last-child')
+                  || document.querySelector('.toolbar-row');
+      if (anchor) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'filt-toggle-btn';
+        btn.setAttribute('aria-expanded', 'false');
+        btn.innerHTML = (
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" '
+          + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+          + 'stroke-linejoin="round" aria-hidden="true">'
+          + '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>'
+          + '</svg><span>Filters</span>'
+        );
+        btn.style.display = 'inline-flex';
+        anchor.appendChild(btn);
+        btn.addEventListener('click', () => {
+          const isShowing = filtRows[0].classList.contains('filt-show');
+          filtRows.forEach(r => r.classList.toggle('filt-show', !isShowing));
+          btn.setAttribute('aria-expanded', !isShowing ? 'true' : 'false');
+        });
+      }
+    }
+  }
 
   const dayWidthPx = parseFloat(getComputedStyle(shell).getPropertyValue('--day-w')) || 84;
 

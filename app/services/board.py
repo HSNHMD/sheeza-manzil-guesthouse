@@ -48,22 +48,67 @@ DEFAULT_GROUPING = 'none'
 DENSITY_OPTIONS = ('standard', 'compact', 'ultra')
 DEFAULT_DENSITY = 'standard'
 
-# Per-density day-width multipliers. The base view-day-width (set in
-# VIEW_DAY_WIDTHS) is multiplied by this factor to give the final
-# CSS --day-w value. 'compact' shaves 25%, 'ultra' shaves 50%, so a
-# 14-day window in ultra fits roughly 2× more rooms before scrolling.
+# Per-density day-width multipliers — tightened in the density-overhaul
+# sprint so the three modes actually look meaningfully different.
+# Standard stays at full base width; compact removes ~30%; ultra removes
+# ~58%, making a 30-day × ultra row fit the entire month inside ~530 px.
+# Multiplied with VIEW_DAY_WIDTHS to produce the final --day-w value.
 DENSITY_DAY_WIDTH_MULT = {
-    'standard': 1.0,
-    'compact':  0.75,
-    'ultra':    0.55,
+    'standard': 1.00,
+    'compact':  0.70,
+    'ultra':    0.42,
 }
 
-# Per-density row height in px. Used by the template's CSS variable.
+# Per-density row height in px. Compact + ultra get aggressive cuts so
+# more rooms fit in a viewport without losing tap-friendliness on
+# tablets (32 px is still a 2-finger comfortable height).
 DENSITY_ROW_HEIGHT_PX = {
     'standard': 56,
-    'compact':  46,
-    'ultra':    38,
+    'compact':  40,
+    'ultra':    32,
 }
+
+# Per-density room-rail width in px. The room rail is the leftmost
+# column carrying room number + type + status. In ultra mode we drop
+# the verbose meta sub-line via CSS, so the rail can be much narrower.
+DENSITY_ROOM_RAIL_PX = {
+    'standard': 232,
+    'compact':  176,
+    'ultra':    104,
+}
+
+
+# Three-letter abbreviations for the rail in dense modes. Anything not
+# in the table renders the first 3 chars of the type name uppercased.
+_ROOM_TYPE_SHORT = {
+    'standard':         'STD',
+    'standard room':    'STD',
+    'deluxe':           'DLX',
+    'deluxe room':      'DLX',
+    'twin':             'TWN',
+    'twin room':        'TWN',
+    'family':           'FAM',
+    'family room':      'FAM',
+    'suite':            'STE',
+    'junior suite':     'JST',
+    'penthouse':        'PNT',
+}
+
+
+def room_type_short(name: str) -> str:
+    """Return a 3-letter rail label for the given room type string.
+
+    Falls back to the first 3 chars uppercased when the type isn't in
+    the curated abbreviation table. Never returns an empty string —
+    we still want SOMETHING in the rail under ultra mode.
+    """
+    if not name:
+        return '???'
+    n = name.strip().lower()
+    if n in _ROOM_TYPE_SHORT:
+        return _ROOM_TYPE_SHORT[n]
+    cleaned = ''.join(ch for ch in n if ch.isalpha())[:3]
+    return (cleaned or n[:3]).upper()
 
 
 def normalize_grouping(value) -> str:
@@ -175,6 +220,16 @@ def effective_day_width_px(view: str, density: str = DEFAULT_DENSITY) -> int:
 def density_row_height_px(density: str = DEFAULT_DENSITY) -> int:
     """Row height in px for the chosen density."""
     return DENSITY_ROW_HEIGHT_PX.get(density, DENSITY_ROW_HEIGHT_PX[DEFAULT_DENSITY])
+
+
+def density_room_rail_px(density: str = DEFAULT_DENSITY) -> int:
+    """Room-rail (leftmost column) width in px for the chosen density.
+
+    Ultra trims the rail aggressively because the room-meta sub-line
+    is hidden via CSS in that mode — the rail only needs to fit the
+    room number and a 3-letter type abbreviation.
+    """
+    return DENSITY_ROOM_RAIL_PX.get(density, DENSITY_ROOM_RAIL_PX[DEFAULT_DENSITY])
 
 
 # ── Date range helpers ───────────────────────────────────────────────
