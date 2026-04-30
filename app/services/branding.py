@@ -52,15 +52,17 @@ _DEFAULT_PRIMARY_COLOR = '#7B3F00'
 def _apply_env_overrides(branding: dict) -> dict:
     """Stamp env-var overrides onto a resolved branding dict.
 
-    Three env vars take precedence OVER whatever is in the DB row —
+    Four env vars take precedence OVER whatever is in the DB row —
     this is the staging escape hatch. Production never sets these,
     so the DB row remains the source of truth there. Override is
     deliberately scoped to the "visible" fields a non-technical
     operator cares about; bank details, addresses, etc. continue
     to come from the DB.
 
-        BRAND_NAME_OVERRIDE         — full property name
-        BRAND_SHORT_NAME_OVERRIDE   — short name (header wordmark)
+        BRAND_NAME_OVERRIDE          — full property name
+        BRAND_SHORT_NAME_OVERRIDE    — short name (header wordmark)
+        BRAND_LOGO_PATH_OVERRIDE     — static URL path for the logo
+                                       image (favicon + header img)
         BRAND_PRIMARY_COLOR_OVERRIDE — hex accent color
 
     Why "_OVERRIDE" suffixed: the bare `BRAND_NAME` env var still
@@ -70,6 +72,7 @@ def _apply_env_overrides(branding: dict) -> dict:
     """
     name_override   = (os.environ.get('BRAND_NAME_OVERRIDE') or '').strip()
     short_override  = (os.environ.get('BRAND_SHORT_NAME_OVERRIDE') or '').strip()
+    logo_override   = (os.environ.get('BRAND_LOGO_PATH_OVERRIDE') or '').strip()
     color_override  = (os.environ.get('BRAND_PRIMARY_COLOR_OVERRIDE') or '').strip()
 
     if name_override:
@@ -82,6 +85,8 @@ def _apply_env_overrides(branding: dict) -> dict:
         branding['short_name'] = short_override
     elif name_override and not branding.get('short_name'):
         branding['short_name'] = name_override
+    if logo_override:
+        branding['logo_path'] = logo_override
     if color_override:
         if not color_override.startswith('#'):
             color_override = '#' + color_override

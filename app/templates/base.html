@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" href="{{ brand.logo_path }}">
+  {# Branding hotfix: append the deploy SHA as a cache-buster so a
+     stale logo asset can never linger across builds. The leading
+     ?/& is chosen automatically so this works whether logo_path is
+     a static path or already carries a query string. #}
+  <link rel="icon" href="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}">
   {# Premium UI design system. Loaded once here and shared by every page. #}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,7 +48,8 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
       </button>
-      <img src="{{ brand.logo_path }}" alt="{{ brand.short_name }}" class="h-9 w-auto">
+      <img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
+           alt="{{ brand.short_name }}" class="h-9 w-auto">
       {# Wordmark: small short_name on mobile, full property_name on desktop.
          Full name is the unmistakable signal that the brand override has
          landed — operators see "Maakanaa Village Hotel" in the chrome of

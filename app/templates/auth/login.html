@@ -80,7 +80,8 @@
 <div class="login-shell">
   <div class="login-hero">
     {% if brand.logo_path %}
-      <img src="{{ brand.logo_path }}" alt="{{ brand.name }} logo">
+      <img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
+           alt="{{ brand.name }} logo">
     {% endif %}
     <div class="eyebrow">Property Management</div>
     <h1>{{ brand.name }}</h1>

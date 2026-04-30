@@ -148,6 +148,97 @@ class BrandOverrideTests(unittest.TestCase):
             self.assertIn(b'Maakanaa Village Hotel', r.data)
 
 
+class BrandLogoOverrideTests(unittest.TestCase):
+    """Branding hotfix: BRAND_LOGO_PATH_OVERRIDE must take precedence
+    over the PropertySettings.logo_path DB value, and every rendered
+    img/favicon must carry the deploy-SHA cache-buster query string.
+
+    Regression guard for the POS-logo-flash incident: the prior brand
+    override layer covered name + short_name + primary_color but NOT
+    the logo path, so the visible <img src> still pointed at the old
+    /static/img/logo.png while the alt text said the new property
+    name. These tests pin both ends of the fix.
+    """
+
+    def setUp(self):
+        self._snap = {k: os.environ.get(k) for k in
+                      ('BRAND_LOGO_PATH_OVERRIDE',
+                       'BRAND_NAME_OVERRIDE',
+                       'BRAND_SHORT_NAME_OVERRIDE')}
+        for k in self._snap:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self._snap.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_logo_override_wins_over_db(self):
+        os.environ['BRAND_LOGO_PATH_OVERRIDE'] = '/static/img/maakanaa-logo.svg'
+        app = create_app(_TestConfig)
+        with app.app_context():
+            db.create_all()
+            _seed_property()  # leaves logo_path = '/static/img/logo.png' in DB
+            from app.services.branding import get_brand
+            self.assertEqual(get_brand()['logo_path'],
+                             '/static/img/maakanaa-logo.svg')
+
+    def test_no_override_keeps_db_logo_path(self):
+        os.environ.pop('BRAND_LOGO_PATH_OVERRIDE', None)
+        app = create_app(_TestConfig)
+        with app.app_context():
+            db.create_all()
+            _seed_property()
+            from app.services.branding import get_brand
+            # _seed_property uses PropertySettings's bootstrap default
+            # which is the legacy '/static/img/logo.png'.
+            self.assertEqual(get_brand()['logo_path'],
+                             '/static/img/logo.png')
+
+    def test_login_page_renders_overridden_logo_with_cache_buster(self):
+        os.environ['BRAND_LOGO_PATH_OVERRIDE'] = '/static/img/maakanaa-logo.svg'
+        os.environ['BRAND_NAME_OVERRIDE'] = 'Maakanaa Village Hotel'
+        app = create_app(_TestConfig)
+        with app.app_context():
+            db.create_all()
+            _seed_property()
+            r = app.test_client().get('/appadmin')
+            self.assertEqual(r.status_code, 200)
+            # New logo path is in <img src> and the favicon link
+            self.assertIn(b'/static/img/maakanaa-logo.svg', r.data)
+            # Old logo path must not leak through the override
+            self.assertNotIn(b'src="/static/img/logo.png"', r.data)
+            # Cache-buster query string is present on the asset URL
+            self.assertIn(b'maakanaa-logo.svg?v=', r.data)
+
+    def test_authenticated_header_renders_new_logo(self):
+        os.environ['BRAND_LOGO_PATH_OVERRIDE'] = '/static/img/maakanaa-logo.svg'
+        os.environ['BRAND_NAME_OVERRIDE'] = 'Maakanaa Village Hotel'
+        app = create_app(_TestConfig)
+        with app.app_context():
+            db.create_all()
+            _seed_property()
+            u = User(username='admin', email='a@x', role='admin')
+            u.set_password('aaaaaaaaaa1')
+            db.session.add(u)
+            db.session.commit()
+            client = app.test_client()
+            with client.session_transaction() as sess:
+                sess['_user_id'] = str(u.id)
+                sess['_fresh'] = True
+            r = client.get('/dashboard/')
+            self.assertEqual(r.status_code, 200)
+            # The desktop header img + favicon must both use the SVG
+            self.assertIn(b'maakanaa-logo.svg', r.data)
+            # And cache-busted
+            self.assertIn(b'maakanaa-logo.svg?v=', r.data)
+            # No stale reference to the old PNG anywhere on the page
+            self.assertNotIn(b'src="/static/img/logo.png"', r.data)
+            self.assertNotIn(b'href="/static/img/logo.png"', r.data)
+
+
 class HealthzProbeTests(unittest.TestCase):
     """Public /healthz endpoint must be reachable without auth and
     surface enough to verify a deploy."""

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <link rel="icon" href="{{ brand.logo_path }}">
+  <link rel="icon" href="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}">
   <title>{% block title %}Staff Portal — {{ brand.short_name }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
