@@ -24,6 +24,12 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='staff')  # 'admin' or 'staff'
+    # Department for role-based landing. Drives where login lands the
+    # user. Nullable for back-compat — existing users default to NULL
+    # and fall through to the Dashboard. Whitelisted slugs are kept
+    # tight so the dropdown stays scannable; admin/users UI exposes
+    # exactly the values in DEPARTMENTS below.
+    department = db.Column(db.String(40), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -33,9 +39,29 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
+    # Whitelisted department slugs for the role-based landing
+    # dispatcher. Adding a new department needs three coordinated
+    # edits: this tuple, services.landing._DEPT_LANDING, and the
+    # admin/users UI dropdown. Anything not in this list falls
+    # through to the Dashboard.
+    DEPARTMENTS = (
+        ('front_office', 'Front Office'),
+        ('housekeeping', 'Housekeeping'),
+        ('restaurant',   'Restaurant'),
+        ('accounting',   'Accounting'),
+    )
+
     @property
     def is_admin(self):
         return self.role == 'admin'
+
+    @property
+    def department_label(self):
+        """Return the human-readable department name (or '—')."""
+        for slug, label in self.DEPARTMENTS:
+            if slug == (self.department or ''):
+                return label
+        return '—'
 
     def __repr__(self):
         return f'<User {self.username}>'

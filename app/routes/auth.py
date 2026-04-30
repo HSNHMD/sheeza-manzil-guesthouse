@@ -11,28 +11,29 @@ auth_bp = Blueprint('auth', __name__)
 # Allow-list of post-login `?next=` paths. flask-login auto-appends
 # ?next=<original-path> when an unauthenticated user hits a protected
 # route, but if the original path was /rooms/ (the legacy default
-# landing) the user ends up RIGHT BACK on /rooms/ after login — the
-# fix to admin_login() to redirect to dashboard.index is bypassed.
-# We ignore /rooms/ specifically (and the empty string) so the post-
-# login experience is consistent: every login lands on the Dashboard.
+# landing) the user ends up RIGHT BACK on /rooms/ after login. We
+# ignore /rooms/ specifically (and the empty string) so the post-
+# login experience is consistent and role-aware.
 _BANNED_NEXT_PATHS = ('', '/', '/rooms/', '/rooms', '/staff/dashboard')
 
 
-def _post_login_target() -> str:
+def _post_login_target(user=None) -> str:
     """Return the URL the user should land on after successful login.
 
-    Always /dashboard/ unless the caller passed an explicit ?next=
-    pointing somewhere meaningful that is NOT a banned path. This
-    guarantees a consistent post-login experience even when the
-    browser had a stale URL like /rooms/?next=/rooms/.
+    Resolution order:
+      1. Honour an explicit `?next=` query param IF it's a relative
+         same-origin path AND not in the banned-defaults list.
+      2. Otherwise dispatch via services.landing.landing_url_for
+         (admin → Dashboard, dept staff → dept home, fallback →
+         Dashboard).
     """
+    from ..services.landing import landing_url_for
+
     nxt = (request.args.get('next') or '').strip()
-    if nxt in _BANNED_NEXT_PATHS or nxt.startswith('http'):
-        return url_for('dashboard.index')
-    # Only honour relative same-origin paths
-    if not nxt.startswith('/'):
-        return url_for('dashboard.index')
-    return nxt
+    if nxt and nxt.startswith('/') and not nxt.startswith('//') \
+            and nxt not in _BANNED_NEXT_PATHS:
+        return nxt
+    return landing_url_for(user)
 
 
 @auth_bp.route('/appadmin', methods=['GET', 'POST'])
@@ -43,7 +44,7 @@ def admin_login():
     # can still reach /staff/dashboard via direct URL but the
     # post-login default is the cross-department command center.
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard.index'))
+        return redirect(_post_login_target(current_user))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -53,7 +54,7 @@ def admin_login():
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):
             login_user(user, remember=remember)
-            return redirect(_post_login_target())
+            return redirect(_post_login_target(user))
         flash('Invalid username or password.', 'error')
 
     return render_template('auth/login.html')
@@ -64,7 +65,7 @@ def admin_login():
 @auth_bp.route('/console', methods=['GET', 'POST'])
 def console_login():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard.index'))
+        return redirect(_post_login_target(current_user))
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -72,7 +73,7 @@ def console_login():
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):
             login_user(user)
-            return redirect(_post_login_target())
+            return redirect(_post_login_target(user))
         flash('Invalid username or password.', 'error')
 
     return render_template('staff/login.html')
@@ -106,17 +107,37 @@ def admin_users():
             email = request.form.get('email', '').strip()
             password = request.form.get('password', '')
             role = request.form.get('role', 'staff')
+            department = (request.form.get('department') or '').strip() or None
+            allowed = {slug for slug, _ in User.DEPARTMENTS}
+            if department and department not in allowed:
+                department = None  # silently ignore unknown values
 
             if User.query.filter_by(username=username).first():
                 flash('Username already taken.', 'error')
             elif User.query.filter_by(email=email).first():
                 flash('Email already in use.', 'error')
             else:
-                user = User(username=username, email=email, role=role)
+                user = User(username=username, email=email, role=role,
+                            department=department)
                 user.set_password(password)
                 db.session.add(user)
                 db.session.commit()
                 flash(f'Staff member {username} created.', 'success')
+            return redirect(url_for('auth.admin_users'))
+
+        elif action == 'set_department':
+            user_id = request.form.get('user_id')
+            user = User.query.get_or_404(user_id)
+            new_dept = (request.form.get('department') or '').strip() or None
+            allowed = {slug for slug, _ in User.DEPARTMENTS}
+            if new_dept and new_dept not in allowed:
+                flash('Unknown department.', 'error')
+            else:
+                user.department = new_dept
+                db.session.commit()
+                label = next((l for s, l in User.DEPARTMENTS
+                              if s == new_dept), '— none —')
+                flash(f'{user.username} department: {label}.', 'success')
             return redirect(url_for('auth.admin_users'))
 
         elif action == 'toggle':
@@ -174,7 +195,7 @@ def change_password():
             current_user.set_password(new_pw)
             db.session.commit()
             flash('Password changed successfully.', 'success')
-            return redirect(url_for('dashboard.index'))
+            return redirect(_post_login_target(current_user))
 
     return render_template('auth/change_password.html')
 
