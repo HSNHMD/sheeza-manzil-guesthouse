@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Room map — {{ conn.channel_name }}{% endblock %}
+{% block content %}
+{% include 'channels/_styles.html' %}
+
+<div class="ch-shell">
+  <h1 class="ch-h1">Map a room type → {{ conn.channel_name }}</h1>
+  <p class="ch-sub">
+    Pick the internal RoomType and supply the channel's external room id.
+    Each (channel, room type) and (channel, external id) pair is unique.
+  </p>
+
+  <form method="POST" class="ch-form">
+    <div>
+      <label for="room_type_id">Internal room type *</label>
+      <select id="room_type_id" name="room_type_id" required>
+        <option value="">— select —</option>
+        {% for t in types %}
+          <option value="{{ t.id }}"
+            {% if form.get('room_type_id')|string == t.id|string %}selected{% endif %}>
+            {{ t.name }} ({{ t.code }}) · cap {{ t.max_occupancy }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="external_room_id">External room id *</label>
+      <input type="text" id="external_room_id" name="external_room_id"
+             maxlength="80" required
+             value="{{ form.get('external_room_id', '') }}"
+             placeholder="e.g. 12345-DBL or BC-DLX1">
+    </div>
+
+    <div>
+      <label for="external_room_name_snapshot">External room name (snapshot)</label>
+      <input type="text" id="external_room_name_snapshot"
+             name="external_room_name_snapshot" maxlength="160"
+             value="{{ form.get('external_room_name_snapshot', '') }}"
+             placeholder='Channel-side display name, kept for human reference'>
+    </div>
+
+    <div>
+      <label for="inventory_count_override">Inventory count override</label>
+      <input type="number" id="inventory_count_override"
+             name="inventory_count_override" min="0"
+             value="{{ form.get('inventory_count_override', '') }}">
+      <p class="ch-sub" style="margin-top:4px;">
+        Optional cap on rooms published to this channel. Leave empty to
+        publish full physical count.
+      </p>
+    </div>
+
+    <div>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="2" maxlength="2000">{{ form.get('notes', '') }}</textarea>
+    </div>
+
+    <div class="ch-actions">
+      <button type="submit" class="btn-primary">Create map</button>
+      <a class="btn-secondary"
+         href="{{ url_for('channels.detail', conn_id=conn.id) }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

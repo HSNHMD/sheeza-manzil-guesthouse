@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}Rate plan map — {{ conn.channel_name }}{% endblock %}
+{% block content %}
+{% include 'channels/_styles.html' %}
+
+<div class="ch-shell">
+  <h1 class="ch-h1">Map a rate plan → {{ conn.channel_name }}</h1>
+  <p class="ch-sub">
+    Pick the internal RatePlan and supply the channel's external rate
+    plan id. Optional meal-plan + cancellation-policy ids carry
+    channel-specific metadata.
+  </p>
+
+  <form method="POST" class="ch-form">
+    <div>
+      <label for="rate_plan_id">Internal rate plan *</label>
+      <select id="rate_plan_id" name="rate_plan_id" required>
+        <option value="">— select —</option>
+        {% for p in plans %}
+          <option value="{{ p.id }}"
+            {% if form.get('rate_plan_id')|string == p.id|string %}selected{% endif %}>
+            {{ p.name }} ({{ p.code }}) · {{ p.currency }} {{ '%.2f'|format(p.base_rate) }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="external_rate_plan_id">External rate plan id *</label>
+      <input type="text" id="external_rate_plan_id" name="external_rate_plan_id"
+             maxlength="80" required
+             value="{{ form.get('external_rate_plan_id', '') }}"
+             placeholder="e.g. RP-12345-BAR or BCRP-01">
+    </div>
+
+    <div>
+      <label for="external_rate_plan_name_snapshot">External rate plan name (snapshot)</label>
+      <input type="text" id="external_rate_plan_name_snapshot"
+             name="external_rate_plan_name_snapshot" maxlength="160"
+             value="{{ form.get('external_rate_plan_name_snapshot', '') }}">
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="meal_plan_external_id">Meal plan external id</label>
+        <input type="text" id="meal_plan_external_id"
+               name="meal_plan_external_id" maxlength="40"
+               value="{{ form.get('meal_plan_external_id', '') }}"
+               placeholder="e.g. BB / HB / FB">
+      </div>
+      <div>
+        <label for="cancellation_policy_external_id">Cancellation policy external id</label>
+        <input type="text" id="cancellation_policy_external_id"
+               name="cancellation_policy_external_id" maxlength="40"
+               value="{{ form.get('cancellation_policy_external_id', '') }}">
+      </div>
+    </div>
+
+    <div>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="2" maxlength="2000">{{ form.get('notes', '') }}</textarea>
+    </div>
+
+    <div class="ch-actions">
+      <button type="submit" class="btn-primary">Create map</button>
+      <a class="btn-secondary"
+         href="{{ url_for('channels.detail', conn_id=conn.id) }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

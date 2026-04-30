@@ -1,0 +1,79 @@
+{# Shared styles for /admin/channels/* pages. Include via {% include '...' %}. #}
+<style>
+  .ch-shell { display: flex; flex-direction: column; gap: 14px; max-width: 980px; }
+  .ch-h1 { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin: 0; }
+  .ch-sub { color: #64748b; font-size: 12.5px; }
+
+  table.ch-table {
+    width: 100%; border-collapse: collapse; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+    font-size: 13px;
+  }
+  table.ch-table th, table.ch-table td {
+    padding: 9px 12px; text-align: left; border-bottom: 1px solid #e2e8f0;
+  }
+  table.ch-table tr:last-child td { border-bottom: 0; }
+  table.ch-table th {
+    background: #f8fafc; font-weight: 700; color: #475569;
+    text-transform: uppercase; font-size: 10.5px; letter-spacing: .05em;
+  }
+  table.ch-table td.num, table.ch-table th.num {
+    text-align: right; font-feature-settings: 'tnum' on;
+  }
+
+  .ch-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 16px;
+  }
+  .ch-card h2 {
+    font-size: 12px; font-weight: 800; color: #475569;
+    text-transform: uppercase; letter-spacing: .05em;
+    margin: 0 0 10px;
+  }
+
+  form.ch-form { background: #fff; border: 1px solid #e2e8f0;
+                 border-radius: 12px; padding: 18px;
+                 display: flex; flex-direction: column; gap: 12px; }
+  form.ch-form label { font-size: 12px; font-weight: 600; color: #475569; }
+  form.ch-form input, form.ch-form select, form.ch-form textarea {
+    width: 100%; padding: 9px 10px; border-radius: 8px;
+    border: 1px solid #cbd5e1; font-size: 14px; background: #fff;
+  }
+  form.ch-form .row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 600px) { form.ch-form .row { grid-template-columns: 1fr; } }
+
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .pill-inactive { background: #e2e8f0; color: #475569; }
+  .pill-sandbox  { background: #fef3c7; color: #92400e; }
+  .pill-active   { background: #dcfce7; color: #166534; }
+  .pill-error    { background: #fee2e2; color: #991b1b; }
+  .pill-channel  { background: #f5f3ff; color: #5b21b6; border: 1px solid #ddd6fe; }
+
+  .ch-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn-primary {
+    background: #0f766e; color: #fff; border: 1px solid #0f766e;
+    padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;
+    cursor: pointer;
+  }
+  .btn-secondary {
+    background: #fff; color: #475569; border: 1px solid #cbd5e1;
+    padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;
+    cursor: pointer;
+  }
+  .btn-danger {
+    background: #fff; color: #b91c1c; border: 1px solid #fecaca;
+    padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 13px;
+    cursor: pointer;
+  }
+  form.inline { display: inline; margin: 0; }
+
+  .ch-warning {
+    background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px;
+    padding: 10px 12px; font-size: 12.5px; color: #78350f;
+    line-height: 1.5;
+  }
+</style>

@@ -185,6 +185,21 @@ class Booking(db.Model):
     billing_target = db.Column(db.String(20), nullable=False,
                                 default='individual')
 
+    # Channel Manager Foundation V1 — booking source tracking. `source`
+    # records WHERE this booking originated (direct vs OTA vs walk-in
+    # vs WhatsApp etc.). `external_source` + `external_reservation_ref`
+    # are populated only for OTA-originated bookings; the unique
+    # composite index `(external_source, external_reservation_ref)`
+    # prevents duplicate imports of the same OTA reservation.
+    # Existing bookings are backfilled to source='direct' by the
+    # migration. See app/services/channels.py for the canonical
+    # vocabulary in BOOKING_SOURCES.
+    source = db.Column(db.String(30), nullable=False,
+                        server_default='direct', index=True)
+    external_source = db.Column(db.String(30), nullable=True, index=True)
+    external_reservation_ref = db.Column(db.String(120),
+                                          nullable=True, index=True)
+
     invoice = db.relationship('Invoice', backref='booking', uselist=False)
     creator = db.relationship('User', foreign_keys=[created_by])
     booking_group = db.relationship(
@@ -1465,3 +1480,267 @@ class Property(db.Model):
 
     def __repr__(self):
         return f'<Property id={self.id} code={self.code!r} name={self.name!r}>'
+
+
+# ── Channel Manager Foundation V1 ───────────────────────────────────
+#
+# Internal data + workflow scaffolding for FUTURE OTA integration.
+# V1 makes ZERO real OTA API calls. The tables exist so we can:
+#   - record which channels we've configured (per-property)
+#   - map our internal RoomType + RatePlan → external IDs
+#   - write a sync-job log even when nothing actually syncs
+#   - prove the leak / duplicate-import guards work in tests
+#
+# When real sync ships (channel manager Phase 4 in
+# docs/channel_manager_build_phases.md), the sync workers read from
+# these tables and write back via ChannelSyncJob/ChannelSyncLog
+# rows. Until then, these tables are read-only from the operator's
+# perspective and write-only via the admin "test sync" button which
+# logs no-op events.
+#
+# Sensitive note on credentials:
+#   `ChannelConnection.config_json` is intentionally NOT used for
+#   real API secrets in V1. The Phase 4 design documented in
+#   docs/channel_manager_architecture.md §8 stores credentials
+#   in environment variables / secret manager via a `secret_ref`
+#   column added later — it is NOT in this V1 schema.
+
+
+class ChannelConnection(db.Model):
+    """One per (Property × external channel) configuration row."""
+    __tablename__ = 'channel_connections'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    property_id = db.Column(
+        db.Integer, db.ForeignKey('properties.id', ondelete='RESTRICT'),
+        nullable=False, index=True, server_default='1',
+    )
+
+    # Whitelisted in services.channels.CHANNEL_NAMES. Examples:
+    # booking_com / expedia / agoda / airbnb / other.
+    channel_name = db.Column(db.String(40), nullable=False, index=True)
+
+    # 'inactive' | 'sandbox' | 'active' | 'error'.
+    status      = db.Column(db.String(20), nullable=False,
+                            default='inactive', index=True)
+
+    # Operator-facing label so multi-property owners can disambiguate
+    # (e.g. "Booking.com — Sheeza Manzil HotelID 12345").
+    account_label = db.Column(db.String(160), nullable=True)
+
+    # JSON blob of NON-SECRET config (display preferences, mapping
+    # hints, etc.). Real API keys NEVER go here — they belong in
+    # env vars / a secret manager. V1 enforces this by convention.
+    config_json = db.Column(db.Text, nullable=True)
+
+    notes       = db.Column(db.Text, nullable=True)
+
+    # Convenience back-refs used by mapping pages.
+    room_maps = db.relationship('ChannelRoomMap',
+                                backref='channel_connection',
+                                lazy='dynamic',
+                                cascade='all, delete-orphan')
+    rate_maps = db.relationship('ChannelRatePlanMap',
+                                 backref='channel_connection',
+                                 lazy='dynamic',
+                                 cascade='all, delete-orphan')
+
+    __table_args__ = (
+        db.UniqueConstraint('property_id', 'channel_name',
+                             name='uq_channel_connection_property_channel'),
+    )
+
+    def __repr__(self):
+        return (f'<ChannelConnection id={self.id} '
+                f'channel={self.channel_name!r} status={self.status!r}>')
+
+
+class ChannelRoomMap(db.Model):
+    """Maps an internal RoomType to one channel's external room id."""
+    __tablename__ = 'channel_room_maps'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+
+    channel_connection_id = db.Column(
+        db.Integer, db.ForeignKey('channel_connections.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+    room_type_id = db.Column(
+        db.Integer, db.ForeignKey('room_types.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+
+    # Channel-side identifier. Channel-specific format — opaque to us.
+    external_room_id = db.Column(db.String(80), nullable=False)
+    # Snapshot of what the channel called it the last time the mapping
+    # was edited — purely human-readable.
+    external_room_name_snapshot = db.Column(db.String(160), nullable=True)
+
+    # Optional inventory-count override (cap how many of this type we
+    # publish). NULL = use full physical count.
+    inventory_count_override = db.Column(db.Integer, nullable=True)
+
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    notes     = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('channel_connection_id', 'room_type_id',
+                             name='uq_channel_room_map_conn_type'),
+        db.UniqueConstraint('channel_connection_id', 'external_room_id',
+                             name='uq_channel_room_map_conn_external'),
+    )
+
+    room_type = db.relationship('RoomType', foreign_keys=[room_type_id])
+
+    def __repr__(self):
+        return (f'<ChannelRoomMap conn={self.channel_connection_id} '
+                f'type={self.room_type_id} ext={self.external_room_id!r}>')
+
+
+class ChannelRatePlanMap(db.Model):
+    """Maps an internal RatePlan to one channel's external rate plan id."""
+    __tablename__ = 'channel_rate_plan_maps'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False)
+
+    channel_connection_id = db.Column(
+        db.Integer, db.ForeignKey('channel_connections.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+    rate_plan_id = db.Column(
+        db.Integer, db.ForeignKey('rate_plans.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+
+    external_rate_plan_id = db.Column(db.String(80), nullable=False)
+    external_rate_plan_name_snapshot = db.Column(
+        db.String(160), nullable=True)
+
+    # Channel-side meal-plan / cancellation-policy refs. Channel-specific.
+    meal_plan_external_id = db.Column(db.String(40), nullable=True)
+    cancellation_policy_external_id = db.Column(db.String(40), nullable=True)
+
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    notes     = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('channel_connection_id', 'rate_plan_id',
+                             name='uq_channel_rate_map_conn_plan'),
+        db.UniqueConstraint('channel_connection_id',
+                             'external_rate_plan_id',
+                             name='uq_channel_rate_map_conn_external'),
+    )
+
+    rate_plan = db.relationship('RatePlan', foreign_keys=[rate_plan_id])
+
+    def __repr__(self):
+        return (f'<ChannelRatePlanMap conn={self.channel_connection_id} '
+                f'plan={self.rate_plan_id} ext={self.external_rate_plan_id!r}>')
+
+
+class ChannelSyncJob(db.Model):
+    """One row per scheduled / triggered sync work item.
+
+    V1 jobs are no-ops created by the admin "test sync" button — they
+    update status to 'success' or 'skipped' immediately and write a
+    matching ChannelSyncLog row. When real sync ships, a worker
+    consumes queued jobs.
+    """
+    __tablename__ = 'channel_sync_jobs'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+
+    channel_connection_id = db.Column(
+        db.Integer, db.ForeignKey('channel_connections.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+
+    # Whitelisted in services.channels.SYNC_JOB_TYPES.
+    # availability_push / rate_push / restriction_push /
+    # reservation_import / reservation_update /
+    # cancellation_import / full_resync / test_noop.
+    job_type = db.Column(db.String(40), nullable=False)
+    # outbound | inbound
+    direction = db.Column(db.String(10), nullable=False)
+    # queued | running | success | failed | skipped | dead_lettered
+    status = db.Column(db.String(20), nullable=False, default='queued',
+                        index=True)
+
+    payload_summary = db.Column(db.String(500), nullable=True)
+    error_summary   = db.Column(db.String(500), nullable=True)
+    attempt_count   = db.Column(db.Integer, nullable=False, default=0)
+
+    started_at   = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    requested_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
+    requested_by = db.relationship(
+        'User', foreign_keys=[requested_by_user_id])
+
+    def __repr__(self):
+        return (f'<ChannelSyncJob id={self.id} type={self.job_type!r} '
+                f'status={self.status!r}>')
+
+
+class ChannelSyncLog(db.Model):
+    """Append-only event log for sync activity. One row per API call
+    (real or simulated). V1 only writes test-noop rows."""
+    __tablename__ = 'channel_sync_logs'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+
+    channel_connection_id = db.Column(
+        db.Integer, db.ForeignKey('channel_connections.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+    sync_job_id = db.Column(
+        db.Integer, db.ForeignKey('channel_sync_jobs.id',
+                                  ondelete='SET NULL'),
+        nullable=True, index=True,
+    )
+
+    # 'room_map' | 'rate_plan_map' | 'reservation' | 'availability'
+    # | 'rate' | 'restriction' | 'connection' | 'test_noop'.
+    entity_type = db.Column(db.String(30), nullable=False)
+    # Internal id for the entity if applicable (booking.id,
+    # room_type.id, etc.). NULL for connection-level events.
+    entity_id   = db.Column(db.Integer, nullable=True)
+
+    # outbound (push) | inbound (pull)
+    direction   = db.Column(db.String(10), nullable=False)
+    # Human-readable verb: e.g. 'pushed', 'imported', 'skipped'.
+    action      = db.Column(db.String(40), nullable=False)
+    # success | failed | skipped | warning
+    status      = db.Column(db.String(20), nullable=False)
+
+    # Short sanitized message (≤500 chars). NEVER stores raw API
+    # bodies — those would contain PII / credentials.
+    message     = db.Column(db.String(500), nullable=True)
+
+    def __repr__(self):
+        return (f'<ChannelSyncLog id={self.id} '
+                f'entity={self.entity_type}#{self.entity_id} '
+                f'action={self.action!r} status={self.status!r}>')

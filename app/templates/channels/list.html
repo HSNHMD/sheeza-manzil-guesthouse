@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block title %}Channel Connections{% endblock %}
+{% block content %}
+{% include 'channels/_styles.html' %}
+
+<div class="ch-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="ch-h1">Channel Manager</h1>
+      <p class="ch-sub">
+        {{ connections|length }} connection{{ 's' if connections|length != 1 else '' }}
+        · {{ counts.active }} active · {{ counts.sandbox }} sandbox
+        · {{ counts.error }} error
+      </p>
+    </div>
+    <div class="ch-actions">
+      <a href="{{ url_for('channels.new') }}" class="btn-primary">+ New connection</a>
+    </div>
+  </div>
+
+  <div class="ch-warning">
+    <strong>V1 — internal foundation only.</strong>
+    No external API calls are made from these pages. Mappings,
+    sync jobs, and sync logs exist for forward-compatibility with
+    real OTA integration (Phase 4 of the channel manager build plan).
+    The "Test sync" button creates a no-op log entry for workflow
+    inspection only.
+  </div>
+
+  {% if connections %}
+  <table class="ch-table">
+    <thead>
+      <tr>
+        <th>Channel</th>
+        <th>Status</th>
+        <th>Account label</th>
+        <th class="num">Room maps</th>
+        <th class="num">Rate maps</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in connections %}
+      <tr>
+        <td><span class="pill pill-channel">{{ c.channel_name.replace('_',' ') }}</span></td>
+        <td><span class="pill pill-{{ c.status }}">{{ c.status }}</span></td>
+        <td>{{ c.account_label or '—' }}</td>
+        <td class="num">{{ c.room_maps.count() }}</td>
+        <td class="num">{{ c.rate_maps.count() }}</td>
+        <td>{{ c.created_at.strftime('%b %-d, %Y') if c.created_at else '—' }}</td>
+        <td><a class="btn-secondary" href="{{ url_for('channels.detail', conn_id=c.id) }}">Open →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="ch-sub">No channel connections yet.
+    <a class="text-blue-700" href="{{ url_for('channels.new') }}">Create the first one</a>.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

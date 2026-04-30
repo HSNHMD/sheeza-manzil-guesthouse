@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit ' + conn.channel_name if conn else 'New Channel Connection' }}{% endblock %}
+{% block content %}
+{% include 'channels/_styles.html' %}
+
+<div class="ch-shell">
+  <h1 class="ch-h1">
+    {% if conn %}Edit {{ conn.channel_name }} connection{% else %}New channel connection{% endif %}
+  </h1>
+
+  <form method="POST" class="ch-form">
+    {% if not conn %}
+    <div>
+      <label for="channel_name">Channel *</label>
+      <select id="channel_name" name="channel_name" required>
+        <option value="">— select —</option>
+        {% for c in channel_names %}
+          <option value="{{ c }}"
+            {% if form.get('channel_name') == c %}selected{% endif %}>
+            {{ c.replace('_', ' ').title() }}
+          </option>
+        {% endfor %}
+      </select>
+      <p class="ch-sub" style="margin-top:4px;">
+        One connection per channel per property. Cannot be changed after create.
+      </p>
+    </div>
+    {% else %}
+    <div>
+      <label>Channel (immutable)</label>
+      <input type="text" disabled value="{{ conn.channel_name }}">
+    </div>
+    {% endif %}
+
+    <div>
+      <label for="account_label">Account label</label>
+      <input type="text" id="account_label" name="account_label" maxlength="160"
+             value="{{ conn.account_label if conn else form.get('account_label', '') }}"
+             placeholder='e.g. "Sheeza Manzil — Booking.com Hotel ID 12345"'>
+    </div>
+
+    <div>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3" maxlength="2000">{{ conn.notes if conn else form.get('notes', '') }}</textarea>
+    </div>
+
+    {% if conn %}
+    <div>
+      <label for="config_json">Config JSON (non-secret)</label>
+      <textarea id="config_json" name="config_json" rows="5" maxlength="4000"
+                style="font-family: ui-monospace, monospace;">{{ conn.config_json or '' }}</textarea>
+      <p class="ch-sub" style="margin-top:4px;">
+        Store mapping hints + display preferences here.
+        <strong>Real API credentials must NOT go here</strong> —
+        they belong in environment variables / secret manager. V1
+        does NOT make any API calls anyway.
+      </p>
+    </div>
+    {% endif %}
+
+    <div class="ch-actions">
+      <button type="submit" class="btn-primary">{{ 'Save' if conn else 'Create connection' }}</button>
+      <a class="btn-secondary"
+         href="{{ url_for('channels.detail', conn_id=conn.id) if conn else url_for('channels.index') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

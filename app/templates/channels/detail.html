@@ -1,0 +1,268 @@
+{% extends 'base.html' %}
+{% block title %}{{ conn.channel_name }} — channel{% endblock %}
+{% block content %}
+{% include 'channels/_styles.html' %}
+
+<div class="ch-shell">
+  <div class="flex items-end justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="ch-h1">
+        <span class="pill pill-channel">{{ conn.channel_name.replace('_',' ') }}</span>
+        <span class="pill pill-{{ conn.status }}">{{ conn.status }}</span>
+      </h1>
+      <p class="ch-sub">
+        {% if conn.account_label %}{{ conn.account_label }} ·{% endif %}
+        property #{{ conn.property_id }} ·
+        created {{ conn.created_at.strftime('%b %-d, %Y') if conn.created_at else '—' }}
+      </p>
+    </div>
+    <div class="ch-actions">
+      <a class="btn-secondary" href="{{ url_for('channels.index') }}">← All channels</a>
+      <a class="btn-secondary" href="{{ url_for('channels.edit', conn_id=conn.id) }}">Edit</a>
+    </div>
+  </div>
+
+  {# ── Status flip ── #}
+  <div class="ch-card">
+    <h2>Status</h2>
+    <form method="POST" action="{{ url_for('channels.set_status', conn_id=conn.id) }}"
+          class="ch-actions">
+      <select name="status">
+        {% for s in statuses %}
+          <option value="{{ s }}" {% if conn.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn-primary" type="submit">Update status</button>
+    </form>
+    <p class="ch-sub" style="margin-top:6px;">
+      <strong>inactive</strong>: configured but disabled.
+      <strong>sandbox</strong>: would talk to OTA's sandbox (V1: still no calls).
+      <strong>active</strong>: would push to live OTA (V1: still no calls).
+      <strong>error</strong>: needs operator attention.
+    </p>
+  </div>
+
+  {# ── Room mappings ── #}
+  <div class="ch-card">
+    <h2>Room mappings — {{ room_maps|length }}</h2>
+    {% if room_maps %}
+    <table class="ch-table">
+      <thead>
+        <tr>
+          <th>Internal room type</th>
+          <th>External room id</th>
+          <th>External name</th>
+          <th class="num">Inv override</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in room_maps %}
+        <tr>
+          <td>{{ m.room_type.name if m.room_type else '—' }} <span class="ch-sub">({{ m.room_type.code if m.room_type else '—' }})</span></td>
+          <td><code>{{ m.external_room_id }}</code></td>
+          <td>{{ m.external_room_name_snapshot or '—' }}</td>
+          <td class="num">{{ m.inventory_count_override if m.inventory_count_override is not none else '—' }}</td>
+          <td>
+            {% if m.is_active %}<span class="pill pill-active">active</span>
+            {% else %}<span class="pill pill-inactive">inactive</span>
+            {% endif %}
+          </td>
+          <td class="ch-actions">
+            <form method="POST" action="{{ url_for('channels.room_map_toggle', conn_id=conn.id, map_id=m.id) }}" class="inline">
+              <button class="btn-secondary" type="submit">{{ 'Deactivate' if m.is_active else 'Activate' }}</button>
+            </form>
+            <form method="POST" action="{{ url_for('channels.room_map_delete', conn_id=conn.id, map_id=m.id) }}" class="inline"
+                  onsubmit="return confirm('Delete this room map?');">
+              <button class="btn-danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="ch-sub">No room mappings yet.</p>
+    {% endif %}
+    <div class="ch-actions" style="margin-top:10px;">
+      <a class="btn-primary" href="{{ url_for('channels.room_map_new', conn_id=conn.id) }}">+ Add room map</a>
+    </div>
+  </div>
+
+  {# ── Rate plan mappings ── #}
+  <div class="ch-card">
+    <h2>Rate plan mappings — {{ rate_maps|length }}</h2>
+    {% if rate_maps %}
+    <table class="ch-table">
+      <thead>
+        <tr>
+          <th>Internal rate plan</th>
+          <th>External rate plan id</th>
+          <th>Meal plan</th>
+          <th>Cancel policy</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in rate_maps %}
+        <tr>
+          <td>{{ m.rate_plan.name if m.rate_plan else '—' }} <span class="ch-sub">({{ m.rate_plan.code if m.rate_plan else '—' }})</span></td>
+          <td><code>{{ m.external_rate_plan_id }}</code></td>
+          <td>{{ m.meal_plan_external_id or '—' }}</td>
+          <td>{{ m.cancellation_policy_external_id or '—' }}</td>
+          <td>
+            {% if m.is_active %}<span class="pill pill-active">active</span>
+            {% else %}<span class="pill pill-inactive">inactive</span>
+            {% endif %}
+          </td>
+          <td class="ch-actions">
+            <form method="POST" action="{{ url_for('channels.rate_map_toggle', conn_id=conn.id, map_id=m.id) }}" class="inline">
+              <button class="btn-secondary" type="submit">{{ 'Deactivate' if m.is_active else 'Activate' }}</button>
+            </form>
+            <form method="POST" action="{{ url_for('channels.rate_map_delete', conn_id=conn.id, map_id=m.id) }}" class="inline"
+                  onsubmit="return confirm('Delete this rate plan map?');">
+              <button class="btn-danger" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="ch-sub">No rate plan mappings yet.</p>
+    {% endif %}
+    <div class="ch-actions" style="margin-top:10px;">
+      <a class="btn-primary" href="{{ url_for('channels.rate_map_new', conn_id=conn.id) }}">+ Add rate plan map</a>
+    </div>
+  </div>
+
+  {# ── Test sync (V1 no-op) ── #}
+  <div class="ch-card" style="background:#fffbeb; border-color:#fcd34d;">
+    <h2 style="color:#78350f;">Test sync (V1 — no external request)</h2>
+    <p class="ch-sub" style="margin-bottom:10px;">
+      Creates a <code>test_noop</code> sync job and a matching log entry.
+      Useful to confirm the workflow surface works. <strong>No outbound
+      HTTP request is made.</strong> Real sync arrives in Phase 4 of the
+      channel manager build plan.
+    </p>
+    <form method="POST" action="{{ url_for('channels.sync_test', conn_id=conn.id) }}" class="inline">
+      <button type="submit" class="btn-primary">Run test sync</button>
+    </form>
+  </div>
+
+  {# ── Sync jobs ── #}
+  <div class="ch-card">
+    <h2>Recent sync jobs — {{ sync_jobs|length }} (max 20)</h2>
+    {% if sync_jobs %}
+    <table class="ch-table">
+      <thead>
+        <tr>
+          <th>Created</th>
+          <th>Job type</th>
+          <th>Direction</th>
+          <th>Status</th>
+          <th>Payload</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in sync_jobs %}
+        <tr>
+          <td>{{ j.created_at.strftime('%b %-d %H:%M:%S') if j.created_at else '—' }}</td>
+          <td><code>{{ j.job_type }}</code></td>
+          <td>{{ j.direction }}</td>
+          <td>
+            {% if j.status == 'success' %}<span class="pill pill-active">{{ j.status }}</span>
+            {% elif j.status == 'failed' or j.status == 'dead_lettered' %}<span class="pill pill-error">{{ j.status }}</span>
+            {% elif j.status == 'queued' or j.status == 'running' %}<span class="pill pill-sandbox">{{ j.status }}</span>
+            {% else %}<span class="pill pill-inactive">{{ j.status }}</span>{% endif %}
+          </td>
+          <td>{{ j.payload_summary or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="ch-sub">No sync jobs yet.</p>
+    {% endif %}
+  </div>
+
+  {# ── Sync log ── #}
+  <div class="ch-card">
+    <h2>Sync log — {{ sync_logs|length }} (max 50)</h2>
+    {% if sync_logs %}
+    <table class="ch-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Entity</th>
+          <th>Direction</th>
+          <th>Action</th>
+          <th>Status</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in sync_logs %}
+        <tr>
+          <td>{{ r.created_at.strftime('%b %-d %H:%M:%S') if r.created_at else '—' }}</td>
+          <td>{{ r.entity_type }}{% if r.entity_id %}#{{ r.entity_id }}{% endif %}</td>
+          <td>{{ r.direction }}</td>
+          <td>{{ r.action }}</td>
+          <td>
+            {% if r.status == 'success' %}<span class="pill pill-active">{{ r.status }}</span>
+            {% elif r.status == 'failed' %}<span class="pill pill-error">{{ r.status }}</span>
+            {% else %}<span class="pill pill-inactive">{{ r.status }}</span>{% endif %}
+          </td>
+          <td>{{ r.message or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="ch-sub">No sync log entries yet.</p>
+    {% endif %}
+  </div>
+
+  {# ── Linked bookings ── #}
+  <div class="ch-card">
+    <h2>Bookings linked to this channel — {{ linked_bookings|length }} (max 20)</h2>
+    {% if linked_bookings %}
+    <table class="ch-table">
+      <thead>
+        <tr>
+          <th>Booking ref</th>
+          <th>External ref</th>
+          <th>Guest</th>
+          <th>Stay</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in linked_bookings %}
+        <tr>
+          <td><strong>{{ b.booking_ref }}</strong></td>
+          <td><code>{{ b.external_reservation_ref or '—' }}</code></td>
+          <td>{{ b.guest.full_name if b.guest else '—' }}</td>
+          <td>{{ b.check_in_date }} → {{ b.check_out_date }}</td>
+          <td>{{ b.status.replace('_',' ') }}</td>
+          <td><a class="text-blue-700 text-xs" href="{{ url_for('bookings.detail', booking_id=b.id) }}">Open →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="ch-sub">No bookings linked to this channel via external reference yet.</p>
+    {% endif %}
+  </div>
+
+  {% if conn.notes %}
+  <div class="ch-card">
+    <h2>Notes</h2>
+    <div style="font-size: 13px; white-space: pre-wrap;">{{ conn.notes }}</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
