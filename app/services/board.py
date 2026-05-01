@@ -379,6 +379,85 @@ def make_booking_bar(booking,
     )
 
 
+def make_segment_bar(segment, booking,
+                     window_start: date,
+                     window_end: date,
+                     *, segment_index: int = 0,
+                     segment_total: int = 1) -> Optional[BookingBar]:
+    """Build a BookingBar for a single StaySegment of a Booking.
+
+    Used when a booking has been split mid-stay across multiple rooms.
+    Each segment renders as its own bar on its room's row, but the
+    booking_id, booking_ref, and guest are inherited from the parent
+    Booking so clicking any segment opens the same drawer / detail.
+
+    The segment's date range (segment.start_date, segment.end_date)
+    drives grid placement instead of the booking's check_in/out.
+
+    `segment_index` (0-based) and `segment_total` are used to decorate
+    the short_label so the operator can see which leg of the stay
+    they're looking at: "Mitchell · 1/2", "Mitchell · 2/2".
+
+    Returns None if the segment doesn't overlap the window. Pure.
+    """
+    if segment is None or booking is None:
+        return None
+    if segment.start_date is None or segment.end_date is None:
+        return None
+
+    eff_start, eff_end, starts_in, ends_in = _clip_dates(
+        segment.start_date, segment.end_date,
+        window_start, window_end,
+    )
+    if eff_start is None:
+        return None
+
+    col_start = (eff_start - window_start).days + 2
+    col_span  = max(1, (eff_end - eff_start).days)
+
+    booking_status = (booking.status or '').strip()
+    inv = getattr(booking, 'invoice', None)
+    payment_status = (getattr(inv, 'payment_status', None)
+                      if inv else None) or 'not_received'
+
+    bar_color = bar_color_class(booking_status)
+    accent    = payment_accent_class(payment_status)
+
+    guest = booking.guest
+    full_name = (f'{guest.first_name} {guest.last_name}'.strip()
+                 if guest else 'Unknown')
+    last_name = (guest.last_name if guest else None) or full_name
+    seg_nights = (segment.end_date - segment.start_date).days
+
+    # Decorate the short_label so the operator can see segment N/M
+    # at a glance. Skip the badge for single-segment bookings.
+    if segment_total > 1:
+        short = f'{last_name} · {segment_index + 1}/{segment_total}'
+    else:
+        short = last_name
+
+    return BookingBar(
+        booking_id=booking.id,
+        booking_ref=booking.booking_ref or '',
+        guest_name=full_name,
+        num_guests=getattr(booking, 'num_guests', None) or 1,
+        nights=seg_nights,
+        check_in=segment.start_date,
+        check_out=segment.end_date,
+        grid_col_start=col_start,
+        grid_col_span=col_span,
+        booking_status=booking_status,
+        payment_status=payment_status,
+        bar_color_class=bar_color,
+        accent_class=accent,
+        label=full_name,
+        short_label=short,
+        starts_in_range=starts_in,
+        ends_in_range=ends_in,
+        visible_days=col_span,
+    )
+
+
 # ── Status → CSS class mapping ───────────────────────────────────────
 
 # Bar background by booking lifecycle. Tailwind utility classes only —

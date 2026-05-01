@@ -2064,6 +2064,68 @@
   </div>
 </div>
 
+{# Mid-stay room change V1 — split a single booking into two stay
+   segments (one folio, one guest history). The form fields drive a
+   fetch POST to /board/bookings/<id>/split; the modal stays open
+   on validation failure (overlap, room blocked, etc.) so the
+   operator can adjust without losing context. #}
+<div id="modal-split-stay" class="modal-overlay" onclick="if (event.target === this) closeModal('modal-split-stay');">
+  <div class="modal-panel" role="dialog" aria-labelledby="splitModalTitle">
+    <div class="modal-head">
+      <h3 id="splitModalTitle">Change room mid-stay</h3>
+      <button type="button" class="modal-close" onclick="closeModal('modal-split-stay');" aria-label="Close">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="splitStayForm" onsubmit="return false;">
+      <div class="modal-body">
+        <div class="modal-context">
+          <div class="ctx-label">Booking</div>
+          <strong id="splitCtxRef">—</strong> · <span id="splitCtxGuest">—</span>
+          <div style="font-size:11px;color:#475569;margin-top:2px;">
+            Stay: <strong id="splitCtxRange">—</strong> · current room
+            <strong id="splitCtxRoom">—</strong>
+          </div>
+        </div>
+        <div class="modal-field">
+          <label for="splitDate">Move on this date</label>
+          <input type="date" id="splitDate" required>
+          <p class="modal-help">
+            The guest stays in the current room until this date, then
+            moves to the new room from this date until check-out.
+            Must be strictly between check-in and check-out.
+          </p>
+        </div>
+        <div class="modal-field">
+          <label for="splitTargetRoom">New room (from the move date)</label>
+          <select id="splitTargetRoom" required>
+            <option value="">— select a room —</option>
+            {% for room in all_rooms %}
+              <option value="{{ room.id }}">
+                #{{ room.number }} · {{ room.room_type }} (Floor {{ room.floor }})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-field">
+          <label for="splitNote">Internal note (optional)</label>
+          <input type="text" id="splitNote" maxlength="240"
+                 placeholder="e.g. Guest requested ocean view from May 3">
+        </div>
+        <div id="splitError"
+             style="display:none;background:#fee2e2;color:#991b1b;
+                    border:1px solid #fca5a5;border-radius:6px;
+                    padding:8px 10px;font-size:12.5px;margin-top:8px;"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="modal-btn" onclick="closeModal('modal-split-stay');">Cancel</button>
+        <button type="button" id="splitConfirmBtn" class="modal-btn is-primary"
+                onclick="window.boardSplitOps.confirm();">Save room change</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="modal-block-room" class="modal-overlay" onclick="if (event.target === this) closeModal('modal-block-room');">
   <div class="modal-panel" role="dialog" aria-labelledby="blockModalTitle">
     <div class="modal-head">
@@ -2395,6 +2457,40 @@
         '</a>'
       );
 
+      // Mid-stay Room Change V1 — only offered for bookings that
+      // could plausibly support a split (>= 2 nights, no existing
+      // segments, and not cancelled/rejected/checked_out). The
+      // server-side split_stay() service re-validates anyway, but
+      // hiding the action when it can't possibly succeed avoids
+      // confusing operators.
+      var canSplit = (
+        b.nights >= 2 &&
+        (!b.segments || b.segments.length === 0) &&
+        ['cancelled','rejected','checked_out'].indexOf(b.status) === -1
+      );
+      if (canSplit) {
+        actions.push(
+          '<a href="javascript:void(0)" class="drawer-action" data-board-action="split-stay">' +
+            '<span class="drawer-action-icon" style="background:#eff6ff;color:#1d4ed8;">' +
+              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h6m6 0h6M9 6l3-3 3 3M9 18l3 3 3-3"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label">Change room mid-stay</span>' +
+            '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-3 h-3 ml-auto" style="color:#94a3b8;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>' +
+          '</a>'
+        );
+      } else if (b.segments && b.segments.length >= 2) {
+        // Already segmented — show a read-only summary action so the
+        // operator can see the current legs at a glance.
+        actions.push(
+          '<div class="drawer-action is-disabled" aria-disabled="true" title="Booking is already split into ' + b.segments.length + ' segments. V1 does not support re-splitting.">' +
+            '<span class="drawer-action-icon" style="background:#eff6ff;color:#1d4ed8;">' +
+              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h6m6 0h6M9 6l3-3 3 3M9 18l3 3 3-3"/></svg>' +
+            '</span>' +
+            '<span class="drawer-action-label">Stay split into ' + b.segments.length + ' rooms</span>' +
+          '</div>'
+        );
+      }
+
       actions.push(
         '<a href="/bookings/' + b.id + '#ai-draft-text" class="drawer-action">' +
           '<span class="drawer-action-icon" style="background:#eef2ff;color:#4338ca;">' +
@@ -2541,6 +2637,17 @@
           currentBooking.checkOut,
           currentBooking.room
         );
+      } else if (action === 'split-stay') {
+        e.preventDefault();
+        closeDrawer();
+        openSplitModal(
+          currentBooking.id,
+          currentBooking.ref,
+          currentBooking.guest,
+          currentBooking.checkIn,
+          currentBooking.checkOut,
+          currentBooking.room
+        );
       }
     });
 
@@ -2590,6 +2697,97 @@
       document.getElementById('extendCtxOld').textContent = fmtDateShort(currentCheckOut);
       document.getElementById('extendCtxRoom').textContent = currentRoom ? '#' + currentRoom : '—';
       document.getElementById('modal-extend-stay').classList.add('is-open');
+    };
+
+    /* Mid-stay Room Change V1.
+       Populates the split modal context, constrains the date input
+       to dates strictly inside the stay, and POSTs to the existing
+       /board/bookings/<id>/split endpoint via fetch. The modal stays
+       open on validation failure so the operator can adjust without
+       losing context. */
+    var splitState = null;
+    window.openSplitModal = function(bookingId, ref, guestName,
+                                     checkIn, checkOut, currentRoom) {
+      splitState = {
+        bookingId: bookingId, checkIn: checkIn, checkOut: checkOut,
+      };
+      document.getElementById('splitCtxRef').textContent   = ref || '—';
+      document.getElementById('splitCtxGuest').textContent = guestName || '—';
+      document.getElementById('splitCtxRange').textContent =
+        fmtDateShort(checkIn) + ' → ' + fmtDateShort(checkOut);
+      document.getElementById('splitCtxRoom').textContent  =
+        currentRoom ? '#' + currentRoom : '—';
+
+      var dateInput = document.getElementById('splitDate');
+      // Constrain client-side: split date must be strictly between
+      // check-in and check-out (server re-validates; this is just a
+      // pre-flight UX guard).
+      if (checkIn && checkOut) {
+        var minD = new Date(checkIn + 'T00:00:00');
+        minD.setDate(minD.getDate() + 1);
+        var maxD = new Date(checkOut + 'T00:00:00');
+        maxD.setDate(maxD.getDate() - 1);
+        dateInput.min = minD.toISOString().slice(0, 10);
+        dateInput.max = maxD.toISOString().slice(0, 10);
+        // Default to the midpoint of the stay.
+        var mid = new Date(minD.getTime() + (maxD.getTime() - minD.getTime()) / 2);
+        dateInput.value = mid.toISOString().slice(0, 10);
+      } else {
+        dateInput.value = '';
+        dateInput.min = ''; dateInput.max = '';
+      }
+      document.getElementById('splitTargetRoom').value = '';
+      document.getElementById('splitNote').value = '';
+      var err = document.getElementById('splitError');
+      err.style.display = 'none'; err.textContent = '';
+      document.getElementById('modal-split-stay').classList.add('is-open');
+    };
+
+    window.boardSplitOps = {
+      confirm: function() {
+        if (!splitState) { closeModal('modal-split-stay'); return; }
+        var btn = document.getElementById('splitConfirmBtn');
+        var err = document.getElementById('splitError');
+        var splitDate = document.getElementById('splitDate').value;
+        var targetRoomId = document.getElementById('splitTargetRoom').value;
+        var note = document.getElementById('splitNote').value.trim() || null;
+
+        // Pre-flight client-side guard (the server re-validates).
+        if (!splitDate || !targetRoomId) {
+          err.textContent = 'Pick a move date and a new room.';
+          err.style.display = 'block';
+          return;
+        }
+
+        btn.disabled = true; btn.textContent = 'Saving…';
+        err.style.display = 'none';
+
+        fetch('/board/bookings/' + splitState.bookingId + '/split', {
+          method:  'POST',
+          credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            split_date:     splitDate,
+            target_room_id: parseInt(targetRoomId, 10),
+            note:           note,
+          }),
+        })
+        .then(function(r) { return r.json().then(function(j){ return {ok:r.ok, body:j}; }); })
+        .then(function(out) {
+          if (out.ok && out.body.ok) {
+            window.location.reload();
+          } else {
+            err.textContent = out.body.message || 'Split failed.';
+            err.style.display = 'block';
+            btn.disabled = false; btn.textContent = 'Save room change';
+          }
+        })
+        .catch(function(e) {
+          err.textContent = 'Network error: ' + e;
+          err.style.display = 'block';
+          btn.disabled = false; btn.textContent = 'Save room change';
+        });
+      },
     };
 
     window.openBlockModal = function() {

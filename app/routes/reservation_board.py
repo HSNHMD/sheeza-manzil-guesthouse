@@ -34,6 +34,7 @@ from ..services.board import (
     group_rooms,
     in_house_today,
     make_booking_bar,
+    make_segment_bar,
     normalize_density,
     normalize_grouping,
     normalize_view,
@@ -160,51 +161,96 @@ def index():
         ]
 
     # ── Convert to grid bars per room ──
+    # When a booking has been split mid-stay (stay_segments rows
+    # exist), render one bar per segment on each segment's room
+    # row. Single-room bookings (no segments) take the original
+    # one-bar path. Either way, drawer_data is keyed by booking_id
+    # so clicking any segment opens the same booking detail.
     import re as _re
     bars_by_room = {r.id: [] for r in rooms}
     drawer_data = {}     # booking_id → JSON-safe dict for the drawer JS
     rooms_by_id = {r.id: r for r in rooms}
     for b in bookings:
-        bar = make_booking_bar(b, start, end)
-        if bar is not None and b.room_id in bars_by_room:
-            bars_by_room[b.room_id].append(bar)
-            phone_digits = ''
-            if b.guest and b.guest.phone:
-                phone_digits = _re.sub(r'\D', '', b.guest.phone)
+        # Materialize segments once — cheap because the relationship
+        # is already eager-loaded by SQLAlchemy at this point in the
+        # request and most bookings have zero segments.
+        segments = list(b.stay_segments) if hasattr(b, 'stay_segments') else []
+
+        if segments:
+            placed = []
+            for idx, seg in enumerate(segments):
+                bar = make_segment_bar(
+                    seg, b, start, end,
+                    segment_index=idx,
+                    segment_total=len(segments),
+                )
+                if bar is None or seg.room_id not in bars_by_room:
+                    continue
+                bars_by_room[seg.room_id].append(bar)
+                placed.append((bar, seg))
+            if not placed:
+                continue
+            # Use the FIRST visible segment as the canonical bar for
+            # drawer-data shape compatibility (existing JS expects
+            # one entry per booking_id).
+            bar, _seg = placed[0]
             r_for_b = rooms_by_id.get(b.room_id)
-
-            # Invoice summary (None-safe — many test bookings have no invoice)
-            inv = getattr(b, 'invoice', None)
-            invoice_data = None
-            if inv is not None:
-                total = float(getattr(inv, 'total_amount', 0.0) or 0.0)
-                paid  = float(getattr(inv, 'amount_paid',   0.0) or 0.0)
-                invoice_data = {
-                    'total':     round(total, 2),
-                    'paid':      round(paid,  2),
-                    'balance':   round(total - paid, 2),
-                    'number':    getattr(inv, 'invoice_number', None) or '',
+            segments_summary = [
+                {
+                    'roomId':     seg.room_id,
+                    'roomNumber': (rooms_by_id[seg.room_id].number
+                                   if seg.room_id in rooms_by_id else ''),
+                    'startDate':  seg.start_date.isoformat(),
+                    'endDate':    seg.end_date.isoformat(),
+                    'nights':     seg.nights,
                 }
+                for seg in segments
+            ]
+        else:
+            bar = make_booking_bar(b, start, end)
+            if bar is None or b.room_id not in bars_by_room:
+                continue
+            bars_by_room[b.room_id].append(bar)
+            r_for_b = rooms_by_id.get(b.room_id)
+            segments_summary = []
 
-            drawer_data[b.id] = {
-                'id':            b.id,
-                'ref':           bar.booking_ref,
-                'guest':         bar.guest_name,
-                'guestId':       (b.guest.id if b.guest else None),
-                'phoneDigits':   phone_digits,
-                'guests':        bar.num_guests,
-                'nights':        bar.nights,
-                'checkIn':       bar.check_in.isoformat(),
-                'checkOut':      bar.check_out.isoformat(),
-                'room':          (r_for_b.number if r_for_b else ''),
-                'roomType':      (r_for_b.room_type if r_for_b else ''),
-                'floor':         (r_for_b.floor if r_for_b else None),
-                'totalAmount':   float(getattr(b, 'total_amount', 0.0) or 0.0),
-                'status':        bar.booking_status,
-                'paymentStatus': bar.payment_status,
-                'invoice':       invoice_data,
-                'activity':      [],   # populated below in a single batched query
+        phone_digits = ''
+        if b.guest and b.guest.phone:
+            phone_digits = _re.sub(r'\D', '', b.guest.phone)
+
+        # Invoice summary (None-safe — many test bookings have no invoice)
+        inv = getattr(b, 'invoice', None)
+        invoice_data = None
+        if inv is not None:
+            total = float(getattr(inv, 'total_amount', 0.0) or 0.0)
+            paid  = float(getattr(inv, 'amount_paid',   0.0) or 0.0)
+            invoice_data = {
+                'total':     round(total, 2),
+                'paid':      round(paid,  2),
+                'balance':   round(total - paid, 2),
+                'number':    getattr(inv, 'invoice_number', None) or '',
             }
+
+        drawer_data[b.id] = {
+            'id':            b.id,
+            'ref':           bar.booking_ref,
+            'guest':         bar.guest_name,
+            'guestId':       (b.guest.id if b.guest else None),
+            'phoneDigits':   phone_digits,
+            'guests':        bar.num_guests,
+            'nights':        (b.check_out_date - b.check_in_date).days,
+            'checkIn':       b.check_in_date.isoformat(),
+            'checkOut':      b.check_out_date.isoformat(),
+            'room':          (r_for_b.number if r_for_b else ''),
+            'roomType':      (r_for_b.room_type if r_for_b else ''),
+            'floor':         (r_for_b.floor if r_for_b else None),
+            'totalAmount':   float(getattr(b, 'total_amount', 0.0) or 0.0),
+            'status':        bar.booking_status,
+            'paymentStatus': bar.payment_status,
+            'invoice':       invoice_data,
+            'segments':      segments_summary,
+            'activity':      [],   # populated below in a single batched query
+        }
     for r in rooms:
         bars_by_room[r.id].sort(key=lambda x: x.grid_col_start)
 
