@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% import '_components.html' as ui %}
+{% block title %}Maintenance — {{ brand.short_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .mx-stack  { display: flex; flex-direction: column; gap: 16px; }
+  .mx-grid   {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  @media (max-width: 920px) { .mx-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .mx-grid { grid-template-columns: 1fr; } }
+
+  .mx-table-wrap {
+    background: #fff; border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg); box-shadow: var(--ds-shadow-1);
+    overflow: hidden;
+  }
+  .mx-table-wrap > table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .mx-table-wrap thead th {
+    text-align: left; padding: 9px 12px;
+    font-size: 11px; font-weight: 700; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    background: #fafbfc; border-bottom: 1px solid var(--ds-line);
+  }
+  .mx-table-wrap tbody td {
+    padding: 10px 12px; border-bottom: 1px solid var(--ds-line-soft);
+    color: var(--ds-ink-2);
+  }
+  .mx-table-wrap tbody tr:last-child td { border-bottom: 0; }
+  .mx-table-wrap tbody tr:hover { background: #fafbfc; cursor: pointer; }
+  .mx-table-wrap .empty {
+    padding: 28px 14px; text-align: center;
+    color: var(--ds-ink-4); font-size: 13px;
+  }
+
+  .mx-prio-low    { color: #475569; }
+  .mx-prio-medium { color: #1e40af; }
+  .mx-prio-high   { color: #92400e; }
+  .mx-prio-urgent { color: #991b1b; font-weight: 700; }
+
+  .mx-filterbar {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 12px;
+    background: var(--ds-bg-elev); border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg); box-shadow: var(--ds-shadow-1);
+  }
+  .mx-filterbar select, .mx-filterbar input[type=text] {
+    min-height: 34px; padding: 4px 8px; font-size: 13px;
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-md);
+    background: #fff;
+  }
+</style>
+
+{% call ui.page_header(
+    'Maintenance',
+    sub='Track room and property work orders. New issues default to priority Medium / status New. ' ~
+        'Severe issues can flip the room to out-of-order.',
+    eyebrow='Operations · Work orders'
+) %}
+  <button type="button" class="ds-btn ds-btn--primary"
+          onclick="document.getElementById('mx-create-modal').classList.add('is-open');">
+    + New work order
+  </button>
+{% endcall %}
+
+<div class="mx-stack">
+
+  <!-- KPI tiles -->
+  <div class="mx-grid">
+    {{ ui.kpi('Total',     summary.total) }}
+    {{ ui.kpi('Open',      summary.open,
+              tone=('warn' if summary.open > 0 else ''),
+              meta='not yet resolved') }}
+    {{ ui.kpi('Urgent',    summary.urgent,
+              tone=('bad' if summary.urgent > 0 else '')) }}
+    {{ ui.kpi('In progress', summary.in_progress, tone='info') }}
+    {{ ui.kpi('Waiting',   summary.waiting,
+              meta='for parts / vendor') }}
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="mx-filterbar">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ds-ink-2);">
+      <input type="checkbox" name="open" value="1" {% if open_only %}checked{% endif %}>
+      Open only
+    </label>
+    <select name="priority" onchange="this.form.submit();">
+      <option value="">All priorities</option>
+      {% for slug, label in priorities %}
+        <option value="{{ slug }}" {% if priority == slug %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="status" onchange="this.form.submit();">
+      <option value="">All statuses</option>
+      {% for slug, label in statuses %}
+        <option value="{{ slug }}" {% if status == slug %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="room_id" onchange="this.form.submit();">
+      <option value="">All rooms</option>
+      {% for r in rooms %}
+        <option value="{{ r.id }}" {% if room_id == r.id %}selected{% endif %}>#{{ r.number }}</option>
+      {% endfor %}
+    </select>
+    <select name="assigned_to" onchange="this.form.submit();">
+      <option value="">All assignees</option>
+      {% for u in users %}
+        <option value="{{ u.id }}" {% if assigned_to_user_id == u.id %}selected{% endif %}>{{ u.username }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="ds-btn ds-btn--sm">Filter</button>
+    <a href="{{ url_for('maintenance.index') }}" class="ds-btn ds-btn--sm ds-btn--ghost">Clear</a>
+  </form>
+
+  <!-- Table -->
+  <div class="mx-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Title</th>
+          <th>Room</th>
+          <th>Category</th>
+          <th>Priority</th>
+          <th>Status</th>
+          <th>Assigned</th>
+          <th>Due</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for wo in rows %}
+        <tr onclick="window.location='{{ url_for('maintenance.detail', wo_id=wo.id) }}'">
+          <td><strong>#{{ wo.id }}</strong></td>
+          <td>{{ wo.title }}</td>
+          <td>{% if wo.room %}<a href="{{ url_for('maintenance.detail', wo_id=wo.id) }}" onclick="event.stopPropagation()" style="color:var(--ds-accent-ink);text-decoration:none;">#{{ wo.room.number }}</a>{% else %}—{% endif %}</td>
+          <td>{{ wo.category_label }}</td>
+          <td><span class="mx-prio-{{ wo.priority }}">{{ wo.priority_label }}</span></td>
+          <td>
+            {% if wo.status == 'resolved' %}{{ ui.chip('resolved', tone='good') }}
+            {% elif wo.status == 'cancelled' %}{{ ui.chip('cancelled', tone='') }}
+            {% elif wo.status == 'in_progress' %}{{ ui.chip('in progress', tone='info') }}
+            {% elif wo.status == 'waiting' %}{{ ui.chip('waiting', tone='warn') }}
+            {% elif wo.status == 'assigned' %}{{ ui.chip('assigned', tone='info') }}
+            {% else %}{{ ui.chip(wo.status_label, tone='warn') }}
+            {% endif %}
+          </td>
+          <td>{% if wo.assigned_to %}{{ wo.assigned_to.username }}{% else %}—{% endif %}</td>
+          <td>{{ wo.due_date.isoformat() if wo.due_date else '—' }}</td>
+          <td>{{ wo.created_at.strftime('%Y-%m-%d %H:%M') if wo.created_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="empty">No work orders match the filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ── Create modal ─────────────────────────────────────────────── -->
+<div id="mx-create-modal" class="modal-overlay"
+     onclick="if (event.target === this) this.classList.remove('is-open');">
+  <div class="modal-panel" role="dialog">
+    <div class="modal-head">
+      <h3>New work order</h3>
+      <button type="button" class="modal-close"
+              onclick="document.getElementById('mx-create-modal').classList.remove('is-open');"
+              aria-label="Close">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="POST" action="{{ url_for('maintenance.create') }}">
+      <div class="modal-body">
+        <div class="modal-field">
+          <label for="mx-title">Title</label>
+          <input type="text" id="mx-title" name="title" required maxlength="160" autocomplete="off"
+                 placeholder="e.g. AC unit dripping in 305">
+        </div>
+        <div class="modal-field">
+          <label for="mx-desc">Description (optional)</label>
+          <textarea id="mx-desc" name="description" rows="3" maxlength="5000"
+                    placeholder="More detail, parts needed, vendor notes…"></textarea>
+        </div>
+        <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;">
+          <div class="modal-field">
+            <label for="mx-room">Room (optional)</label>
+            <select id="mx-room" name="room_id">
+              <option value="">— none —</option>
+              {% for r in rooms %}
+                <option value="{{ r.id }}">#{{ r.number }} · {{ r.room_type }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="modal-field">
+            <label for="mx-category">Category</label>
+            <select id="mx-category" name="category">
+              {% for slug, label in categories %}
+                <option value="{{ slug }}" {% if slug == 'general' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="modal-field">
+            <label for="mx-priority">Priority</label>
+            <select id="mx-priority" name="priority">
+              {% for slug, label in priorities %}
+                <option value="{{ slug }}" {% if slug == 'medium' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="modal-field">
+            <label for="mx-due">Due date (optional)</label>
+            <input type="date" id="mx-due" name="due_date">
+          </div>
+        </div>
+        <div class="modal-field">
+          <label for="mx-assignee">Assign to (optional)</label>
+          <select id="mx-assignee" name="assigned_to_user_id">
+            <option value="">— unassigned —</option>
+            {% for u in users %}
+              <option value="{{ u.id }}">{{ u.username }} ({{ u.role }})</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="modal-btn"
+                onclick="document.getElementById('mx-create-modal').classList.remove('is-open');">Cancel</button>
+        <button type="submit" class="modal-btn is-primary">Create work order</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

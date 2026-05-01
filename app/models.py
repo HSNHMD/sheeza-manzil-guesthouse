@@ -1825,3 +1825,126 @@ class StaySegment(db.Model):
         return (f'<StaySegment booking={self.booking_id} '
                 f'room={self.room_id} '
                 f'{self.start_date}→{self.end_date}>')
+
+
+# ── Maintenance / Work Orders V1 ────────────────────────────────────
+#
+# Tracks room/property issues from "reported" through "resolved" so
+# operational problems no longer live only in housekeeping notes or
+# memory. Integrates with the existing room state machinery:
+#   - Marking a work order severe enough flips
+#     Room.housekeeping_status='out_of_order' + Room.status='maintenance'
+#   - Operators can also create a date-ranged RoomBlock from the work
+#     order detail page (existing /board/rooms/<id>/blocks endpoint).
+#   - The Reservation Board's conflict-check service already considers
+#     RoomBlock + Room.housekeeping_status when validating moves, so
+#     OOO rooms are automatically protected from new bookings.
+#
+# Allowed values (mirrored as tuples on the class so the form handler,
+# tests, and template dropdowns share one source of truth):
+#   category : plumbing / electrical / hvac / cleaning / furniture /
+#              appliance / safety / general
+#   priority : low / medium / high / urgent
+#   status   : new / assigned / in_progress / waiting / resolved /
+#              cancelled
+class WorkOrder(db.Model):
+    __tablename__ = 'work_orders'
+
+    CATEGORIES = (
+        ('plumbing',   'Plumbing'),
+        ('electrical', 'Electrical'),
+        ('hvac',       'HVAC / climate'),
+        ('cleaning',   'Cleaning / linen'),
+        ('furniture',  'Furniture / fittings'),
+        ('appliance',  'Appliance / electronics'),
+        ('safety',     'Safety / security'),
+        ('general',    'General'),
+    )
+    PRIORITIES = (
+        ('low',     'Low'),
+        ('medium',  'Medium'),
+        ('high',    'High'),
+        ('urgent',  'Urgent'),
+    )
+    STATUSES = (
+        ('new',         'New'),
+        ('assigned',    'Assigned'),
+        ('in_progress', 'In progress'),
+        ('waiting',     'Waiting on parts / vendor'),
+        ('resolved',    'Resolved'),
+        ('cancelled',   'Cancelled'),
+    )
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    # Optional links — many work orders are room-scoped, some are
+    # property-wide, and a few are tied to a specific guest stay.
+    room_id     = db.Column(db.Integer,
+                            db.ForeignKey('rooms.id',
+                                          ondelete='SET NULL'),
+                            nullable=True, index=True)
+    booking_id  = db.Column(db.Integer,
+                            db.ForeignKey('bookings.id',
+                                          ondelete='SET NULL'),
+                            nullable=True, index=True)
+
+    title       = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+
+    # Whitelisted enums — see CATEGORIES / PRIORITIES / STATUSES above.
+    category    = db.Column(db.String(20), nullable=False, default='general')
+    priority    = db.Column(db.String(10), nullable=False, default='medium')
+    status      = db.Column(db.String(20), nullable=False, default='new',
+                            index=True)
+
+    assigned_to_user_id  = db.Column(db.Integer,
+                                     db.ForeignKey('users.id'),
+                                     nullable=True, index=True)
+    reported_by_user_id  = db.Column(db.Integer,
+                                     db.ForeignKey('users.id'),
+                                     nullable=True)
+
+    due_date          = db.Column(db.Date, nullable=True)
+    resolved_at       = db.Column(db.DateTime, nullable=True)
+    resolution_notes  = db.Column(db.String(1000), nullable=True)
+
+    metadata_json     = db.Column(db.Text, nullable=True)
+
+    # Relationships — read-only convenience; cascades stay null-safe.
+    room        = db.relationship('Room',     foreign_keys=[room_id])
+    booking     = db.relationship('Booking',  foreign_keys=[booking_id])
+    assigned_to = db.relationship('User',     foreign_keys=[assigned_to_user_id])
+    reported_by = db.relationship('User',     foreign_keys=[reported_by_user_id])
+
+    @property
+    def is_open(self) -> bool:
+        return self.status not in ('resolved', 'cancelled')
+
+    @property
+    def category_label(self) -> str:
+        for slug, label in self.CATEGORIES:
+            if slug == self.category:
+                return label
+        return self.category or '—'
+
+    @property
+    def priority_label(self) -> str:
+        for slug, label in self.PRIORITIES:
+            if slug == self.priority:
+                return label
+        return self.priority or '—'
+
+    @property
+    def status_label(self) -> str:
+        for slug, label in self.STATUSES:
+            if slug == self.status:
+                return label
+        return self.status or '—'
+
+    def __repr__(self):
+        return (f'<WorkOrder id={self.id} room_id={self.room_id} '
+                f'priority={self.priority!r} status={self.status!r}>')

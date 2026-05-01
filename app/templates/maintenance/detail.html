@@ -1,0 +1,297 @@
+{% extends 'base.html' %}
+{% import '_components.html' as ui %}
+{% block title %}Work order #{{ wo.id }} — {{ brand.short_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .mxd-stack { display: flex; flex-direction: column; gap: 16px; }
+  .mxd-grid  {
+    display: grid; gap: 16px;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  @media (max-width: 920px) { .mxd-grid { grid-template-columns: 1fr; } }
+
+  .mxd-card {
+    background: #fff; border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg); box-shadow: var(--ds-shadow-1);
+    padding: 16px;
+  }
+  .mxd-card h3 {
+    font-size: 12px; font-weight: 700; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 0 0 10px 0;
+  }
+
+  .mxd-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+  .mxd-meta .k {
+    font-size: 11px; font-weight: 600; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .mxd-meta .v { font-size: 13px; color: var(--ds-ink-1); }
+
+  .mxd-desc {
+    background: #fafbfc; border: 1px dashed var(--ds-line);
+    border-radius: var(--ds-r-md); padding: 10px 12px;
+    font-size: 13px; line-height: 1.55; color: var(--ds-ink-2);
+    white-space: pre-wrap;
+  }
+
+  .mxd-form { display: flex; flex-direction: column; gap: 8px; }
+  .mxd-form label {
+    font-size: 11px; font-weight: 700; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .mxd-form select,
+  .mxd-form textarea,
+  .mxd-form input[type=text] {
+    width: 100%; min-height: 34px; padding: 6px 8px; font-size: 13px;
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-md);
+    background: #fff;
+  }
+  .mxd-form textarea { min-height: 64px; resize: vertical; }
+  .mxd-actions {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding-top: 4px;
+  }
+
+  .mxd-prio-low    { color: #475569; }
+  .mxd-prio-medium { color: #1e40af; }
+  .mxd-prio-high   { color: #92400e; font-weight: 700; }
+  .mxd-prio-urgent { color: #991b1b; font-weight: 800; }
+
+  .mxd-timeline {
+    display: flex; flex-direction: column; gap: 10px;
+    max-height: 380px; overflow-y: auto;
+  }
+  .mxd-timeline li {
+    list-style: none; padding: 8px 10px;
+    background: #fafbfc; border-left: 3px solid var(--ds-accent);
+    border-radius: 0 var(--ds-r-md) var(--ds-r-md) 0;
+  }
+  .mxd-timeline .t {
+    font-size: 11px; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .mxd-timeline .d { font-size: 13px; color: var(--ds-ink-1); margin-top: 2px; }
+
+  .mxd-banner {
+    padding: 8px 12px; border-radius: var(--ds-r-md);
+    font-size: 12px; font-weight: 600;
+  }
+  .mxd-banner--terminal {
+    background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;
+  }
+  .mxd-banner--cancelled {
+    background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;
+  }
+</style>
+
+{% set is_terminal = wo.status in ('resolved', 'cancelled') %}
+
+{% call ui.page_header(
+    'Work order #' ~ wo.id,
+    sub=wo.title,
+    eyebrow='Operations · Maintenance'
+) %}
+  <a href="{{ url_for('maintenance.index') }}" class="ds-btn ds-btn--ghost ds-btn--sm">
+    ← Back to list
+  </a>
+{% endcall %}
+
+<div class="mxd-stack">
+
+  {% if wo.status == 'resolved' %}
+    <div class="mxd-banner mxd-banner--terminal">
+      ✓ Resolved on {{ wo.resolved_at.strftime('%Y-%m-%d %H:%M') if wo.resolved_at else '—' }}.
+      {% if wo.resolution_notes %}— {{ wo.resolution_notes }}{% endif %}
+    </div>
+  {% elif wo.status == 'cancelled' %}
+    <div class="mxd-banner mxd-banner--cancelled">
+      Cancelled on {{ wo.resolved_at.strftime('%Y-%m-%d %H:%M') if wo.resolved_at else '—' }}.
+      {% if wo.resolution_notes %}— {{ wo.resolution_notes }}{% endif %}
+    </div>
+  {% endif %}
+
+  <div class="mxd-grid">
+
+    <!-- LEFT: summary + description + activity -->
+    <div class="mxd-stack">
+
+      <!-- Summary -->
+      <div class="mxd-card">
+        <h3>Summary</h3>
+        <div class="mxd-meta">
+          <div>
+            <div class="k">Status</div>
+            <div class="v">
+              {% if wo.status == 'resolved' %}{{ ui.chip('resolved', tone='good') }}
+              {% elif wo.status == 'cancelled' %}{{ ui.chip('cancelled', tone='') }}
+              {% elif wo.status == 'in_progress' %}{{ ui.chip('in progress', tone='info') }}
+              {% elif wo.status == 'waiting' %}{{ ui.chip('waiting', tone='warn') }}
+              {% elif wo.status == 'assigned' %}{{ ui.chip('assigned', tone='info') }}
+              {% else %}{{ ui.chip(wo.status_label, tone='warn') }}
+              {% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="k">Priority</div>
+            <div class="v"><span class="mxd-prio-{{ wo.priority }}">{{ wo.priority_label }}</span></div>
+          </div>
+          <div>
+            <div class="k">Category</div>
+            <div class="v">{{ wo.category_label }}</div>
+          </div>
+          <div>
+            <div class="k">Room</div>
+            <div class="v">
+              {% if wo.room %}#{{ wo.room.number }} · {{ wo.room.room_type }}{% else %}—{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="k">Assigned to</div>
+            <div class="v">
+              {% if wo.assigned_to %}{{ wo.assigned_to.username }} ({{ wo.assigned_to.role }}){% else %}— unassigned —{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="k">Reported by</div>
+            <div class="v">
+              {% if wo.reported_by %}{{ wo.reported_by.username }}{% else %}—{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="k">Due date</div>
+            <div class="v">{{ wo.due_date.isoformat() if wo.due_date else '—' }}</div>
+          </div>
+          <div>
+            <div class="k">Created</div>
+            <div class="v">{{ wo.created_at.strftime('%Y-%m-%d %H:%M') if wo.created_at else '—' }}</div>
+          </div>
+          {% if wo.booking %}
+          <div style="grid-column: 1 / -1;">
+            <div class="k">Booking</div>
+            <div class="v">
+              <a href="{{ url_for('bookings.detail', booking_id=wo.booking.id) }}"
+                 style="color:var(--ds-accent-ink);text-decoration:none;">
+                {{ wo.booking.booking_ref or ('#' ~ wo.booking.id) }}
+              </a>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Description -->
+      {% if wo.description %}
+      <div class="mxd-card">
+        <h3>Description</h3>
+        <div class="mxd-desc">{{ wo.description }}</div>
+      </div>
+      {% endif %}
+
+      <!-- Activity timeline -->
+      <div class="mxd-card">
+        <h3>Activity</h3>
+        {% if activity %}
+        <ul class="mxd-timeline">
+          {% for a in activity %}
+          <li>
+            <div class="t">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }} · {{ a.action }}</div>
+            <div class="d">{{ a.description }}</div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+          {{ ui.empty_state('No activity yet',
+                            message='Lifecycle changes will appear here.') }}
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- RIGHT: action panels -->
+    <div class="mxd-stack">
+
+      {% if not is_terminal %}
+      <!-- Assign / reassign -->
+      <div class="mxd-card">
+        <h3>Assignment</h3>
+        <form method="POST" action="{{ url_for('maintenance.assign', wo_id=wo.id) }}" class="mxd-form">
+          <label for="mxd-assignee">Assign to</label>
+          <select id="mxd-assignee" name="assigned_to_user_id">
+            <option value="">— unassigned —</option>
+            {% for u in users %}
+              <option value="{{ u.id }}" {% if wo.assigned_to_user_id == u.id %}selected{% endif %}>
+                {{ u.username }} ({{ u.role }})
+              </option>
+            {% endfor %}
+          </select>
+          <div class="mxd-actions">
+            <button type="submit" class="ds-btn ds-btn--sm ds-btn--primary">Update assignment</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Update status -->
+      <div class="mxd-card">
+        <h3>Change status</h3>
+        <form method="POST" action="{{ url_for('maintenance.update_status', wo_id=wo.id) }}" class="mxd-form">
+          <label for="mxd-status">New status</label>
+          <select id="mxd-status" name="status">
+            {% for slug, label in statuses %}
+              {% if slug != wo.status %}
+                <option value="{{ slug }}">{{ label }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <label for="mxd-notes">Notes (used when resolving / cancelling)</label>
+          <textarea id="mxd-notes" name="resolution_notes" maxlength="1000"
+                    placeholder="What was done, parts used, vendor, etc."></textarea>
+          <div class="mxd-actions">
+            <button type="submit" class="ds-btn ds-btn--sm ds-btn--primary">Apply status</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Mark room out-of-order -->
+      {% if wo.room %}
+      <div class="mxd-card">
+        <h3>Room availability</h3>
+        <p style="font-size:12px;color:var(--ds-ink-3);margin:0 0 8px 0;">
+          Flip room <strong>#{{ wo.room.number }}</strong> to out-of-order.
+          The Reservation Board will block new assignments until housekeeping
+          marks it clean again.
+        </p>
+        <p style="font-size:12px;color:var(--ds-ink-3);margin:0 0 8px 0;">
+          Current: status <strong>{{ wo.room.status }}</strong> ·
+          housekeeping <strong>{{ wo.room.housekeeping_status or 'clean' }}</strong>
+        </p>
+        <form method="POST" action="{{ url_for('maintenance.mark_room_ooo', wo_id=wo.id) }}" class="mxd-form">
+          <div class="mxd-actions">
+            <button type="submit" class="ds-btn ds-btn--sm"
+                    onclick="return confirm('Mark room #{{ wo.room.number }} as out-of-order?');">
+              Mark room out-of-order
+            </button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% else %}
+      <div class="mxd-card">
+        <h3>Lifecycle</h3>
+        <p style="font-size:13px;color:var(--ds-ink-2);margin:0;">
+          This work order is <strong>{{ wo.status_label }}</strong> and is closed.
+          Open a new work order if a related issue resurfaces.
+        </p>
+        <div class="mxd-actions" style="margin-top:10px;">
+          <a href="{{ url_for('maintenance.index') }}" class="ds-btn ds-btn--sm">Back to list</a>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

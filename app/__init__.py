@@ -60,6 +60,7 @@ def create_app(config_class=Config):
     from .routes.channels import channels_bp
     from .routes.dashboard import dashboard_bp
     from .routes.diag import diag_bp
+    from .routes.maintenance import maintenance_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -89,6 +90,7 @@ def create_app(config_class=Config):
     app.register_blueprint(channels_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(diag_bp)
+    app.register_blueprint(maintenance_bp)
 
     # Register the business-date context processor so every template
     # can read {{ business_date }} without explicit passthrough.
