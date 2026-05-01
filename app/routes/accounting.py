@@ -306,6 +306,26 @@ def reconciliation():
     )
 
 
+@accounting_bp.route('/reconciliation/payments', methods=['GET'])
+@login_required
+@admin_required
+def payments_reconciliation():
+    """Cashiering reconciliation V1.
+
+    Sibling page to /accounting/reconciliation/ (the bank-CSV
+    importer). This view is the PAYMENT-SIDE reconciliation:
+    posted CashierTransactions, outstanding folios, payments
+    missing reference numbers, and the void audit trail. The
+    bank-statement page stays as-is and is cross-linked from here.
+    """
+    from ..services.cashiering import reconciliation_summary
+    summary = reconciliation_summary(lookback_days=30)
+    return render_template(
+        'accounting/payments_reconciliation.html',
+        s=summary,
+    )
+
+
 @accounting_bp.route('/reconciliation/upload', methods=['POST'])
 @login_required
 @admin_required

@@ -1,0 +1,274 @@
+{% extends 'base.html' %}
+{% import '_components.html' as ui %}
+{% block title %}Payment Reconciliation — {{ brand.short_name }}{% endblock %}
+
+{% block content %}
+<style>
+  /* Local polish — keeps the table dense and readable. The design-
+     system.css cards/chips do most of the heavy lifting. */
+  .pr-stack { display: flex; flex-direction: column; gap: 16px; }
+  .pr-grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  @media (max-width: 920px) { .pr-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .pr-grid { grid-template-columns: 1fr; } }
+
+  .pr-section { display: flex; flex-direction: column; gap: 8px; }
+  .pr-table-wrap {
+    background: #fff; border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    box-shadow: var(--ds-shadow-1);
+    overflow: hidden;
+  }
+  .pr-table-wrap > table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pr-table-wrap thead th {
+    text-align: left; padding: 8px 12px;
+    font-size: 11px; font-weight: 700; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    background: #fafbfc; border-bottom: 1px solid var(--ds-line);
+  }
+  .pr-table-wrap tbody td {
+    padding: 9px 12px; border-bottom: 1px solid var(--ds-line-soft);
+    color: var(--ds-ink-2);
+  }
+  .pr-table-wrap tbody tr:last-child td { border-bottom: 0; }
+  .pr-table-wrap tbody tr:hover { background: #fafbfc; }
+  .pr-table-wrap .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pr-table-wrap .ref { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ds-accent-ink); }
+  .pr-table-wrap .empty {
+    padding: 22px 14px; text-align: center; color: var(--ds-ink-4); font-size: 13px;
+  }
+
+  .pr-help {
+    background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; color: #115e59; line-height: 1.55;
+  }
+  .pr-help strong { color: #0f766e; }
+
+  .pr-cross {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: 8px;
+    padding: 4px 9px; border-radius: 999px;
+    background: var(--ds-warn-soft); color: #854d0e;
+    font-size: 11px; font-weight: 700; text-decoration: none;
+  }
+  .pr-cross:hover { filter: brightness(.95); }
+</style>
+
+{{ ui.page_header(
+    'Payment Reconciliation',
+    sub='Posted payments, outstanding folios, and payments that need a reference. ' ~
+        'Last ' ~ s.lookback_days ~ ' days. Money received — NOT revenue.',
+    eyebrow='Accounting · Cashiering'
+) }}
+
+<div class="pr-stack">
+
+  <!-- ── KPI tiles ──────────────────────────────────────────── -->
+  <div class="pr-grid">
+    {{ ui.kpi('Payments posted', s.posted_count,
+              meta='last ' ~ s.lookback_days ~ ' days',
+              tone='info') }}
+    {{ ui.kpi('Net received',
+              'MVR ' ~ '%.2f'|format(s.posted_net_received),
+              meta=('refunded ' ~ ('%.2f'|format(s.posted_total_refunded))
+                    if s.posted_total_refunded else 'no refunds'),
+              tone='good') }}
+    {{ ui.kpi('Outstanding balance',
+              'MVR ' ~ '%.2f'|format(s.open_invoice_balance),
+              tone=('warn' if s.open_invoice_count > 0 else ''),
+              meta=s.open_invoice_count ~ ' invoice' ~ ('' if s.open_invoice_count == 1 else 's'),
+              href=url_for('accounting.payments_reconciliation') ~ '#open-invoices') }}
+    {{ ui.kpi('Missing reference',
+              s.missing_ref_count,
+              tone=('bad' if s.missing_ref_count > 0 else ''),
+              meta='card / bank-transfer / online',
+              href=url_for('accounting.payments_reconciliation') ~ '#missing-ref') }}
+  </div>
+
+  <p class="pr-help">
+    <strong>Payments are not revenue.</strong> The numbers above are
+    <em>money received</em> across <code>cashier_transactions</code> rows,
+    not P&amp;L revenue. For revenue see
+    <a href="{{ url_for('reports.revenue') }}" class="text-blue-700 underline">Reports → Revenue</a>.
+    The bank-statement importer (CSV reconciliation) is a separate
+    page:
+    <a href="{{ url_for('accounting.reconciliation') }}" class="text-blue-700 underline">Bank reconciliation</a>{% if s.bank_unmatched_count > 0 %}<a class="pr-cross" href="{{ url_for('accounting.reconciliation') }}">{{ s.bank_unmatched_count }} unmatched bank rows</a>{% endif %}.
+  </p>
+
+  <!-- ── Posted payments (last N days) ─────────────────────── -->
+  <section class="pr-section" id="posted-payments">
+    {{ ui.section_heading('Posted payments — last ' ~ s.lookback_days ~ ' days') }}
+    <div class="pr-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Booking</th>
+            <th>Method</th>
+            <th>Reference</th>
+            <th>Cashier</th>
+            <th>Type</th>
+            <th class="num">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in s.posted_payments %}
+          <tr>
+            <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
+            <td>
+              {% if t.booking %}
+                <a class="ref" href="{{ url_for('bookings.detail', booking_id=t.booking.id) }}">
+                  {{ t.booking.booking_ref }}
+                </a>
+                {% if t.booking.guest %}
+                  <span style="color:var(--ds-ink-3); font-size:11.5px;">·
+                    {{ t.booking.guest.full_name }}</span>
+                {% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ t.payment_method.replace('_', ' ').title() }}</td>
+            <td class="ref">{{ t.reference_number or '—' }}</td>
+            <td>{% if t.received_by_user_id %}user #{{ t.received_by_user_id }}{% else %}—{% endif %}</td>
+            <td>
+              {% if t.transaction_type == 'refund' %}
+                {{ ui.chip('refund', tone='warn') }}
+              {% else %}
+                {{ ui.chip('payment', tone='good') }}
+              {% endif %}
+            </td>
+            <td class="num">
+              {% if t.transaction_type == 'refund' %}−{% endif %}{{ t.currency }} {{ '%.2f'|format(t.amount) }}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="empty">No payments posted in the last {{ s.lookback_days }} days.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Open invoices ─────────────────────────────────────── -->
+  <section class="pr-section" id="open-invoices">
+    {{ ui.section_heading('Outstanding folios · ' ~ s.open_invoice_count ~ ' invoice' ~ ('' if s.open_invoice_count == 1 else 's')) }}
+    <div class="pr-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice</th>
+            <th>Booking</th>
+            <th>Issue date</th>
+            <th>Status</th>
+            <th class="num">Total</th>
+            <th class="num">Paid</th>
+            <th class="num">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in s.open_invoices %}
+          {% set inv = row.invoice %}
+          {% set b   = row.booking %}
+          <tr>
+            <td>
+              <a class="ref" href="{{ url_for('invoices.detail', invoice_id=inv.id) }}">
+                {{ inv.invoice_number }}
+              </a>
+            </td>
+            <td>
+              {% if b %}
+                <a class="ref" href="{{ url_for('bookings.detail', booking_id=b.id) }}">{{ b.booking_ref }}</a>
+                {% if b.guest %}<span style="color:var(--ds-ink-3); font-size:11.5px;">· {{ b.guest.full_name }}</span>{% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ inv.issue_date.isoformat() if inv.issue_date else '—' }}</td>
+            <td>
+              {% if inv.payment_status == 'partial' %}
+                {{ ui.chip('partial', tone='warn') }}
+              {% elif inv.payment_status == 'unpaid' %}
+                {{ ui.chip('unpaid', tone='bad') }}
+              {% else %}
+                {{ ui.chip(inv.payment_status, tone='') }}
+              {% endif %}
+            </td>
+            <td class="num">{{ '%.2f'|format(inv.total_amount or 0) }}</td>
+            <td class="num">{{ '%.2f'|format(inv.amount_paid or 0) }}</td>
+            <td class="num"><strong>{{ '%.2f'|format(row.balance) }}</strong></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="empty">All invoices are settled.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Missing reference ─────────────────────────────────── -->
+  <section class="pr-section" id="missing-ref">
+    {{ ui.section_heading('Payments missing reference number · ' ~ s.missing_ref_count) }}
+    <div class="pr-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Booking</th>
+            <th>Method</th>
+            <th class="num">Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in s.missing_reference %}
+          <tr>
+            <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '—' }}</td>
+            <td>
+              {% if t.booking %}<a class="ref" href="{{ url_for('bookings.detail', booking_id=t.booking.id) }}">{{ t.booking.booking_ref }}</a>{% else %}—{% endif %}
+            </td>
+            <td>{{ t.payment_method.replace('_', ' ').title() }}</td>
+            <td class="num">{{ t.currency }} {{ '%.2f'|format(t.amount) }}</td>
+            <td>{{ ui.chip('no reference', tone='bad') }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No card / bank-transfer / online payments are missing a reference.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Voided audit trail ────────────────────────────────── -->
+  <section class="pr-section" id="voided">
+    {{ ui.section_heading('Voided payments · audit trail (' ~ s.voided_count ~ ')') }}
+    <div class="pr-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Voided at</th>
+            <th>Booking</th>
+            <th>Method</th>
+            <th class="num">Amount</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in s.voided_payments %}
+          <tr>
+            <td>{{ (t.voided_at or t.created_at).strftime('%Y-%m-%d %H:%M') if (t.voided_at or t.created_at) else '—' }}</td>
+            <td>
+              {% if t.booking %}<a class="ref" href="{{ url_for('bookings.detail', booking_id=t.booking.id) }}">{{ t.booking.booking_ref }}</a>{% else %}—{% endif %}
+            </td>
+            <td>{{ t.payment_method.replace('_', ' ').title() }}</td>
+            <td class="num">{{ t.currency }} {{ '%.2f'|format(t.amount) }}</td>
+            <td>{{ (t.void_reason or '—')[:80] }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No voided payments. Audit trail clean.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

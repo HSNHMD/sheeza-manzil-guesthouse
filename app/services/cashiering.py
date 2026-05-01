@@ -170,5 +170,122 @@ def cashier_summary_for(booking) -> dict:
     }
 
 
+def reconciliation_summary(*, lookback_days: int = 30,
+                           posted_limit: int = 200,
+                           voided_limit: int = 50) -> dict:
+    """Portfolio-level cashiering reconciliation snapshot.
+
+    Returns a dict the /accounting/reconciliation/payments view
+    renders directly. Built to answer four operator questions:
+
+      1. What payments were posted recently? Are they linked to the
+         right folio?
+      2. Which folios still have a balance after their payments?
+      3. Which payments lack a reference number we can chase to a
+         bank statement?
+      4. Which payments were voided (audit trail)?
+
+    NEVER counts payments as revenue — the totals are sums of MONEY
+    RECEIVED, not earned. Revenue belongs in services/reports.py.
+
+    Pure function with respect to Flask context — needs db.session
+    but not request/url_for.
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import or_
+    from ..models import CashierTransaction, Invoice, BankTransaction
+
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+
+    # ── Posted payments (lookback window) ───────────────────────
+    posted = (
+        CashierTransaction.query
+        .filter(CashierTransaction.status == 'posted',
+                CashierTransaction.created_at >= cutoff)
+        .order_by(CashierTransaction.created_at.desc())
+        .limit(posted_limit)
+        .all()
+    )
+
+    # ── Voided payments (audit trail) ───────────────────────────
+    voided = (
+        CashierTransaction.query
+        .filter(CashierTransaction.status == 'voided')
+        .order_by(CashierTransaction.created_at.desc())
+        .limit(voided_limit)
+        .all()
+    )
+
+    # ── Missing reference (bank-transfer / online with no ref) ──
+    # These are the high-risk rows: a card terminal slip number or a
+    # bank-transfer ref is the only way to chase the money to a real
+    # statement line. Cash payments don't need refs.
+    missing_ref = (
+        CashierTransaction.query
+        .filter(CashierTransaction.status == 'posted',
+                CashierTransaction.payment_method.in_(
+                    ('bank_transfer', 'online', 'card')
+                ),
+                or_(CashierTransaction.reference_number.is_(None),
+                    CashierTransaction.reference_number == ''))
+        .order_by(CashierTransaction.created_at.desc())
+        .limit(posted_limit)
+        .all()
+    )
+
+    # ── Outstanding invoices (balance still due) ────────────────
+    open_invoices = []
+    for inv in (Invoice.query
+                .filter(Invoice.payment_status != 'paid')
+                .order_by(Invoice.issue_date.desc())
+                .limit(posted_limit)
+                .all()):
+        balance = round(float(inv.total_amount or 0)
+                        - float(inv.amount_paid or 0), 2)
+        if balance <= 0.005:
+            continue  # rounding noise — don't surface
+        open_invoices.append({
+            'invoice':  inv,
+            'balance':  balance,
+            'booking':  inv.booking if hasattr(inv, 'booking') else None,
+        })
+
+    # ── Bank-statement unmatched rows (cross-link to existing page) ─
+    bank_unmatched_count = (
+        BankTransaction.query
+        .filter(BankTransaction.match_type == 'unmatched')
+        .count()
+    )
+
+    # ── Totals (money received, NOT revenue) ────────────────────
+    posted_total = sum(t.amount for t in posted
+                       if t.transaction_type == 'payment')
+    refunded_total = sum(t.amount for t in posted
+                         if t.transaction_type == 'refund')
+
+    return {
+        'lookback_days':         lookback_days,
+        'cutoff':                cutoff,
+        # Lists for table rendering
+        'posted_payments':       posted,
+        'voided_payments':       voided,
+        'missing_reference':     missing_ref,
+        'open_invoices':         open_invoices,
+        # Totals — money RECEIVED not revenue
+        'posted_count':          len(posted),
+        'posted_total_received': round(posted_total, 2),
+        'posted_total_refunded': round(refunded_total, 2),
+        'posted_net_received':   round(posted_total - refunded_total, 2),
+        'voided_count':          len(voided),
+        'missing_ref_count':     len(missing_ref),
+        'open_invoice_count':    len(open_invoices),
+        'open_invoice_balance':  round(
+            sum(r['balance'] for r in open_invoices), 2
+        ),
+        # Cross-link badge to the bank-CSV page
+        'bank_unmatched_count':  bank_unmatched_count,
+    }
+
+
 def transaction_label(method: str) -> str:
     return PAYMENT_METHOD_LABELS.get(method, method or 'Other')
