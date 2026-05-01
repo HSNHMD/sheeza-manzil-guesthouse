@@ -364,3 +364,57 @@ def sync_test(conn_id):
             f'no external request was made.',
             'success')
     return redirect(url_for('channels.detail', conn_id=conn_id))
+
+
+# ── Sandbox reservation import (staging-safe) ───────────────────────
+
+@channels_bp.route('/<int:conn_id>/sandbox-import', methods=['POST'])
+@login_required
+@admin_required
+def sandbox_import(conn_id):
+    """Staging-only inbound reservation simulation.
+
+    Drives services.channel_import.import_reservation() with a payload
+    constructed from form fields. NEVER calls an external API — the
+    payload is built locally so the operator can exercise the full
+    pipeline (validation → mapping → availability → exception queue
+    or booking creation) without an OTA round-trip.
+    """
+    from ..services.channel_import import import_reservation
+
+    conn = ChannelConnection.query.get_or_404(conn_id)
+    payload = {
+        'external_reservation_ref': (request.form.get(
+            'external_reservation_ref') or '').strip(),
+        'external_room_id':         (request.form.get(
+            'external_room_id') or '').strip(),
+        'external_rate_plan_id':    (request.form.get(
+            'external_rate_plan_id') or '').strip() or None,
+        'check_in':                 (request.form.get('check_in') or '').strip(),
+        'check_out':                (request.form.get('check_out') or '').strip(),
+        'num_guests':               request.form.get('num_guests') or 1,
+        'guest_first_name':         (request.form.get(
+            'guest_first_name') or '').strip(),
+        'guest_last_name':          (request.form.get(
+            'guest_last_name') or '').strip(),
+        'guest_email':              (request.form.get('guest_email')
+                                     or '').strip() or None,
+        'guest_phone':              (request.form.get('guest_phone')
+                                     or '').strip() or None,
+        'total_amount':             request.form.get('total_amount') or None,
+    }
+    result = import_reservation(connection=conn, payload=payload,
+                                actor_user_id=current_user.id)
+    if result.action == 'imported':
+        flash(f'✓ {result.message}', 'success')
+        return redirect(url_for(
+            'bookings.detail', booking_id=result.booking.id))
+    if result.action == 'duplicate_skipped':
+        flash(f'↻ {result.message}', 'info')
+        return redirect(url_for('channels.detail', conn_id=conn.id))
+    if result.action == 'queued':
+        flash(f'⚠ {result.message}', 'warning')
+        return redirect(url_for(
+            'channel_exceptions.detail', exc_id=result.exception.id))
+    flash(result.message, 'error')
+    return redirect(url_for('channels.detail', conn_id=conn.id))

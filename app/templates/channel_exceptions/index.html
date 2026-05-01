@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% import '_components.html' as ui %}
+{% block title %}Channel exceptions — {{ brand.short_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .ce-stack { display: flex; flex-direction: column; gap: 16px; }
+  .ce-grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  @media (max-width: 920px) { .ce-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .ce-grid { grid-template-columns: 1fr; } }
+
+  .ce-table-wrap {
+    background: #fff; border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg); box-shadow: var(--ds-shadow-1);
+    overflow: hidden;
+  }
+  .ce-table-wrap > table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ce-table-wrap thead th {
+    text-align: left; padding: 9px 12px;
+    font-size: 11px; font-weight: 700; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    background: #fafbfc; border-bottom: 1px solid var(--ds-line);
+  }
+  .ce-table-wrap tbody td {
+    padding: 10px 12px; border-bottom: 1px solid var(--ds-line-soft);
+    color: var(--ds-ink-2);
+  }
+  .ce-table-wrap tbody tr:last-child td { border-bottom: 0; }
+  .ce-table-wrap tbody tr:hover { background: #fafbfc; cursor: pointer; }
+  .ce-table-wrap .empty {
+    padding: 28px 14px; text-align: center;
+    color: var(--ds-ink-4); font-size: 13px;
+  }
+
+  .ce-issue-conflict        { color: #991b1b; font-weight: 700; }
+  .ce-issue-mapping_missing { color: #92400e; }
+  .ce-issue-invalid_payload { color: #1e40af; }
+  .ce-issue-parse_error     { color: #475569; }
+
+  .ce-filterbar {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 12px;
+    background: var(--ds-bg-elev); border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg); box-shadow: var(--ds-shadow-1);
+  }
+  .ce-filterbar select, .ce-filterbar input[type=text] {
+    min-height: 34px; padding: 4px 8px; font-size: 13px;
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-md);
+    background: #fff;
+  }
+</style>
+
+{% call ui.page_header(
+    'Channel import exceptions',
+    sub='Inbound OTA reservations that need a human decision (duplicate, ' ~
+        'conflict, missing mapping, invalid payload). New issues default to ' ~
+        '“new”; resolve by creating/locating a manual booking, or ignore.',
+    eyebrow='Operations · OTA review queue'
+) %}
+  <a href="{{ url_for('channels.index') }}" class="ds-btn ds-btn--ghost ds-btn--sm">
+    Channel manager →
+  </a>
+{% endcall %}
+
+<div class="ce-stack">
+
+  <!-- KPI tiles -->
+  <div class="ce-grid">
+    {{ ui.kpi('Total',     summary.total) }}
+    {{ ui.kpi('Open',      summary.open,
+              tone=('warn' if summary.open > 0 else ''),
+              meta='need review') }}
+    {{ ui.kpi('New',       summary.new, tone=('warn' if summary.new > 0 else '')) }}
+    {{ ui.kpi('Reviewed',  summary.reviewed, tone='info',
+              meta='triaged, not resolved') }}
+    {{ ui.kpi('Conflicts', summary.conflict,
+              tone=('bad' if summary.conflict > 0 else '')) }}
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="ce-filterbar">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ds-ink-2);">
+      <input type="checkbox" name="open" value="1" {% if open_only %}checked{% endif %}>
+      Open only
+    </label>
+    <select name="status" onchange="this.form.submit();">
+      <option value="">All statuses</option>
+      {% for slug, label in statuses %}
+        <option value="{{ slug }}" {% if status == slug %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="issue_type" onchange="this.form.submit();">
+      <option value="">All issue types</option>
+      {% for slug, label in issue_types %}
+        <option value="{{ slug }}" {% if issue_type == slug %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="connection_id" onchange="this.form.submit();">
+      <option value="">All channels</option>
+      {% for c in connections %}
+        <option value="{{ c.id }}" {% if connection_id == c.id %}selected{% endif %}>
+          {{ c.channel_name }}{% if c.account_label %} · {{ c.account_label }}{% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="ds-btn ds-btn--sm">Filter</button>
+    <a href="{{ url_for('channel_exceptions.index') }}" class="ds-btn ds-btn--sm ds-btn--ghost">Clear</a>
+  </form>
+
+  <!-- Table -->
+  <div class="ce-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Channel</th>
+          <th>External ref</th>
+          <th>Issue</th>
+          <th>Status</th>
+          <th>Linked booking</th>
+          <th>Received</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in rows %}
+        <tr onclick="window.location='{{ url_for('channel_exceptions.detail', exc_id=e.id) }}'">
+          <td><strong>#{{ e.id }}</strong></td>
+          <td>{{ e.external_source }}</td>
+          <td><code style="font-size:12px;">{{ e.external_reservation_ref }}</code></td>
+          <td><span class="ce-issue-{{ e.issue_type }}">{{ e.issue_label }}</span></td>
+          <td>
+            {% if e.status == 'resolved' %}{{ ui.chip('resolved', tone='good') }}
+            {% elif e.status == 'ignored' %}{{ ui.chip('ignored', tone='') }}
+            {% elif e.status == 'reviewed' %}{{ ui.chip('reviewed', tone='info') }}
+            {% else %}{{ ui.chip('new', tone='warn') }}
+            {% endif %}
+          </td>
+          <td>
+            {% if e.linked_booking %}
+              <a href="{{ url_for('bookings.detail', booking_id=e.linked_booking.id) }}"
+                 onclick="event.stopPropagation()"
+                 style="color:var(--ds-accent-ink);text-decoration:none;">
+                {{ e.linked_booking.booking_ref }}
+              </a>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M') if e.created_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">
+          No exceptions in the queue. Successful imports go straight
+          to bookings — exceptions land here only when a human needs
+          to decide.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

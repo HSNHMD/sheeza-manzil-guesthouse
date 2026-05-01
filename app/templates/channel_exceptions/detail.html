@@ -1,0 +1,297 @@
+{% extends 'base.html' %}
+{% import '_components.html' as ui %}
+{% block title %}Exception #{{ exc.id }} — {{ brand.short_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .ced-stack { display: flex; flex-direction: column; gap: 16px; }
+  .ced-grid {
+    display: grid; gap: 16px;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  @media (max-width: 920px) { .ced-grid { grid-template-columns: 1fr; } }
+
+  .ced-card {
+    background: #fff; border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg); box-shadow: var(--ds-shadow-1);
+    padding: 16px;
+  }
+  .ced-card h3 {
+    font-size: 12px; font-weight: 700; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 0 0 10px 0;
+  }
+  .ced-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+  .ced-meta .k {
+    font-size: 11px; font-weight: 600; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .ced-meta .v { font-size: 13px; color: var(--ds-ink-1); }
+
+  .ced-payload {
+    background: #fafbfc; border: 1px dashed var(--ds-line);
+    border-radius: var(--ds-r-md); padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.55; color: var(--ds-ink-2);
+    white-space: pre-wrap; word-break: break-all;
+  }
+
+  .ced-form { display: flex; flex-direction: column; gap: 8px; }
+  .ced-form label {
+    font-size: 11px; font-weight: 700; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .ced-form select,
+  .ced-form textarea,
+  .ced-form input[type=text],
+  .ced-form input[type=number] {
+    width: 100%; min-height: 34px; padding: 6px 8px; font-size: 13px;
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-md);
+    background: #fff;
+  }
+  .ced-form textarea { min-height: 64px; resize: vertical; }
+  .ced-actions {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding-top: 4px;
+  }
+
+  .ced-banner {
+    padding: 8px 12px; border-radius: var(--ds-r-md);
+    font-size: 12px; font-weight: 600;
+  }
+  .ced-banner--terminal {
+    background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;
+  }
+  .ced-banner--ignored {
+    background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;
+  }
+
+  .ced-timeline {
+    display: flex; flex-direction: column; gap: 10px;
+    max-height: 320px; overflow-y: auto;
+    list-style: none; padding: 0; margin: 0;
+  }
+  .ced-timeline li {
+    padding: 8px 10px;
+    background: #fafbfc; border-left: 3px solid var(--ds-accent);
+    border-radius: 0 var(--ds-r-md) var(--ds-r-md) 0;
+  }
+  .ced-timeline .t {
+    font-size: 11px; color: var(--ds-ink-3);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .ced-timeline .d { font-size: 13px; color: var(--ds-ink-1); margin-top: 2px; }
+
+  .ced-issue-conflict        { color: #991b1b; font-weight: 700; }
+  .ced-issue-mapping_missing { color: #92400e; }
+  .ced-issue-invalid_payload { color: #1e40af; }
+  .ced-issue-parse_error     { color: #475569; }
+</style>
+
+{% set is_terminal = exc.status in ('resolved', 'ignored') %}
+
+{% call ui.page_header(
+    'Exception #' ~ exc.id,
+    sub=exc.external_source ~ ' reservation ' ~ exc.external_reservation_ref,
+    eyebrow='Operations · OTA review queue'
+) %}
+  <a href="{{ url_for('channel_exceptions.index') }}" class="ds-btn ds-btn--ghost ds-btn--sm">
+    ← Back to queue
+  </a>
+{% endcall %}
+
+<div class="ced-stack">
+
+  {% if exc.status == 'resolved' %}
+    <div class="ced-banner ced-banner--terminal">
+      ✓ Resolved on {{ exc.reviewed_at.strftime('%Y-%m-%d %H:%M') if exc.reviewed_at else '—' }}
+      {% if exc.linked_booking %} — linked to booking
+        <a href="{{ url_for('bookings.detail', booking_id=exc.linked_booking.id) }}"
+           style="color:#065f46;font-weight:700;text-decoration:underline;">
+          {{ exc.linked_booking.booking_ref }}</a>
+      {% endif %}.
+      {% if exc.notes %} — {{ exc.notes }}{% endif %}
+    </div>
+  {% elif exc.status == 'ignored' %}
+    <div class="ced-banner ced-banner--ignored">
+      Ignored on {{ exc.reviewed_at.strftime('%Y-%m-%d %H:%M') if exc.reviewed_at else '—' }}.
+      {% if exc.notes %} — {{ exc.notes }}{% endif %}
+    </div>
+  {% endif %}
+
+  <div class="ced-grid">
+
+    <!-- LEFT: summary + payload + activity -->
+    <div class="ced-stack">
+
+      <!-- Summary -->
+      <div class="ced-card">
+        <h3>Summary</h3>
+        <div class="ced-meta">
+          <div>
+            <div class="k">Issue type</div>
+            <div class="v"><span class="ced-issue-{{ exc.issue_type }}">{{ exc.issue_label }}</span></div>
+          </div>
+          <div>
+            <div class="k">Status</div>
+            <div class="v">
+              {% if exc.status == 'resolved' %}{{ ui.chip('resolved', tone='good') }}
+              {% elif exc.status == 'ignored' %}{{ ui.chip('ignored', tone='') }}
+              {% elif exc.status == 'reviewed' %}{{ ui.chip('reviewed', tone='info') }}
+              {% else %}{{ ui.chip('new', tone='warn') }}
+              {% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="k">Channel</div>
+            <div class="v">{{ exc.external_source }}</div>
+          </div>
+          <div>
+            <div class="k">Connection</div>
+            <div class="v">
+              {% if exc.channel_connection %}
+                <a href="{{ url_for('channels.detail', conn_id=exc.channel_connection.id) }}"
+                   style="color:var(--ds-accent-ink);text-decoration:none;">
+                  #{{ exc.channel_connection.id }}
+                  {% if exc.channel_connection.account_label %} · {{ exc.channel_connection.account_label }}{% endif %}
+                </a>
+              {% else %}—{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="k">External ref</div>
+            <div class="v"><code>{{ exc.external_reservation_ref }}</code></div>
+          </div>
+          <div>
+            <div class="k">Received</div>
+            <div class="v">{{ exc.created_at.strftime('%Y-%m-%d %H:%M') if exc.created_at else '—' }}</div>
+          </div>
+          <div>
+            <div class="k">Linked booking</div>
+            <div class="v">
+              {% if exc.linked_booking %}
+                <a href="{{ url_for('bookings.detail', booking_id=exc.linked_booking.id) }}"
+                   style="color:var(--ds-accent-ink);text-decoration:none;">
+                  {{ exc.linked_booking.booking_ref }}
+                </a>
+              {% else %}—{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="k">Reviewer</div>
+            <div class="v">{% if exc.reviewed_by %}{{ exc.reviewed_by.username }}{% else %}—{% endif %}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Suggested action + payload -->
+      <div class="ced-card">
+        <h3>Suggested action</h3>
+        <p style="font-size:13px;line-height:1.55;color:var(--ds-ink-1);margin:0 0 10px 0;">
+          {{ exc.suggested_action or '—' }}
+        </p>
+        {% if exc.payload_summary %}
+        <h3 style="margin-top:14px;">Payload (sanitized)</h3>
+        <div class="ced-payload">{{ exc.payload_summary }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Activity -->
+      <div class="ced-card">
+        <h3>Activity</h3>
+        {% if activity %}
+        <ul class="ced-timeline">
+          {% for a in activity %}
+          <li>
+            <div class="t">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }} · {{ a.action }}</div>
+            <div class="d">{{ a.description }}</div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+          {{ ui.empty_state('No activity yet',
+                            message='Lifecycle changes will appear here.') }}
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- RIGHT: action panels -->
+    <div class="ced-stack">
+
+      {% if not is_terminal %}
+      <div class="ced-card">
+        <h3>Mark reviewed</h3>
+        <p style="font-size:12px;color:var(--ds-ink-3);margin:0 0 8px 0;">
+          Acknowledge the issue without resolving — useful while you
+          investigate. The exception remains in the queue.
+        </p>
+        <form method="POST" action="{{ url_for('channel_exceptions.update_status', exc_id=exc.id) }}" class="ced-form">
+          <input type="hidden" name="status" value="reviewed">
+          <div class="ced-actions">
+            <button type="submit" class="ds-btn ds-btn--sm" {% if exc.status == 'reviewed' %}disabled{% endif %}>
+              {% if exc.status == 'reviewed' %}Already reviewed{% else %}Mark reviewed{% endif %}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="ced-card">
+        <h3>Resolve</h3>
+        <p style="font-size:12px;color:var(--ds-ink-3);margin:0 0 8px 0;">
+          Resolution implies the underlying issue was fixed (mapping
+          added, conflict cleared, manual booking created). If a
+          booking was created manually for this OTA reservation, paste
+          its ID below so the audit trail links them.
+        </p>
+        <form method="POST" action="{{ url_for('channel_exceptions.update_status', exc_id=exc.id) }}" class="ced-form">
+          <input type="hidden" name="status" value="resolved">
+          <label for="ced-link">Linked booking ID (optional)</label>
+          <input type="number" id="ced-link" name="linked_booking_id" min="1" placeholder="e.g. 42">
+          <label for="ced-notes-r">Notes</label>
+          <textarea id="ced-notes-r" name="notes" maxlength="1000"
+                    placeholder="What was done."></textarea>
+          <div class="ced-actions">
+            <button type="submit" class="ds-btn ds-btn--sm ds-btn--primary">Resolve</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="ced-card">
+        <h3>Ignore</h3>
+        <p style="font-size:12px;color:var(--ds-ink-3);margin:0 0 8px 0;">
+          Use when the OTA reservation is bogus / cancelled / no longer
+          relevant. Terminal — no further action will be taken.
+        </p>
+        <form method="POST" action="{{ url_for('channel_exceptions.update_status', exc_id=exc.id) }}" class="ced-form">
+          <input type="hidden" name="status" value="ignored">
+          <label for="ced-notes-i">Notes</label>
+          <textarea id="ced-notes-i" name="notes" maxlength="1000"
+                    placeholder="Why we're dropping this."></textarea>
+          <div class="ced-actions">
+            <button type="submit" class="ds-btn ds-btn--sm"
+                    onclick="return confirm('Ignore exception #{{ exc.id }}?');">
+              Ignore
+            </button>
+          </div>
+        </form>
+      </div>
+      {% else %}
+      <div class="ced-card">
+        <h3>Lifecycle</h3>
+        <p style="font-size:13px;color:var(--ds-ink-2);margin:0;">
+          This exception is <strong>{{ exc.status_label }}</strong> and is closed.
+          Open a new exception by re-attempting the import if a related
+          OTA reservation appears again.
+        </p>
+        <div class="ced-actions" style="margin-top:10px;">
+          <a href="{{ url_for('channel_exceptions.index') }}" class="ds-btn ds-btn--sm">Back to queue</a>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

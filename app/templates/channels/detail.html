@@ -152,6 +152,82 @@
     </form>
   </div>
 
+  {# ── Sandbox reservation import (V1 staging-only) ── #}
+  <div class="ch-card" style="background:#eff6ff; border-color:#bfdbfe;">
+    <h2 style="color:#1e3a8a;">Sandbox reservation import — staging only</h2>
+    <p class="ch-sub" style="margin-bottom:10px;">
+      Drives the inbound reservation pipeline locally — no external
+      OTA API call is made. Use this to exercise duplicate detection,
+      missing-mapping handling, conflict queueing, and the happy path.
+      Successful imports create a real <code>Booking</code> with
+      <code>source = {{ conn.channel_name }}</code> and the linked
+      external reservation ref.
+    </p>
+    <form method="POST" action="{{ url_for('channels.sandbox_import', conn_id=conn.id) }}"
+          style="display:grid;gap:8px;grid-template-columns:repeat(2, minmax(0, 1fr));">
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">External reservation ref</label>
+        <input type="text" name="external_reservation_ref" required maxlength="120"
+               placeholder="e.g. BDC-12345-001"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">External room id (must be mapped)</label>
+        <input type="text" name="external_room_id" required maxlength="80"
+               placeholder="e.g. BDC-DBL-01"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">External rate plan id (optional)</label>
+        <input type="text" name="external_rate_plan_id" maxlength="80"
+               placeholder="e.g. BDC-RP-FLEX"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">Total amount</label>
+        <input type="number" name="total_amount" step="0.01" min="0" placeholder="0.00"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">Check-in</label>
+        <input type="date" name="check_in" required
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">Check-out</label>
+        <input type="date" name="check_out" required
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">Guest first name</label>
+        <input type="text" name="guest_first_name" required maxlength="64"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">Guest last name</label>
+        <input type="text" name="guest_last_name" required maxlength="64"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">Email (optional)</label>
+        <input type="email" name="guest_email" maxlength="120"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#1e3a8a;">Number of guests</label>
+        <input type="number" name="num_guests" min="1" value="2"
+               style="width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:6px;">
+      </div>
+      <div style="grid-column: 1 / -1; display:flex; gap:8px; align-items:center;">
+        <button type="submit" class="btn-primary"
+                onclick="return confirm('Run sandbox import? Successful payloads create a real Booking on staging.');">
+          Inject sandbox reservation
+        </button>
+        <a class="btn-secondary" href="{{ url_for('channel_exceptions.index') }}">View exception queue →</a>
+      </div>
+    </form>
+  </div>
+
   {# ── Sync jobs ── #}
   <div class="ch-card">
     <h2>Recent sync jobs — {{ sync_jobs|length }} (max 20)</h2>

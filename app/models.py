@@ -1772,6 +1772,107 @@ class ChannelSyncLog(db.Model):
                 f'action={self.action!r} status={self.status!r}>')
 
 
+class ChannelImportException(db.Model):
+    """Manual-review queue for OTA reservation imports that couldn't
+    be auto-applied. One row per problematic inbound payload.
+
+    Created by services.channel_import.import_reservation() when:
+      - the external_room_id has no ChannelRoomMap on the connection,
+      - the requested dates conflict with existing bookings/blocks,
+      - the payload fails validation (bad dates, missing fields, etc.).
+
+    Status lifecycle: new → reviewed → resolved | ignored. Terminal
+    states (resolved/ignored) cannot be edited — operators open a new
+    exception or a manual booking instead.
+    """
+    __tablename__ = 'channel_import_exceptions'
+
+    ISSUE_TYPES = (
+        ('conflict',         'Date / inventory conflict'),
+        ('mapping_missing',  'Room or rate-plan mapping missing'),
+        ('invalid_payload',  'Payload validation failed'),
+        ('parse_error',      'Could not parse channel payload'),
+    )
+    STATUSES = (
+        ('new',       'New'),
+        ('reviewed',  'Reviewed'),
+        ('resolved',  'Resolved'),
+        ('ignored',   'Ignored'),
+    )
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    channel_connection_id = db.Column(
+        db.Integer, db.ForeignKey('channel_connections.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+    # Snapshot copies — kept here even after the connection is deleted
+    # so the audit trail survives.
+    external_source = db.Column(db.String(30), nullable=False, index=True)
+    external_reservation_ref = db.Column(db.String(120),
+                                         nullable=False, index=True)
+
+    # 'conflict' | 'mapping_missing' | 'invalid_payload' | 'parse_error'
+    issue_type = db.Column(db.String(30), nullable=False, index=True)
+
+    # ≤500 chars — short, sanitized message. Longer raw payload context
+    # lives in `payload_summary` (also length-capped).
+    suggested_action = db.Column(db.String(500), nullable=True)
+    payload_summary  = db.Column(db.String(2000), nullable=True)
+
+    # 'new' | 'reviewed' | 'resolved' | 'ignored'
+    status = db.Column(db.String(20), nullable=False, default='new',
+                       index=True)
+
+    # If an operator manually created/located a Booking for this
+    # exception, link it here. Set when status flips to 'resolved'.
+    linked_booking_id = db.Column(
+        db.Integer, db.ForeignKey('bookings.id', ondelete='SET NULL'),
+        nullable=True, index=True,
+    )
+    reviewed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    notes       = db.Column(db.String(1000), nullable=True)
+
+    channel_connection = db.relationship('ChannelConnection',
+                                         foreign_keys=[channel_connection_id])
+    linked_booking = db.relationship('Booking',
+                                      foreign_keys=[linked_booking_id])
+    reviewed_by    = db.relationship('User',
+                                      foreign_keys=[reviewed_by_user_id])
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in ('new', 'reviewed')
+
+    @property
+    def issue_label(self) -> str:
+        for slug, label in self.ISSUE_TYPES:
+            if slug == self.issue_type:
+                return label
+        return self.issue_type or '—'
+
+    @property
+    def status_label(self) -> str:
+        for slug, label in self.STATUSES:
+            if slug == self.status:
+                return label
+        return self.status or '—'
+
+    def __repr__(self):
+        return (f'<ChannelImportException id={self.id} '
+                f'issue={self.issue_type!r} status={self.status!r} '
+                f'ref={self.external_reservation_ref!r}>')
+
+
 # ── Mid-stay room change / Stay Segments (foundation) ──────────────
 #
 # A booking can occupy Room A for part of its stay, then Room B for
