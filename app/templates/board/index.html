@@ -342,7 +342,13 @@
     text-transform: uppercase;
   }
 
-  /* Sticky room rail */
+  /* Sticky room rail — single-line layout.
+     The rail is now a flat horizontal flex row carrying:
+        room number  ·  type chip  ·  status dot  ·  HK pill
+     Verbose info (full type name, "Occupied", floor) was removed
+     from the visible row and surfaces via the row's title tooltip
+     and the booking drawer. This freed enough vertical space to
+     drop --row-h to 20-40 px depending on density. */
   .room-cell {
     grid-column: 1;
     position: sticky;
@@ -351,43 +357,27 @@
     background: var(--surface-card);
     border-right: 1px solid var(--line-strong);
     border-bottom: 1px solid var(--line-soft);
-    padding: 0 14px;
+    padding: 0 12px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    overflow: hidden;
+    white-space: nowrap;
   }
   .room-cell.is-zebra { background: var(--surface-zebra); }
   .room-cell .room-num {
     font-weight: 700;
     font-size: 13px;
     color: var(--ink);
-    min-width: 40px;
+    min-width: 38px;
     letter-spacing: -0.01em;
     flex-shrink: 0;
   }
-  .room-cell .room-meta {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1;
-  }
-  .room-cell .meta-line-1 {
-    font-size: 11px;
-    color: var(--ink);
-    font-weight: 500;
-    line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .room-cell .meta-line-2 {
+  .room-cell .rail-assigned {
+    color: #0369a1;
     font-size: 10px;
-    color: var(--ink-soft);
-    line-height: 1.2;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 1px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
   .status-dot {
     display: inline-block;
@@ -410,11 +400,15 @@
     box-shadow: inset 1px 0 0 var(--today-edge), inset -1px 0 0 var(--today-edge);
   }
 
-  /* Booking bars */
+  /* Booking bars — single-line layout.
+     Name + ref + nights + guests now render inline on one row.
+     The wrapper .bar-line is the flex container; .bar itself owns
+     padding/border/background. Density + view rules below decide
+     which secondary parts hide when the bar gets narrow. */
   .bar {
-    margin: 4px 3px;
-    padding: 5px 10px;
-    border-radius: 8px;
+    margin: 2px 2px;
+    padding: 2px 8px;
+    border-radius: 6px;
     border: 1px solid;
     background: white;
     color: var(--ink);
@@ -426,9 +420,8 @@
     z-index: 10;
     transition: transform 0.10s ease, box-shadow 0.14s ease, filter 0.10s ease;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 1px;
+    flex-direction: row;
+    align-items: center;
     text-decoration: none;
   }
   .bar:hover {
@@ -438,6 +431,14 @@
     z-index: 15;
     filter: saturate(1.06);
   }
+  .bar .bar-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
   .bar .bar-name {
     font-weight: 600;
     font-size: 12px;
@@ -446,20 +447,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color: inherit;
+    min-width: 0;
+    flex: 1 1 auto;
   }
-  .bar .bar-meta {
-    font-size: 10px;
-    line-height: 1.2;
-    opacity: 0.78;
+  .bar .bar-sep {
+    color: currentColor;
+    opacity: 0.45;
+    flex: 0 0 auto;
+  }
+  .bar .bar-ref,
+  .bar .bar-nights,
+  .bar .bar-guests {
+    font-size: 10.5px;
+    opacity: 0.82;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: flex;
-    align-items: center;
-    gap: 4px;
+    flex: 0 0 auto;
   }
-  .bar .bar-meta .dot { width: 3px; height: 3px; border-radius: 999px; background: currentColor; opacity: 0.45; }
+  .bar .bar-ref { font-family: ui-monospace, monospace; font-size: 10px; }
 
   /* Per-status bar surface (background + left accent + text) */
   .bar.s-new_request      { background: linear-gradient(180deg,#f5f3ff,#ede9fe); border-color:#c4b5fd; color:#5b21b6; box-shadow: inset 3px 0 0 #8b5cf6; }
@@ -500,16 +505,27 @@
   .bar.cuts-left::before  { left: 0;  background: linear-gradient(to right, currentColor 0%, transparent 100%); opacity: 0.10; }
   .bar.cuts-right::after  { right: 0; background: linear-gradient(to left,  currentColor 0%, transparent 100%); opacity: 0.10; }
 
-  /* View-specific bar polish — kept, but no longer overrides --row-h.
-     Density owns row-height; views just tweak bar typography for the
-     wider/narrower columns. */
-  .board-grid[data-view="30d"] .bar { margin: 2px 2px; padding: 2px 6px; }
-  .board-grid[data-view="30d"] .bar .bar-meta { display: none; }
+  /* View-specific bar polish — density owns row-height; views just
+     tweak bar typography for the wider/narrower columns. After the
+     single-line refactor we also use these rules to drop secondary
+     bar parts (ref/nights/guests) when columns get narrow. */
+  .board-grid[data-view="30d"] .bar { margin: 1px 2px; padding: 1px 5px; }
   .board-grid[data-view="30d"] .bar .bar-name { font-size: 11px; }
+  .board-grid[data-view="30d"] .bar .bar-sep,
+  .board-grid[data-view="30d"] .bar .bar-ref,
+  .board-grid[data-view="30d"] .bar .bar-nights,
+  .board-grid[data-view="30d"] .bar .bar-guests { display: none; }
   .board-grid[data-view="30d"] .bar .pay-dot { top: 3px; right: 3px; width: 5px; height: 5px; }
 
   .board-grid[data-view="day"] .bar { padding: 6px 14px; }
   .board-grid[data-view="day"] .bar .bar-name { font-size: 13px; }
+
+  /* 14-day: keep the most useful secondaries (ref + nights) and
+     drop guest-count to save horizontal room inside the bar. */
+  .board-grid[data-view="14d"] .bar .bar-guests,
+  .board-grid[data-view="14d"] .bar .bar-sep:nth-of-type(3) {
+    display: none;
+  }
 
   /* Density toggle — vertical-density sprint:
        Standard: comfortable, default for management review
@@ -520,16 +536,21 @@
      specificity backstop keeps the value pinned even when older
      view-specific rules try to win. */
   .board-grid[data-density="compact"] {
-    --row-h: 28px;
-    --header-h: 44px;
+    --row-h: 24px;
+    --header-h: 40px;
   }
   .board-grid[data-density="compact"] .room-cell { padding: 0 10px; gap: 6px; }
-  .board-grid[data-density="compact"] .room-cell .room-num    { font-size: 12px; }
-  .board-grid[data-density="compact"] .room-cell .meta-line-1 { font-size: 10px; line-height: 1.1; }
-  .board-grid[data-density="compact"] .room-cell .meta-line-2 { font-size: 9px;  line-height: 1.1; margin-top: 0; }
-  .board-grid[data-density="compact"] .bar { margin: 2px 2px; padding: 1px 7px; line-height: 1.1; }
-  .board-grid[data-density="compact"] .bar .bar-name { font-size: 11px; }
-  .board-grid[data-density="compact"] .bar .bar-meta { font-size: 9px; }
+  .board-grid[data-density="compact"] .room-cell .room-num { font-size: 12px; }
+  .board-grid[data-density="compact"] .bar { margin: 1px 2px; padding: 0 6px; line-height: 1.1; }
+  .board-grid[data-density="compact"] .bar .bar-name   { font-size: 11px; }
+  .board-grid[data-density="compact"] .bar .bar-ref    { font-size: 9.5px; }
+  .board-grid[data-density="compact"] .bar .bar-nights { font-size: 9.5px; }
+  /* Compact drops guest-count from the bar; nights + ref still show
+     when there's room. */
+  .board-grid[data-density="compact"] .bar .bar-guests,
+  .board-grid[data-density="compact"] .bar .bar-sep:nth-of-type(3) {
+    display: none;
+  }
   .board-grid[data-density="compact"] .day-head { padding: 3px 0; }
   .board-grid[data-density="compact"] .day-head .num { font-size: 12px; }
   /* Tighter housekeeping pill in compact. */
@@ -538,22 +559,39 @@
   }
 
   .board-grid[data-density="ultra"] {
-    --row-h: 22px;
-    --header-h: 38px;
+    --row-h: 20px;
+    --header-h: 36px;
   }
   .board-grid[data-density="ultra"] .room-cell {
     padding: 0 8px; gap: 4px;
   }
-  .board-grid[data-density="ultra"] .room-cell .room-num    { font-size: 11px; min-width: 32px; }
+  .board-grid[data-density="ultra"] .room-cell .room-num { font-size: 11px; min-width: 32px; }
   .board-grid[data-density="ultra"] .bar {
-    margin: 1px 1px; padding: 0 5px; line-height: 1.05;
+    margin: 1px 1px; padding: 0 4px; line-height: 1.05;
     border-radius: 4px;
   }
   .board-grid[data-density="ultra"] .bar .bar-name { font-size: 10.5px; }
+  /* Ultra drops every secondary part — only the surname / short
+     label survives, ellipsis-truncated. The drawer carries the
+     detail. */
+  .board-grid[data-density="ultra"] .bar .bar-sep,
+  .board-grid[data-density="ultra"] .bar .bar-ref,
+  .board-grid[data-density="ultra"] .bar .bar-nights,
+  .board-grid[data-density="ultra"] .bar .bar-guests {
+    display: none;
+  }
   .board-grid[data-density="ultra"] .bar .pay-dot { width: 4px; height: 4px; top: 2px; right: 2px; }
   .board-grid[data-density="ultra"] .day-head { padding: 2px 0; }
   .board-grid[data-density="ultra"] .day-head .num { font-size: 11px; }
   .board-grid[data-density="ultra"] .status-dot { width: 5px; height: 5px; }
+  /* Ultra keeps ONLY: room# + STD chip + HK pill. The separate
+     status-dot collapses into the colored chip border. */
+  .board-grid[data-density="ultra"] .room-cell .status-dot { display: none; }
+  /* Ultra HK pill — minimum chrome. */
+  .board-grid[data-density="ultra"] .hk-rail {
+    font-size: 8px; padding: 0 3px; line-height: 1.4;
+    letter-spacing: 0;
+  }
 
   /* Group headers — sticky-left, span all day columns visually */
   .group-header {
@@ -1653,35 +1691,26 @@
             {% set zebra = entry.zebra %}
             {% set badge = entry.badge %}
 
+            {# Single-line room rail: # · STD · ● · CLEAN
+               Floor + "Occupied/Vacant" text + full type name removed
+               from the row itself; all of it surfaces in the title
+               tooltip and on the booking drawer. The status-dot is
+               retained as a colored visual cue (tooltip says
+               "Occupied"/"Vacant"/"Maintenance"). #}
             <div class="room-cell {% if zebra %}is-zebra{% endif %}"
-                 style="grid-row: {{ row_n }};">
-              <div class="room-num">
-                #{{ r.number }}
-                {# 3-letter type code for compact + ultra modes. Hidden
-                   in standard via CSS so the verbose meta-line-1 takes
-                   precedence there. #}
-                <span class="room-num-type" title="{{ r.room_type }}">{{ room_type_short(r.room_type) }}</span>
-              </div>
-              <div class="room-meta">
-                <div class="meta-line-1">{{ r.room_type }}</div>
-                <div class="meta-line-2">
-                  <span class="status-dot {{ badge.dot_class }}" title="{{ badge.label }}"></span>
-                  <span>F{{ r.floor }}</span>
-                  <span style="opacity:.45;">·</span>
-                  <span class="{{ badge.text_class }}">{{ badge.label }}</span>
-                </div>
-                <div class="meta-line-2" style="margin-top:2px;">
-                  {# Housekeeping pill — distinct from operational status. #}
-                  <span class="hk-rail s-{{ r.housekeeping_status or 'clean' }}"
-                        title="Housekeeping: {{ (r.housekeeping_status or 'clean').replace('_',' ') }}">
-                    {{ (r.housekeeping_status or 'clean').replace('_',' ')|upper }}
-                  </span>
-                  {% if r.assigned_to_user_id %}
-                    <span style="opacity:.55; font-size:10px;">·</span>
-                    <span style="font-size:10px; color:#0369a1;" title="Assigned to user #{{ r.assigned_to_user_id }}">assigned</span>
-                  {% endif %}
-                </div>
-              </div>
+                 style="grid-row: {{ row_n }};"
+                 title="Room {{ r.number }} — {{ r.room_type }} · Floor {{ r.floor }} · {{ badge.label }} · Housekeeping: {{ (r.housekeeping_status or 'clean').replace('_',' ') }}{% if r.assigned_to_user_id %} · assigned{% endif %}">
+              <span class="room-num">#{{ r.number }}</span>
+              <span class="room-num-type">{{ room_type_short(r.room_type) }}</span>
+              <span class="status-dot {{ badge.dot_class }}"
+                    title="{{ badge.label }}"></span>
+              <span class="hk-rail s-{{ r.housekeeping_status or 'clean' }}">
+                {{ (r.housekeeping_status or 'clean').replace('_',' ')|upper }}
+              </span>
+              {% if r.assigned_to_user_id %}
+              <span class="rail-assigned"
+                    title="Assigned to user #{{ r.assigned_to_user_id }}">●</span>
+              {% endif %}
             </div>
 
             {# Day-cell backdrop, one per day, explicit row + column #}
@@ -1744,13 +1773,19 @@
                   <span class="pay-dot p-{{ bar.payment_status }}"
                         title="Payment: {{ bar.payment_status.replace('_',' ') }}"></span>
                 {% endif %}
-                <span class="bar-name">{{ bar.short_label }}</span>
-                <span class="bar-meta">
-                  <span>{{ bar.booking_ref }}</span>
-                  <span class="dot"></span>
-                  <span>{{ bar.nights }}n</span>
-                  <span class="dot"></span>
-                  <span>{{ bar.num_guests }}g</span>
+                {# Single-line bar content. Name + ref + nights + guests
+                   render inline with separators; CSS controls which
+                   parts ellipsis-truncate or hide based on view+density.
+                   Wrapper .bar-line keeps everything on one row even
+                   when font sizes change with density. #}
+                <span class="bar-line">
+                  <span class="bar-name">{{ bar.short_label }}</span>
+                  <span class="bar-sep" aria-hidden="true">·</span>
+                  <span class="bar-ref">{{ bar.booking_ref }}</span>
+                  <span class="bar-sep" aria-hidden="true">·</span>
+                  <span class="bar-nights">{{ bar.nights }}n</span>
+                  <span class="bar-sep" aria-hidden="true">·</span>
+                  <span class="bar-guests">{{ bar.num_guests }}g</span>
                 </span>
               </a>
             {% endfor %}

@@ -73,9 +73,9 @@ DENSITY_DAY_WIDTH_MULT = {
 # this is a power-user desktop/tablet view; the drawer-open click
 # target on the bar is generous (the whole row is one tap).
 DENSITY_ROW_HEIGHT_PX = {
-    'standard': 48,
-    'compact':  28,
-    'ultra':    22,
+    'standard': 40,
+    'compact':  24,
+    'ultra':    20,
 }
 
 # Per-density room-rail width in px. The room rail is the leftmost

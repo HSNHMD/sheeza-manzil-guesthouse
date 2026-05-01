@@ -57,19 +57,20 @@ class DensityKnobsTests(unittest.TestCase):
         self.assertLessEqual(DENSITY_DAY_WIDTH_MULT['ultra'], 0.45)
 
     def test_row_heights_tightened(self):
-        # Vertical-density sprint pushed these tighter so significantly
-        # more rooms fit per viewport. Bands chosen so future drift
+        # Single-line-row sprint freed enough vertical space to push
+        # row-h further. Bands chosen so a future change pulling them
         # back toward roomy values fails this test.
         from app.services.board import DENSITY_ROW_HEIGHT_PX
-        # Standard stays comfortable for management review.
-        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['standard'], 50)
-        self.assertGreaterEqual(DENSITY_ROW_HEIGHT_PX['standard'], 44)
-        # Compact: ~70% more rooms per screen than standard.
-        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['compact'], 30)
-        # Ultra: maximum density, but keep ≥ 20 px so colored
-        # bars + payment dots remain visible.
-        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 24)
-        self.assertGreaterEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 20)
+        # Standard stays comfortable enough to read full short_label
+        # bars, but not the old 48–56 range.
+        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['standard'], 44)
+        self.assertGreaterEqual(DENSITY_ROW_HEIGHT_PX['standard'], 36)
+        # Compact: ~80% more rooms per screen than standard.
+        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['compact'], 26)
+        # Ultra: floor at 20 — below that the bar's colored block +
+        # payment dot collapse against the row border.
+        self.assertLessEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 22)
+        self.assertGreaterEqual(DENSITY_ROW_HEIGHT_PX['ultra'], 18)
 
     def test_room_rail_widths_tightened(self):
         from app.services.board import (
@@ -242,6 +243,85 @@ class FluidWidthGridTests(unittest.TestCase):
         # And the resize pointermove must use the captured dayWidth
         # from resizeCtx, not a stale module-level constant.
         self.assertIn(b'resizeCtx.dayWidth', r.data)
+
+
+class SingleLineRowTests(unittest.TestCase):
+    """The room rail and booking bars must render as single-line
+    layouts after the row-compaction sprint.
+
+    Pins:
+      - the legacy multi-line meta blocks (.meta-line-1, .meta-line-2)
+        no longer appear in the rendered rail
+      - "F1 · Occupied" / full-room-type-name text are gone from the
+        visible markup (still in the row's title tooltip)
+      - bars use .bar-line wrapper with .bar-name + .bar-ref +
+        .bar-nights + .bar-guests on one row instead of the legacy
+        .bar-meta block
+    """
+
+    def setUp(self):
+        self.app = create_app(_TestConfig)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        # Seed one room so the rail markup actually renders.
+        from app.models import Room
+        db.session.add(Room(
+            number='101', name='Standard Room', room_type='Standard Room',
+            floor=1, capacity=2, price_per_night=800.0,
+            is_active=True,
+        ))
+        admin = User(username='admin', email='a@x', role='admin')
+        admin.set_password('aaaaaaaaaa1')
+        db.session.add(admin)
+        db.session.commit()
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess['_user_id'] = str(admin.id)
+            sess['_fresh'] = True
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def test_room_rail_no_longer_has_meta_line_divs(self):
+        r = self.client.get('/board')
+        self.assertEqual(r.status_code, 200)
+        # Old layout used:
+        #   <div class="room-meta">
+        #     <div class="meta-line-1">…</div>
+        #     <div class="meta-line-2">…</div>
+        # The new single-line rail removes both.
+        self.assertNotIn(b'class="meta-line-1"', r.data)
+        self.assertNotIn(b'class="meta-line-2"', r.data)
+        self.assertNotIn(b'class="room-meta"', r.data)
+
+    def test_room_rail_carries_title_tooltip(self):
+        # The full type name + floor + occupancy state moved to the
+        # row's title attribute, accessible via hover and the drawer.
+        r = self.client.get('/board')
+        self.assertEqual(r.status_code, 200)
+        # title="Room <number> ... Floor N ..."
+        # We don't assert the exact em-dash separator (non-ASCII)
+        # — just that the title carries the required substrings.
+        self.assertRegex(r.data, rb'title="Room \d+')
+        self.assertIn(b'Floor', r.data)
+
+    def test_bar_uses_single_line_wrapper(self):
+        r = self.client.get('/board')
+        self.assertEqual(r.status_code, 200)
+        # Old layout had a separate .bar-meta block stacked under
+        # .bar-name. The new layout wraps everything in .bar-line.
+        self.assertNotIn(b'class="bar-meta"', r.data)
+        # The new structure carries .bar-name + .bar-ref +
+        # .bar-nights + .bar-guests inside a .bar-line wrapper. We
+        # only need any of those to be present (no bookings on a
+        # fresh DB → no .bar elements at all). The render at minimum
+        # has the CSS rules referencing them in the inline <style>.
+        for needle in (b'.bar-line', b'.bar .bar-ref',
+                       b'.bar .bar-nights', b'.bar .bar-guests'):
+            self.assertIn(needle, r.data, f'CSS rule for {needle!r} missing')
 
 
 if __name__ == '__main__':
