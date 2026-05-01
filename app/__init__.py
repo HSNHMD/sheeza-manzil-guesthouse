@@ -137,7 +137,22 @@ def create_app(config_class=Config):
                    # Online menu / QR ordering: public guest pages
                    # (no auth) + staff queue at /menu/admin/* gated
                    # by admin_required inside the route.
-                   '/menu')
+                   '/menu',
+                   # Role-Based Landing V1: front-office staff need to
+                   # actually use the pages their department lands on
+                   # after login. All four prefixes below are pure
+                   # @login_required at route level (not @admin_required),
+                   # so opening them up to non-admin staff is safe.
+                   #
+                   # /accounting, /reports, and /board STAY BLOCKED here
+                   # because their routes already enforce @admin_required;
+                   # adding them would just produce a 403 abort instead
+                   # of a clean redirect to /staff/dashboard.
+                   '/front-office',
+                   '/bookings',
+                   '/guests',
+                   '/invoices',
+                   '/calendar')
         if not any(request.path == p or request.path.startswith(p + '/') for p in allowed):
             return redirect('/staff/dashboard')
 

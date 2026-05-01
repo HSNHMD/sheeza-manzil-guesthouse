@@ -352,6 +352,133 @@ class AdminUsersDepartmentTests(unittest.TestCase):
 
 # ── No external calls in the landing path ─────────────────────────
 
+class StaffGuardDepartmentAccessTests(unittest.TestCase):
+    """A non-admin staff user with a department must be able to actually
+    USE the page their department lands on, not bounce off the staff_guard.
+
+    These tests pin the staff_guard whitelist expansion done in this
+    sprint:
+      - front_office staff can load /front-office/, /bookings/,
+        /guests/, /invoices/
+      - housekeeping + restaurant staff already worked
+      - accounting + admin-only paths still redirect (route-level
+        @admin_required will 403 anyway, so the guard's bounce is the
+        cleaner UX for V1)
+    """
+
+    def setUp(self):
+        self.app = create_app(_TestConfig)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        # One staff user per department we care about. NOT admin.
+        self.fo  = _make_user(username='fo',  department='front_office').id
+        self.hk  = _make_user(username='hk',  department='housekeeping').id
+        self.rs  = _make_user(username='rs',  department='restaurant').id
+        self.ac  = _make_user(username='ac',  department='accounting').id
+        # Seed one room so /housekeeping/ has rows
+        from app.models import Room
+        db.session.add(Room(number='101', name='Standard Room',
+                            room_type='Standard', floor=1, capacity=2,
+                            price_per_night=800.0, is_active=True))
+        db.session.commit()
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def _login(self, uid):
+        with self.client.session_transaction() as sess:
+            sess['_user_id'] = str(uid)
+            sess['_fresh'] = True
+
+    def _expect_ok(self, path):
+        r = self.client.get(path, follow_redirects=False)
+        self.assertEqual(
+            r.status_code, 200,
+            f'expected HTTP 200 for {path}, got {r.status_code}; '
+            f'staff_guard probably bouncing the route to /staff/dashboard',
+        )
+        return r
+
+    def _expect_bounced(self, path):
+        # 302 to /staff/dashboard means the guard caught it (correct
+        # for routes still gated to admin).
+        r = self.client.get(path, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/staff/dashboard', r.headers.get('Location', ''))
+        return r
+
+    # ── Front-office staff: can use front-office paths ────────────
+
+    def test_front_office_staff_can_open_front_office_index(self):
+        self._login(self.fo)
+        r = self._expect_ok('/front-office/')
+        self.assertIn(b'Front Office', r.data)
+
+    def test_front_office_staff_can_open_arrivals(self):
+        self._login(self.fo)
+        self._expect_ok('/front-office/arrivals')
+
+    def test_front_office_staff_can_open_bookings_list(self):
+        self._login(self.fo)
+        r = self._expect_ok('/bookings/')
+        self.assertIn(b'Booking', r.data)  # page title or column header
+
+    def test_front_office_staff_can_open_guests_list(self):
+        self._login(self.fo)
+        self._expect_ok('/guests/')
+
+    def test_front_office_staff_can_open_invoices_list(self):
+        self._login(self.fo)
+        self._expect_ok('/invoices/')
+
+    def test_front_office_staff_can_open_calendar(self):
+        # Calendar is the legacy module; still reachable for any
+        # bookmarks that survived the IA cleanup.
+        self._login(self.fo)
+        r = self.client.get('/calendar/', follow_redirects=False)
+        # 200 (renders) or 302 (legacy redirect to /board) are both fine —
+        # what we need is "NOT bounced to /staff/dashboard".
+        self.assertNotEqual(r.status_code, 302,
+            'calendar should not be bounced to /staff/dashboard') \
+            if r.status_code == 302 and '/staff/dashboard' in r.headers.get('Location', '') \
+            else None
+        self.assertIn(r.status_code, (200, 302))
+
+    # ── Housekeeping + restaurant staff (already worked) ──────────
+
+    def test_housekeeping_staff_can_open_housekeeping(self):
+        self._login(self.hk)
+        self._expect_ok('/housekeeping/')
+
+    def test_restaurant_staff_can_open_pos_terminal(self):
+        self._login(self.rs)
+        self._expect_ok('/pos/')
+
+    # ── Admin-only paths: still bounced for non-admin ─────────────
+
+    def test_accounting_staff_cannot_use_accounting(self):
+        # /accounting/ has @admin_required. For V1 we acknowledge this
+        # by leaving the guard to bounce the user. (When per-department
+        # permissions land we'll let accounting staff in via a
+        # principled check.)
+        self._login(self.ac)
+        self._expect_bounced('/accounting/')
+
+    def test_non_admin_staff_cannot_use_reservation_board(self):
+        # Reservation Board is admin-only at the route. Non-admin staff
+        # who somehow hit it (e.g. via stale link) get cleanly bounced.
+        self._login(self.fo)
+        self._expect_bounced('/board')
+
+    def test_non_admin_staff_cannot_use_reports(self):
+        self._login(self.fo)
+        self._expect_bounced('/reports/')
+
+
 class NoExternalCallsTests(unittest.TestCase):
     """Sanity check: the landing dispatcher must not import or call
     anything that talks to WhatsApp / Gemini / external APIs. This is a
