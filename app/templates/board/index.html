@@ -3045,8 +3045,13 @@
      Read the actual rendered width from the grid's resolved
      gridTemplateColumns at gesture-start so resize-snap math stays
      accurate even when the window is wider than the intrinsic grid
-     OR when the user resizes the window mid-session. */
-  const grid = document.querySelector('.board-grid');
+     OR when the user resizes the window mid-session.
+
+     INCIDENT 2026-05-01: a duplicate `const grid = ...` was declared
+     here in addition to the focus-mode block above, throwing a
+     SyntaxError that aborted the entire IIFE — drag/drop, resize,
+     and focus-mode handlers never registered. We now reuse the
+     `grid` declared in the focus block above. */
   function actualDayWidth() {
     if (!grid) {
       return parseFloat(getComputedStyle(shell).getPropertyValue('--day-w')) || 84;
