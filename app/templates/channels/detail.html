@@ -228,6 +228,137 @@
     </form>
   </div>
 
+  {# ── Sandbox modification + cancellation (V1 staging-only) ── #}
+  <div class="ch-card" style="background:#f5f3ff; border-color:#c4b5fd;">
+    <h2 style="color:#4c1d95;">Sandbox modification — staging only</h2>
+    <p class="ch-sub" style="margin-bottom:10px;">
+      Drives <code>apply_modification()</code> for an existing booking
+      with this channel's external reservation ref. Only fields you
+      actually fill in are applied. Conflicts / unsafe states queue
+      to the exception queue rather than mutating bookings.
+    </p>
+    <form method="POST" action="{{ url_for('channels.sandbox_modify', conn_id=conn.id) }}"
+          style="display:grid;gap:8px;grid-template-columns:repeat(2, minmax(0, 1fr));">
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">External reservation ref</label>
+        <input type="text" name="external_reservation_ref" required maxlength="120"
+               placeholder="ref of the booking to modify"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">External event id (optional)</label>
+        <input type="text" name="external_event_id" maxlength="120"
+               placeholder="leave blank for derived id"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">New check-in (optional)</label>
+        <input type="date" name="check_in"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">New check-out (optional)</label>
+        <input type="date" name="check_out"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">New external_room_id (optional)</label>
+        <input type="text" name="external_room_id" maxlength="80"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">New num_guests (optional)</label>
+        <input type="number" name="num_guests" min="1"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">New first name (optional)</label>
+        <input type="text" name="guest_first_name" maxlength="64"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#4c1d95;">New last name (optional)</label>
+        <input type="text" name="guest_last_name" maxlength="64"
+               style="width:100%;padding:6px 8px;border:1px solid #c4b5fd;border-radius:6px;">
+      </div>
+      <div style="grid-column: 1 / -1;">
+        <button type="submit" class="btn-primary">Apply sandbox modification</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="ch-card" style="background:#fef2f2; border-color:#fca5a5;">
+    <h2 style="color:#991b1b;">Sandbox cancellation — staging only</h2>
+    <p class="ch-sub" style="margin-bottom:10px;">
+      Drives <code>apply_cancellation()</code>. Bookings in safe states
+      (<code>unconfirmed / pending_verification / confirmed</code>) are
+      cancelled directly. Already-cancelled bookings short-circuit
+      idempotently. <strong>Checked-in / checked-out bookings or
+      bookings with paid invoices queue for manual review</strong> —
+      this surface NEVER mutates folio rows.
+    </p>
+    <form method="POST" action="{{ url_for('channels.sandbox_cancel', conn_id=conn.id) }}"
+          style="display:grid;gap:8px;grid-template-columns:repeat(2, minmax(0, 1fr));">
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#991b1b;">External reservation ref</label>
+        <input type="text" name="external_reservation_ref" required maxlength="120"
+               placeholder="ref of the booking to cancel"
+               style="width:100%;padding:6px 8px;border:1px solid #fca5a5;border-radius:6px;">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#991b1b;">External event id (optional)</label>
+        <input type="text" name="external_event_id" maxlength="120"
+               style="width:100%;padding:6px 8px;border:1px solid #fca5a5;border-radius:6px;">
+      </div>
+      <div style="grid-column: 1 / -1;">
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#991b1b;">Reason (optional)</label>
+        <input type="text" name="reason" maxlength="200" placeholder="e.g. guest request"
+               style="width:100%;padding:6px 8px;border:1px solid #fca5a5;border-radius:6px;">
+      </div>
+      <div style="grid-column: 1 / -1;">
+        <button type="submit" class="btn-primary"
+                onclick="return confirm('Apply sandbox cancellation? Safe states cancel directly; unsafe states queue for review.');"
+                style="background:#991b1b;border-color:#991b1b;">
+          Apply sandbox cancellation
+        </button>
+      </div>
+    </form>
+  </div>
+
+  {% if linked_bookings %}
+  {# ── Linked bookings (quick reference for the sandbox forms) ── #}
+  <div class="ch-card">
+    <h2>Linked bookings — {{ linked_bookings|length }}</h2>
+    <p class="ch-sub" style="margin-bottom:10px;">
+      Bookings with <code>external_source = {{ conn.channel_name }}</code>.
+      Use the external_reservation_ref column when filling the
+      modification or cancellation forms above.
+    </p>
+    <table class="ch-table">
+      <thead>
+        <tr>
+          <th>Booking</th>
+          <th>External ref</th>
+          <th>Dates</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in linked_bookings %}
+        <tr>
+          <td><a href="{{ url_for('bookings.detail', booking_id=b.id) }}"
+                 style="color:var(--ds-accent-ink);text-decoration:none;">
+            {{ b.booking_ref }}</a></td>
+          <td><code style="font-size:12px;">{{ b.external_reservation_ref or '—' }}</code></td>
+          <td>{{ b.check_in_date.isoformat() }} → {{ b.check_out_date.isoformat() }}</td>
+          <td>{{ b.status }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {# ── Sync jobs ── #}
   <div class="ch-card">
     <h2>Recent sync jobs — {{ sync_jobs|length }} (max 20)</h2>

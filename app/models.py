@@ -1788,10 +1788,13 @@ class ChannelImportException(db.Model):
     __tablename__ = 'channel_import_exceptions'
 
     ISSUE_TYPES = (
-        ('conflict',         'Date / inventory conflict'),
-        ('mapping_missing',  'Room or rate-plan mapping missing'),
-        ('invalid_payload',  'Payload validation failed'),
-        ('parse_error',      'Could not parse channel payload'),
+        ('conflict',                   'Date / inventory conflict'),
+        ('mapping_missing',            'Room or rate-plan mapping missing'),
+        ('invalid_payload',            'Payload validation failed'),
+        ('parse_error',                'Could not parse channel payload'),
+        ('booking_not_found',          'No local booking matches external ref'),
+        ('cancel_unsafe_state',        'Cancellation blocked by local stay/payment state'),
+        ('modification_unsafe_state',  'Modification blocked by local stay state'),
     )
     STATUSES = (
         ('new',       'New'),
@@ -1870,6 +1873,75 @@ class ChannelImportException(db.Model):
     def __repr__(self):
         return (f'<ChannelImportException id={self.id} '
                 f'issue={self.issue_type!r} status={self.status!r} '
+                f'ref={self.external_reservation_ref!r}>')
+
+
+class ChannelInboundEvent(db.Model):
+    """One row per OTA-side event we've processed (or attempted).
+
+    Used by services.channel_import to make the modification +
+    cancellation pipelines idempotent: if an `external_event_id`
+    has already been processed on a connection, the second attempt
+    is logged + short-circuited with `result_status='duplicate_skipped'`.
+
+    `external_event_id` is opaque from our side — whatever the OTA
+    stamps on its event payload (Booking.com modificationId, etc.).
+    For events without a stable external id, callers can fall back
+    to a deterministic hash like
+    `<event_type>:<reservation_ref>:<seq>` so retries still dedupe.
+
+    Allowed event_type:
+      reservation_imported   |  reservation_modified |
+      reservation_cancelled  |  reservation_no_show
+
+    Allowed result_status:
+      success | duplicate_skipped | queued | failed | already_cancelled
+    """
+    __tablename__ = 'channel_inbound_events'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+
+    channel_connection_id = db.Column(
+        db.Integer, db.ForeignKey('channel_connections.id',
+                                  ondelete='CASCADE'),
+        nullable=False, index=True,
+    )
+    external_event_id        = db.Column(db.String(120), nullable=False,
+                                          index=True)
+    external_reservation_ref = db.Column(db.String(120), nullable=False,
+                                          index=True)
+    event_type    = db.Column(db.String(40), nullable=False, index=True)
+    result_status = db.Column(db.String(30), nullable=False, index=True)
+
+    linked_booking_id = db.Column(
+        db.Integer, db.ForeignKey('bookings.id', ondelete='SET NULL'),
+        nullable=True, index=True,
+    )
+    exception_id = db.Column(
+        db.Integer, db.ForeignKey('channel_import_exceptions.id',
+                                  ondelete='SET NULL'),
+        nullable=True, index=True,
+    )
+    notes = db.Column(db.String(500), nullable=True)
+
+    channel_connection = db.relationship('ChannelConnection',
+                                          foreign_keys=[channel_connection_id])
+    linked_booking = db.relationship('Booking',
+                                      foreign_keys=[linked_booking_id])
+    exception = db.relationship('ChannelImportException',
+                                foreign_keys=[exception_id])
+
+    __table_args__ = (
+        db.UniqueConstraint('channel_connection_id', 'external_event_id',
+                             name='uq_chinev_connection_event'),
+    )
+
+    def __repr__(self):
+        return (f'<ChannelInboundEvent id={self.id} '
+                f'event={self.event_type!r} '
+                f'result={self.result_status!r} '
                 f'ref={self.external_reservation_ref!r}>')
 
 

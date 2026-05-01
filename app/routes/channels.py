@@ -418,3 +418,83 @@ def sandbox_import(conn_id):
             'channel_exceptions.detail', exc_id=result.exception.id))
     flash(result.message, 'error')
     return redirect(url_for('channels.detail', conn_id=conn.id))
+
+
+@channels_bp.route('/<int:conn_id>/sandbox-modify', methods=['POST'])
+@login_required
+@admin_required
+def sandbox_modify(conn_id):
+    """Staging-only inbound modification simulation. Drives
+    services.channel_import.apply_modification() with form fields.
+    NEVER calls an external API."""
+    from ..services.channel_import import apply_modification
+
+    conn = ChannelConnection.query.get_or_404(conn_id)
+    payload = {
+        'external_event_id':        (request.form.get(
+            'external_event_id') or '').strip() or None,
+        'external_reservation_ref': (request.form.get(
+            'external_reservation_ref') or '').strip(),
+    }
+    # Optional fields — only include them if the operator typed
+    # something so the diff stays minimal.
+    for fld in ('check_in', 'check_out', 'external_room_id',
+                'guest_first_name', 'guest_last_name',
+                'guest_email', 'guest_phone'):
+        v = (request.form.get(fld) or '').strip()
+        if v:
+            payload[fld] = v
+    for fld in ('num_guests', 'total_amount'):
+        v = (request.form.get(fld) or '').strip()
+        if v:
+            payload[fld] = v
+
+    result = apply_modification(connection=conn, payload=payload,
+                                actor_user_id=current_user.id)
+    if result.action == 'imported':
+        flash(f'✓ {result.message}', 'success')
+        if result.booking is not None:
+            return redirect(url_for(
+                'bookings.detail', booking_id=result.booking.id))
+    elif result.action == 'duplicate_skipped':
+        flash(f'↻ {result.message}', 'info')
+    elif result.action == 'queued':
+        flash(f'⚠ {result.message}', 'warning')
+        return redirect(url_for(
+            'channel_exceptions.detail', exc_id=result.exception.id))
+    else:
+        flash(result.message, 'error')
+    return redirect(url_for('channels.detail', conn_id=conn.id))
+
+
+@channels_bp.route('/<int:conn_id>/sandbox-cancel', methods=['POST'])
+@login_required
+@admin_required
+def sandbox_cancel(conn_id):
+    """Staging-only inbound cancellation simulation. Drives
+    services.channel_import.apply_cancellation() with form fields.
+    NEVER calls an external API."""
+    from ..services.channel_import import apply_cancellation
+
+    conn = ChannelConnection.query.get_or_404(conn_id)
+    payload = {
+        'external_event_id':        (request.form.get(
+            'external_event_id') or '').strip() or None,
+        'external_reservation_ref': (request.form.get(
+            'external_reservation_ref') or '').strip(),
+        'reason':                   (request.form.get('reason')
+                                     or '').strip() or None,
+    }
+    result = apply_cancellation(connection=conn, payload=payload,
+                                actor_user_id=current_user.id)
+    if result.action == 'imported':
+        flash(f'✓ {result.message}', 'success')
+    elif result.action == 'duplicate_skipped':
+        flash(f'↻ {result.message}', 'info')
+    elif result.action == 'queued':
+        flash(f'⚠ {result.message}', 'warning')
+        return redirect(url_for(
+            'channel_exceptions.detail', exc_id=result.exception.id))
+    else:
+        flash(result.message, 'error')
+    return redirect(url_for('channels.detail', conn_id=conn.id))
