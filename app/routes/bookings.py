@@ -793,6 +793,7 @@ def confirm(booking_id):
 
 @bookings_bp.route('/uploads/<path:filename>')
 @login_required
+@admin_required
 def download_upload(filename):
     from flask import send_from_directory, current_app
     from ..services.drive import view_url as drive_view_url
