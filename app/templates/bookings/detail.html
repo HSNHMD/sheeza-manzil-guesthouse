@@ -132,8 +132,8 @@
     </div>
   </div>
 
-  <!-- Uploaded Documents -->
-  {% if booking.id_card_filename or booking.payment_slip_filename %}
+  <!-- Uploaded Documents (admin only — download route is admin-gated) -->
+  {% if current_user.is_admin and (booking.id_card_filename or booking.payment_slip_filename) %}
   <div class="bg-white rounded-xl border border-gray-200 p-5">
     <h2 class="font-semibold text-gray-700 mb-4">Uploaded Documents</h2>
     <div class="space-y-2 text-sm">
