@@ -214,7 +214,6 @@ SEED_ROOMS = [
 ]
 
 
-@auth_bp.route('/admin/seed', methods=['GET', 'POST'])
 @login_required
 def seed():
     if not current_user.is_admin:
@@ -248,6 +247,12 @@ def seed():
         return redirect(url_for('auth.seed'))
 
     return render_template('auth/seed.html', existing=existing, seed_rooms=SEED_ROOMS)
+
+
+# Seed route registers ONLY when ENABLE_SEED_ROUTES=true (dev/staging). Default
+# (unset) => the route does not exist (404), never reachable in production.
+if os.environ.get('ENABLE_SEED_ROUTES', 'false').lower() == 'true':
+    auth_bp.add_url_rule('/admin/seed', view_func=seed, methods=['GET', 'POST'])
 
 
 # ── WhatsApp test (/admin/test-whatsapp) ─────────────────────────────────────

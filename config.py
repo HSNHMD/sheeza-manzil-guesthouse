@@ -55,3 +55,6 @@ class Config:
 
     # ── General ────────────────────────────────────────────────────────────────
     DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+
+    # ── Dev/seed routes (must be explicitly enabled; absent in production) ───────
+    ENABLE_SEED_ROUTES = os.environ.get('ENABLE_SEED_ROUTES', 'false').lower() == 'true'

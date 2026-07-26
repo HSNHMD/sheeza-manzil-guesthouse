@@ -202,7 +202,10 @@ class SidebarDepartmentSectionsTests(unittest.TestCase):
             b'Rooms', b'Housekeeping Board',
             b'Invoices', b'Reports', b'Tax', b'Reconciliation',
             b'Expenses', b'P&amp;L',
-            b'Audit Log', b'Users / Roles', b'Seed DB',
+            b'Audit Log', b'Users / Roles',
+            # 'Seed DB' is now env-gated (ENABLE_SEED_ROUTES) and intentionally
+            # absent by default — its presence-when-enabled and absence-by-default
+            # are covered by test_seed_route_gating.
             b'Property', b'Property Settings', b'Channels',
             b'Rates &amp; Inventory', b'WhatsApp Settings',
         ):
