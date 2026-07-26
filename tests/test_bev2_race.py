@@ -106,5 +106,53 @@ class RaceTest(unittest.TestCase):
                 'exactly one active hold must exist')
 
 
+@unittest.skipUnless(_PG_URL, 'BEV2_TEST_PG_URL not set — race test requires Postgres')
+class RaceEndpointTest(unittest.TestCase):
+    """Endpoint-level race (spec §B6): two guest SESSIONS POST /book/hold for the
+    last room of a type; exactly one is redirected to /book/guest (got the hold),
+    the other is bounced back to /book (friendly re-query). Postgres only."""
+
+    def setUp(self):
+        self.app = create_app(_PGConfig)
+        with self.app.app_context():
+            db.create_all()
+            db.session.add(Property(code='default', name='Race Property'))
+            db.session.commit()
+            rt = RoomType(code='RACE', name='RaceType', max_occupancy=2,
+                          base_capacity=2, is_active=True)
+            db.session.add(rt); db.session.commit()
+            db.session.add(Room(number='R1', name='T', room_type='RaceType',
+                                room_type_id=rt.id, floor=1, capacity=2,
+                                price_per_night=600.0, status='available',
+                                housekeeping_status='clean'))
+            db.session.commit()
+            self.rt_id = rt.id
+
+    def tearDown(self):
+        with self.app.app_context():
+            db.session.remove()
+
+    def test_two_sessions_one_gets_the_hold(self):
+        import threading
+        got = []
+        barrier = threading.Barrier(2)
+
+        def worker():
+            c = self.app.test_client()   # distinct session -> distinct token
+            barrier.wait()
+            r = c.post('/book/hold', data={
+                'check_in': _CI.isoformat(), 'check_out': _CO.isoformat(),
+                f'qty_{self.rt_id}': '1'})
+            got.append('/book/guest' in r.headers.get('Location', ''))
+
+        t1 = threading.Thread(target=worker); t2 = threading.Thread(target=worker)
+        t1.start(); t2.start(); t1.join(30); t2.join(30)
+        self.assertEqual(len(got), 2)
+        self.assertEqual(sum(1 for x in got if x), 1,
+                         f'exactly one session should get the hold, got {got}')
+        with self.app.app_context():
+            self.assertEqual(Hold.query.filter_by(state='active').count(), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

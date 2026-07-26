@@ -40,6 +40,10 @@
           <td class="py-2 px-3 font-mono text-gray-700">{{ r.remaining_label }}</td>
           <td class="py-2 px-3">
             <div class="flex items-center justify-end gap-1">
+              {% if r.hold.hold_type == 'pending' and r.hold.payment_slip_filename %}
+              <a href="{{ url_for('holds_admin.slip', hold_id=r.hold.id) }}" target="_blank"
+                 class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">Slip</a>
+              {% endif %}
               {% if r.hold.hold_type == 'pending' %}
               <form method="post" action="{{ url_for('holds_admin.confirm', hold_id=r.hold.id) }}">
                 <button class="text-xs px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700">Confirm</button>

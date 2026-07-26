@@ -42,12 +42,14 @@ def _unique_group_code():
 
 def create_group_booking(items, check_in, check_out, *, lead_guest,
                          created_by=None, group_name=None, num_guests_each=1,
-                         status='confirmed', now=None):
-    """Create a group booking atomically.
+                         status='confirmed', force_group=True, now=None):
+    """Create a booking (or group booking) atomically.
 
     items: list of {'room_type_id': int, 'qty': int}
     lead_guest: an existing Guest instance OR a dict of guest fields to create.
-    Returns {'ok', 'group_id', 'booking_ids', 'reasons'}.
+    force_group: when False AND exactly one room is booked, produce a PLAIN
+      booking (no BookingGroup / master-folio overhead) per spec §B3 intent.
+    Returns {'ok', 'group_id', 'booking_ids', 'reasons'} (group_id None if plain).
     On any failure the transaction is rolled back entirely.
     """
     from ..models import db, BookingGroup, Booking, Guest
@@ -59,6 +61,7 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
     if not norm:
         return {'ok': False, 'group_id': None, 'booking_ids': [],
                 'reasons': ['no room-type items supplied.']}
+    make_group = force_group or sum(i['qty'] for i in norm) > 1
 
     try:
         # 1. LOCK every involved type (ascending id — deadlock-safe).
@@ -88,15 +91,17 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
             db.session.add(guest)
             db.session.flush()
 
-        # 4. Group.
-        group = BookingGroup(
-            group_code=_unique_group_code(),
-            group_name=(group_name or f'Group {guest.first_name or ""}'.strip())[:160],
-            primary_contact_guest_id=guest.id,
-            billing_mode='master', status='active',
-        )
-        db.session.add(group)
-        db.session.flush()
+        # 4. Group (only when multi-room or forced).
+        group = None
+        if make_group:
+            group = BookingGroup(
+                group_code=_unique_group_code(),
+                group_name=(group_name or f'Group {guest.first_name or ""}'.strip())[:160],
+                primary_contact_guest_id=guest.id,
+                billing_mode='master', status='active',
+            )
+            db.session.add(group)
+            db.session.flush()
 
         # 5. One Booking per room, best-fit assigned (avoiding re-pick).
         booking_ids = []
@@ -119,30 +124,37 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
                     room_id=room.id, guest_id=guest.id,
                     check_in_date=check_in, check_out_date=check_out,
                     num_guests=num_guests_each,
-                    total_amount=price['total'],
-                    status=status, booking_group_id=group.id,
-                    billing_target='master', created_by=created_by,
+                    total_amount=price['total'], status=status,
+                    booking_group_id=(group.id if group else None),
+                    billing_target=('master' if group else 'individual'),
+                    created_by=created_by,
                 )
                 db.session.add(b)
                 db.session.flush()
                 booking_ids.append(b.id)
 
-        # 6. Master folio = first booking; ad-hoc extras consolidate there.
-        group.master_booking_id = booking_ids[0]
-
-        log_activity('group.created', actor_user_id=created_by,
-                     description=(f'Group {group.group_code}: {len(booking_ids)} '
-                                  f'booking(s) across {len(norm)} type(s), '
-                                  f'{check_in}..{check_out}.'),
-                     metadata={'group_code': group.group_code,
-                               'booking_count': len(booking_ids),
-                               'type_count': len(norm),
-                               'master_booking_id': booking_ids[0]})
+        if group:
+            # 6. Master folio = first booking; ad-hoc extras consolidate there.
+            group.master_booking_id = booking_ids[0]
+            log_activity('group.created', actor_user_id=created_by,
+                         description=(f'Group {group.group_code}: {len(booking_ids)} '
+                                      f'booking(s) across {len(norm)} type(s), '
+                                      f'{check_in}..{check_out}.'),
+                         metadata={'group_code': group.group_code,
+                                   'booking_count': len(booking_ids),
+                                   'type_count': len(norm),
+                                   'master_booking_id': booking_ids[0]})
+        else:
+            log_activity('booking.created', booking_id=booking_ids[0],
+                         actor_user_id=created_by, new_value=status,
+                         description=(f'Booking created ({check_in}..{check_out}, '
+                                      f'plain — single room).'),
+                         metadata={'booking_id': booking_ids[0]})
 
         # 7. Commit everything atomically (releases the type locks).
         db.session.commit()
-        return {'ok': True, 'group_id': group.id, 'booking_ids': booking_ids,
-                'reasons': []}
+        return {'ok': True, 'group_id': (group.id if group else None),
+                'booking_ids': booking_ids, 'reasons': []}
 
     except Exception as exc:               # noqa: BLE001 — atomic rollback contract
         db.session.rollback()

@@ -279,6 +279,163 @@ def confirm_pending(hold_id, *, lead_guest=None, user_id=None, num_guests_each=1
     return res
 
 
+# ── Phase 2: multi-type portal group flow (session_token = group key) ─
+
+def holds_for_session(session_token, *, hold_type=None, state='active', now=None):
+    """All holds for a browser session (the portal 'group'). Optionally live."""
+    from ..models import Hold
+    q = Hold.query.filter(Hold.session_token == session_token)
+    if hold_type:
+        q = q.filter(Hold.hold_type == hold_type)
+    if state:
+        q = q.filter(Hold.state == state)
+    if now is not None:
+        q = q.filter(Hold.expires_at > now)
+    return q.order_by(Hold.id).all()
+
+
+def acquire_multi_selection(items, check_in, check_out, session_token, *,
+                            created_by=None, now=None):
+    """Atomically acquire selection holds for MULTIPLE types (spec §B1): one
+    hold row per type, same session_token. All-or-nothing: if any type is no
+    longer available, the whole thing rolls back (friendly 'just missed it')."""
+    from ..models import db, Hold
+    from .audit import log_activity
+    now = now or datetime.utcnow()
+    norm = [{'room_type_id': int(i['room_type_id']), 'qty': int(i.get('qty', 1))}
+            for i in items if int(i.get('qty', 1)) > 0]
+    if not norm:
+        return {'ok': False, 'reasons': ['select at least one room.']}
+    try:
+        lock_types(db.session, [i['room_type_id'] for i in norm])
+        reasons = []
+        for i in norm:
+            av = inventory.available_for_stay(i['room_type_id'], check_in,
+                                              check_out, i['qty'], now=now)
+            if not av['ok']:
+                reasons.append(f"type {i['room_type_id']} x{i['qty']}: "
+                               + '; '.join(av['reasons']))
+        if reasons:
+            db.session.rollback()
+            return {'ok': False, 'reasons': reasons}
+        ttl = timedelta(minutes=get_ttls()['selection_minutes'])
+        hold_ids = []
+        for i in norm:
+            h = Hold(room_type_id=i['room_type_id'], qty=i['qty'],
+                     check_in_date=check_in, check_out_date=check_out,
+                     hold_type='selection', state='active', expires_at=now + ttl,
+                     session_token=session_token, created_by_user_id=created_by)
+            db.session.add(h)
+            db.session.flush()
+            hold_ids.append(h.id)
+        log_activity('hold.selection_group_created', actor_type='guest',
+                     new_value='active',
+                     description=(f'Selection group ({len(hold_ids)} type(s)) '
+                                  f'{check_in}..{check_out}.'),
+                     metadata={'session_token': session_token[:32],
+                               'hold_ids': str(hold_ids)[:200]})
+        db.session.commit()
+        return {'ok': True, 'hold_ids': hold_ids,
+                'expires_at': now + ttl, 'reasons': []}
+    except Exception as exc:            # noqa: BLE001
+        db.session.rollback()
+        return {'ok': False, 'reasons': [f'rolled back: {type(exc).__name__}']}
+
+
+def promote_group_to_pending(session_token, *, guest_name=None, contact=None,
+                             lead_guest_id=None, slip_filename=None,
+                             slip_drive_id=None, created_by=None, now=None):
+    """Submission: convert a live SELECTION group into ONE PENDING group (6h),
+    attaching lead guest + optional slip. Server re-validates the holds are
+    still live (never trust the client timer). Audited transition, no delete."""
+    from ..models import db
+    from .audit import log_activity
+    now = now or datetime.utcnow()
+    live = holds_for_session(session_token, hold_type='selection',
+                             state='active', now=now)
+    if not live:
+        return {'ok': False, 'reasons': ['your hold expired — please start over.']}
+    ttl = timedelta(hours=get_ttls()['pending_hours'])
+    for h in live:
+        h.hold_type = 'pending'
+        h.expires_at = now + ttl
+        if guest_name:    h.guest_name = guest_name
+        if contact:       h.contact = contact
+        if lead_guest_id: h.lead_guest_id = lead_guest_id
+        if slip_filename: h.payment_slip_filename = slip_filename
+        if slip_drive_id: h.payment_slip_drive_id = slip_drive_id
+    log_activity('hold.group_pending', actor_type='guest',
+                 old_value='selection', new_value='pending',
+                 description=f'Selection group → pending ({len(live)} hold(s)).',
+                 metadata={'session_token': session_token[:32],
+                           'count': len(live), 'slip': bool(slip_filename)})
+    db.session.commit()
+    return {'ok': True, 'expires_at': now + ttl, 'count': len(live)}
+
+
+def confirm_group(session_token, *, lead_guest=None, user_id=None,
+                  num_guests_each=1, now=None):
+    """Admin confirmation of a PENDING group → booking(s) + auto-assignment.
+    Single hold of qty=1 produces a PLAIN booking (no group overhead, per spec
+    §B3 intent); anything larger produces one group + master folio. The holds
+    are marked converted (never deleted); the slip transfers to the booking."""
+    from ..models import db, Guest
+    from .audit import log_activity
+    from . import group_booking
+    now = now or datetime.utcnow()
+    live = holds_for_session(session_token, hold_type='pending',
+                             state='active', now=now)
+    if not live:
+        return {'ok': False, 'reasons': ['pending group not live (expired?).']}
+
+    guest = lead_guest
+    if guest is None and live[0].lead_guest_id:
+        guest = Guest.query.get(live[0].lead_guest_id)
+    if guest is None:
+        return {'ok': False, 'reasons': ['a lead guest is required to confirm.']}
+
+    ci, co = live[0].check_in_date, live[0].check_out_date
+    slip_fn = next((h.payment_slip_filename for h in live if h.payment_slip_filename), None)
+    slip_dr = next((h.payment_slip_drive_id for h in live if h.payment_slip_drive_id), None)
+    total_rooms = sum(h.qty for h in live)
+
+    # exclude the converting group from its own availability re-check
+    for h in live:
+        h.state = 'converted'
+        h.converted_at = now
+    db.session.flush()
+
+    res = group_booking.create_group_booking(
+        [{'room_type_id': h.room_type_id, 'qty': h.qty} for h in live],
+        ci, co, lead_guest=guest, created_by=user_id,
+        num_guests_each=num_guests_each, status='confirmed',
+        force_group=(total_rooms > 1), now=now)
+    if not res['ok']:
+        db.session.rollback()
+        return res
+
+    # transfer slip + link holds to the created group/booking
+    from ..models import Booking, Hold
+    for bid in res['booking_ids']:
+        b = Booking.query.get(bid)
+        if slip_fn and not b.payment_slip_filename:
+            b.payment_slip_filename = slip_fn
+            b.payment_slip_drive_id = slip_dr
+    for h in Hold.query.filter(Hold.session_token == session_token,
+                               Hold.state == 'converted').all():
+        h.converted_group_id = res.get('group_id')
+    log_activity('hold.group_confirmed', actor_user_id=user_id,
+                 booking_id=res['booking_ids'][0],
+                 old_value='pending', new_value='converted',
+                 description=(f'Pending group confirmed → '
+                              f'{"group " + str(res.get("group_id")) if res.get("group_id") else "booking " + str(res["booking_ids"][0])}.'),
+                 metadata={'session_token': session_token[:32],
+                           'booking_ids': str(res['booking_ids'])[:200],
+                           'group_id': res.get('group_id')})
+    db.session.commit()
+    return res
+
+
 # ── read helpers (admin holds panel) ────────────────────────────────
 
 def active_holds(*, now=None):

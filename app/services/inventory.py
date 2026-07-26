@@ -539,6 +539,29 @@ def available_for_stay(room_type_id, check_in, check_out, qty=1, *, now=None):
     }
 
 
+def occupancy_tiles(night=None, *, now=None):
+    """Per-type dashboard tiles (spec §7): sellable / occupied / selection-held /
+    pending / OOO for one night — ALL from the single inventory query, so the
+    numbers match the portal, board, and any other consumer by construction."""
+    from ..models import RoomType
+    from datetime import datetime as _dt
+    night = night or _dt.utcnow().date()
+    tiles = []
+    for rt in (RoomType.query.filter_by(is_active=True)
+               .order_by(RoomType.name).all()):
+        split = _free_or_ooo_split(rt.id, night)
+        tiles.append({
+            'room_type': rt,
+            'physical': split['physical'],
+            'ooo': split['ooo'],
+            'occupied': split['physical'] - split['free'] - split['ooo'],
+            'selection_held': selection_held(rt.id, night, now=now),
+            'pending': pending_held(rt.id, night, now=now),
+            'sellable': sellable(rt.id, night, now=now),
+        })
+    return tiles
+
+
 def invariant_violations(horizon_days=180, *, now=None):
     """Runnable invariant (spec §3): for every (type, night) in the horizon,
     held + pending + assigned <= sellable_capacity, i.e. sellable() >= 0.

@@ -136,6 +136,23 @@
               href=(url_for('reports.occupancy') if current_user.is_admin else url_for('front_office.in_house'))) }}
   </div>
 
+  {# ── BEv2 per-type occupancy (tonight) — from the single inventory query ── #}
+  {% if bev2_tiles %}
+  {{ ui.section_heading('Availability by type (tonight)') }}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.75rem">
+    {% for t in bev2_tiles %}
+    <div style="border:1px solid #e5e7eb;border-radius:12px;padding:.75rem">
+      <div style="font-weight:600">{{ t.room_type.name }}</div>
+      <div style="font-size:1.5rem;font-weight:700;color:{{ '#059669' if t.sellable > 0 else '#9ca3af' }}">
+        {{ t.sellable }} <span style="font-size:.8rem;font-weight:400;color:#6b7280">sellable</span></div>
+      <div style="font-size:.8rem;color:#6b7280;margin-top:.25rem">
+        {{ t.occupied }} occupied &middot; {{ t.selection_held }} held &middot;
+        {{ t.pending }} pending &middot; {{ t.ooo }} OOO &middot; {{ t.physical }} rooms</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {# ── Rooms ───────────────────────────────────────────────── #}
   {{ ui.section_heading('Rooms') }}
   <div class="ds-kpi-grid">

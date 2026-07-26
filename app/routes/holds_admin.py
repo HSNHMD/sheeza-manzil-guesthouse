@@ -68,11 +68,32 @@ def extend(hold_id):
 @login_required
 @admin_required
 def confirm(hold_id):
-    res = holds.confirm_pending(hold_id, user_id=current_user.id)
+    from ..models import Hold
+    h = Hold.query.get_or_404(hold_id)
+    # A portal hold belongs to a session group — confirm the whole group.
+    if h.session_token:
+        res = holds.confirm_group(h.session_token, user_id=current_user.id)
+    else:
+        res = holds.confirm_pending(hold_id, user_id=current_user.id)
     flash('Pending confirmed — rooms auto-assigned.' if res['ok']
           else '; '.join(res.get('reasons', ['Could not confirm.'])),
           'success' if res['ok'] else 'error')
     return redirect(url_for('holds_admin.index'))
+
+
+@holds_admin_bp.route('/<int:hold_id>/slip')
+@login_required
+@admin_required
+def slip(hold_id):
+    """Serve the payment slip uploaded on a pending hold (admin-gated)."""
+    import os
+    from flask import send_from_directory, current_app, abort
+    from ..models import Hold
+    h = Hold.query.get_or_404(hold_id)
+    if not h.payment_slip_filename:
+        abort(404)
+    upload_dir = os.path.join(current_app.root_path, 'uploads')
+    return send_from_directory(upload_dir, h.payment_slip_filename)
 
 
 def _fmt_remaining(seconds):

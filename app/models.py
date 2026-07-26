@@ -2181,6 +2181,11 @@ class Hold(db.Model):
                                                ondelete='SET NULL'),
                                  nullable=True, index=True)
 
+    # Phase 2: slip may be uploaded while still a pending hold; transfers to the
+    # booking at confirmation. R2 dual-write (same pattern as Booking).
+    payment_slip_filename = db.Column(db.String(255), nullable=True)
+    payment_slip_drive_id = db.Column(db.String(255), nullable=True)
+
     released_reason     = db.Column(db.String(255), nullable=True)
     released_at         = db.Column(db.DateTime, nullable=True)
     released_by_user_id = db.Column(db.Integer,

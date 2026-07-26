@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Complete your booking</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem;color:#1f2937}
+ label{display:block;margin:.5rem 0}
+ input{padding:.5rem;border-radius:8px;border:1px solid #d1d5db;width:100%}
+ button{background:#059669;color:#fff;border:0;border-radius:8px;padding:.6rem 1rem;cursor:pointer}
+ .cd{font-weight:700;color:#b45309} .expired{color:#b91c1c}
+</style></head><body>
+<h1>Complete your booking</h1>
+<p>Your rooms are held for you. Time remaining: <span id="cd" class="cd">…</span></p>
+<p id="expmsg" class="expired" style="display:none">
+  Your hold expired. <a href="{{ url_for('portal.index') }}">Start over</a>.</p>
+
+<form id="f" method="POST" action="{{ url_for('portal.submit') }}" enctype="multipart/form-data">
+  <label>First name <input name="first_name" required></label>
+  <label>Last name <input name="last_name" required></label>
+  <label>WhatsApp phone <input name="phone" required></label>
+  <label>Email <input name="email" type="email"></label>
+  <label>Nationality <input name="nationality"></label>
+  <label>ID / passport number <input name="id_number"></label>
+  <label>Payment slip (optional now — you have until the deadline)
+    <input type="file" name="payment_slip" accept="image/*,application/pdf"></label>
+  <p style="font-size:.9rem;color:#6b7280">
+    Pay by bank transfer per the property's payment instructions; upload the slip
+    now or later. Your booking is confirmed once payment is verified.</p>
+  <button type="submit" id="sub">Submit booking request</button>
+</form>
+
+<script>
+ // Server-authoritative expiry; this client timer is DISPLAY ONLY.
+ const exp = new Date("{{ expires_at.isoformat() }}Z").getTime();
+ const cd = document.getElementById('cd'), sub = document.getElementById('sub'),
+       msg = document.getElementById('expmsg');
+ function tick(){
+   const s = Math.floor((exp - Date.now())/1000);
+   if (s <= 0){ cd.textContent='expired'; sub.disabled=true; msg.style.display='block'; return; }
+   const m=Math.floor(s/60); cd.textContent = m+'m '+(s%60)+'s'; setTimeout(tick,1000);
+ }
+ tick();
+</script>
+</body></html>
