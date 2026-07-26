@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Holds{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-5">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-bold text-gray-800">Active holds</h1>
+    <span class="text-xs text-gray-500">Selection (15m) + pending (6h) — live inventory reservations</span>
+  </div>
+
+  {% if not rows %}
+  <div class="bg-white rounded-xl border border-gray-200 p-6 text-sm text-gray-500">
+    No active holds right now.
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600">
+        <tr>
+          <th class="text-left py-2 px-3">Type</th>
+          <th class="text-left py-2 px-3">Stage</th>
+          <th class="text-left py-2 px-3">Qty</th>
+          <th class="text-left py-2 px-3">Dates</th>
+          <th class="text-left py-2 px-3">Guest / contact</th>
+          <th class="text-left py-2 px-3">Time left</th>
+          <th class="text-right py-2 px-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="border-t border-gray-100">
+          <td class="py-2 px-3 font-medium text-gray-800">{{ r.type_name }}</td>
+          <td class="py-2 px-3">
+            <span class="text-xs px-2 py-0.5 rounded-full
+              {% if r.hold.hold_type == 'pending' %}bg-amber-100 text-amber-800{% else %}bg-sky-100 text-sky-800{% endif %}">
+              {{ r.hold.hold_type }}</span>
+          </td>
+          <td class="py-2 px-3">{{ r.hold.qty }}</td>
+          <td class="py-2 px-3 text-gray-600">{{ r.hold.check_in_date }} → {{ r.hold.check_out_date }}</td>
+          <td class="py-2 px-3 text-gray-600">{{ r.guest }}{% if r.contact != '—' %} · {{ r.contact }}{% endif %}</td>
+          <td class="py-2 px-3 font-mono text-gray-700">{{ r.remaining_label }}</td>
+          <td class="py-2 px-3">
+            <div class="flex items-center justify-end gap-1">
+              {% if r.hold.hold_type == 'pending' %}
+              <form method="post" action="{{ url_for('holds_admin.confirm', hold_id=r.hold.id) }}">
+                <button class="text-xs px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700">Confirm</button>
+              </form>
+              {% endif %}
+              <form method="post" action="{{ url_for('holds_admin.extend', hold_id=r.hold.id) }}">
+                <input type="hidden" name="minutes" value="15">
+                <button class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">+15m</button>
+              </form>
+              <form method="post" action="{{ url_for('holds_admin.release', hold_id=r.hold.id) }}"
+                    onsubmit="this.reason.value = prompt('Release reason?') || ''; return !!this.reason.value;">
+                <input type="hidden" name="reason" value="">
+                <button class="text-xs px-2 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100">Release</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

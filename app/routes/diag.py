@@ -133,4 +133,16 @@ def index():
         'env_app_git_sha':      os.environ.get('APP_GIT_SHA') or '(unset)',
         'env_staging':          os.environ.get('STAGING') or '(unset)',
     }
+
+    # Booking Engine V2 — hold sweep observability (last-run) + live hold count.
+    try:
+        from ..services.holds import last_sweep, active_holds
+        _sweep = last_sweep()
+        info['hold_sweep_last_run'] = (_sweep.created_at if _sweep else None)
+        info['hold_sweep_last_meta'] = (_sweep.metadata_json if _sweep else None)
+        info['active_hold_count'] = len(active_holds())
+    except Exception:
+        info['hold_sweep_last_run'] = None
+        info['active_hold_count'] = None
+
     return render_template('diag/index.html', info=info)

@@ -1425,6 +1425,14 @@ class PropertySettings(db.Model):
     cancellation_policy  = db.Column(db.Text, nullable=True)
     wifi_info            = db.Column(db.Text, nullable=True)
 
+    # ── Booking Engine V2 — hold TTLs (config, never hardcoded) ─
+    # Selection hold (stage 1) and pending hold (stage 2) durations.
+    # server_default seeds the singleton; editable via /admin/property-settings.
+    selection_hold_ttl_minutes = db.Column(db.Integer, nullable=False,
+                                           server_default='15')
+    pending_hold_ttl_hours     = db.Column(db.Integer, nullable=False,
+                                           server_default='6')
+
     # ── Lifecycle ─────────────────────────────────────────────
     is_active            = db.Column(db.Boolean, nullable=False,
                                      default=True)
@@ -2121,3 +2129,89 @@ class WorkOrder(db.Model):
     def __repr__(self):
         return (f'<WorkOrder id={self.id} room_id={self.room_id} '
                 f'priority={self.priority!r} status={self.status!r}>')
+
+
+# ── Booking Engine V2 — Holds (selection + pending) ─────────────────
+#
+# A Hold is a TYPE-LEVEL, room-agnostic reservation of inventory. It is
+# NOT a stored availability counter — it records intent (which type, how
+# many, which nights) and sellable() subtracts live-active holds. Room
+# assignment happens only at confirmation (see services.assignment), so a
+# hold never references a specific room.
+#
+# Two stages (spec §4):
+#   - selection (15m): created when a guest picks type(s)+dates.
+#   - pending   (6h):  created on booking submission, awaiting slip + admin.
+#
+# Expiry is a STATE TRANSITION (state -> 'expired') written by the sweep,
+# with an audit entry — NEVER a delete, never a row removal.
+class Hold(db.Model):
+    __tablename__ = 'holds'
+
+    HOLD_TYPES = ('selection', 'pending')
+    STATES     = ('active', 'converted', 'released', 'expired')
+
+    id          = db.Column(db.Integer, primary_key=True)
+    property_id = db.Column(db.Integer, db.ForeignKey('properties.id'),
+                            nullable=False, server_default='1')
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    room_type_id = db.Column(db.Integer,
+                             db.ForeignKey('room_types.id', ondelete='CASCADE'),
+                             nullable=False, index=True)
+    qty            = db.Column(db.Integer, nullable=False, server_default='1')
+    check_in_date  = db.Column(db.Date, nullable=False)
+    check_out_date = db.Column(db.Date, nullable=False)   # EXCLUSIVE
+
+    hold_type = db.Column(db.String(20), nullable=False)   # selection | pending
+    state     = db.Column(db.String(20), nullable=False,
+                          server_default='active', index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+
+    session_token = db.Column(db.String(64), nullable=True, index=True)
+    guest_name    = db.Column(db.String(160), nullable=True)
+    contact       = db.Column(db.String(120), nullable=True)
+    lead_guest_id = db.Column(db.Integer,
+                              db.ForeignKey('guests.id', ondelete='SET NULL'),
+                              nullable=True)
+    booking_group_id = db.Column(db.Integer,
+                                 db.ForeignKey('booking_groups.id',
+                                               ondelete='SET NULL'),
+                                 nullable=True, index=True)
+
+    released_reason     = db.Column(db.String(255), nullable=True)
+    released_at         = db.Column(db.DateTime, nullable=True)
+    released_by_user_id = db.Column(db.Integer,
+                                    db.ForeignKey('users.id', ondelete='SET NULL'),
+                                    nullable=True)
+    converted_group_id  = db.Column(db.Integer,
+                                    db.ForeignKey('booking_groups.id',
+                                                  ondelete='SET NULL'),
+                                    nullable=True)
+    converted_at        = db.Column(db.DateTime, nullable=True)
+    created_by_user_id  = db.Column(db.Integer,
+                                    db.ForeignKey('users.id', ondelete='SET NULL'),
+                                    nullable=True)
+
+    room_type = db.relationship('RoomType', foreign_keys=[room_type_id])
+    lead_guest = db.relationship('Guest', foreign_keys=[lead_guest_id])
+
+    @property
+    def nights(self) -> int:
+        return (self.check_out_date - self.check_in_date).days
+
+    @property
+    def is_active(self) -> bool:
+        return self.state == 'active'
+
+    def is_live(self, *, now=None) -> bool:
+        """Active AND not past expiry (the sweep may not have run yet)."""
+        now = now or datetime.utcnow()
+        return self.state == 'active' and self.expires_at > now
+
+    def __repr__(self):
+        return (f'<Hold id={self.id} type={self.hold_type} state={self.state} '
+                f'rt={self.room_type_id} qty={self.qty} '
+                f'{self.check_in_date}..{self.check_out_date}>')

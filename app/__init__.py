@@ -62,6 +62,7 @@ def create_app(config_class=Config):
     from .routes.diag import diag_bp
     from .routes.maintenance import maintenance_bp
     from .routes.channel_exceptions import channel_exceptions_bp
+    from .routes.holds_admin import holds_admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(rooms_bp)
@@ -93,6 +94,12 @@ def create_app(config_class=Config):
     app.register_blueprint(diag_bp)
     app.register_blueprint(maintenance_bp)
     app.register_blueprint(channel_exceptions_bp)
+    app.register_blueprint(holds_admin_bp)
+
+    # Booking Engine V2 — sweep + invariant CLI (flask hold-sweep /
+    # flask inventory-invariant), for the systemd timer / cron wiring.
+    from .bev2_cli import register_bev2_cli
+    register_bev2_cli(app)
 
     # Register the business-date context processor so every template
     # can read {{ business_date }} without explicit passthrough.

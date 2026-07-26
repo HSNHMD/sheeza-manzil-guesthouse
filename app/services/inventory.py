@@ -369,3 +369,198 @@ def fleet_summary(check_in=None, check_out=None) -> list:
                                                  fallback=None),
         })
     return rows
+
+
+# ════════════════════════════════════════════════════════════════════
+# Booking Engine V2 — inventory truth (single source), holds-aware.
+#
+# THE contract (spec §2): sellable(type, night) =
+#     physical rooms of type
+#   − out-of-order rooms
+#   − rooms assigned to confirmed/in-house/holding bookings
+#   − rooms consumed by pending holds
+#   − rooms held by selection holds
+#
+# No stored counters anywhere — every number below is computed live.
+# Every consumer (public engine, front desk, dashboard, tape chart, OTA)
+# must call these functions; identical numbers by construction.
+# ════════════════════════════════════════════════════════════════════
+
+def free_rooms_for_stay(room_type_id, check_in, check_out):
+    """List of physical rooms of the type that are free for the ENTIRE stay
+    [check_in, check_out): not maintenance/OOO, no overlapping holding booking,
+    no overlapping RoomBlock. This is the CONTIGUITY set — each room here can
+    satisfy the whole stay by itself. (count_available == len of this.)"""
+    from ..models import Booking, RoomBlock
+
+    out = []
+    for r in _physical_rooms_of_type(room_type_id):
+        if (r.status or '').lower() == 'maintenance':
+            continue
+        if (r.housekeeping_status or '').lower() == 'out_of_order':
+            continue
+        conflict = Booking.query.filter(
+            Booking.room_id == r.id,
+            Booking.status.in_(_HOLDING_STATUSES),
+            Booking.check_in_date < check_out,
+            Booking.check_out_date > check_in,
+        ).first()
+        if conflict is not None:
+            continue
+        block = RoomBlock.query.filter(
+            RoomBlock.room_id == r.id,
+            RoomBlock.removed_at.is_(None),
+            RoomBlock.start_date < check_out,
+            RoomBlock.end_date > check_in,
+        ).first()
+        if block is not None:
+            continue
+        out.append(r)
+    return out
+
+
+def _held_qty_on_night(room_type_id, night, hold_type, *, now=None):
+    """Sum of qty of LIVE holds of `hold_type` covering `night`.
+
+    'Live' = state='active' AND not past expiry — an expired-but-unswept hold
+    no longer holds inventory (the sweep just formalizes the state), so
+    availability is correct in the window between expiry and the sweep.
+    """
+    from datetime import datetime as _dt
+    from ..models import Hold, db
+    now = now or _dt.utcnow()
+    night_end = night + timedelta(days=1)
+    total = db.session.query(db.func.coalesce(db.func.sum(Hold.qty), 0)).filter(
+        Hold.room_type_id == room_type_id,
+        Hold.hold_type == hold_type,
+        Hold.state == 'active',
+        Hold.expires_at > now,
+        Hold.check_in_date < night_end,
+        Hold.check_out_date > night,
+    ).scalar()
+    return int(total or 0)
+
+
+def selection_held(room_type_id, night, *, now=None):
+    return _held_qty_on_night(room_type_id, night, 'selection', now=now)
+
+
+def pending_held(room_type_id, night, *, now=None):
+    return _held_qty_on_night(room_type_id, night, 'pending', now=now)
+
+
+def assigned_count(room_type_id, night):
+    """Physical rooms of the type occupied by a holding booking on `night`."""
+    split = _free_or_ooo_split(room_type_id, night)
+    return split['physical'] - split['free'] - split['ooo']
+
+
+def _free_or_ooo_split(room_type_id, night):
+    """{physical, ooo, free} for a single night (free excludes bookings+blocks+ooo)."""
+    from ..models import Booking, RoomBlock
+    rooms = _physical_rooms_of_type(room_type_id)
+    night_end = night + timedelta(days=1)
+    ooo = 0
+    free = 0
+    for r in rooms:
+        is_ooo = ((r.status or '').lower() == 'maintenance'
+                  or (r.housekeeping_status or '').lower() == 'out_of_order')
+        blocked = RoomBlock.query.filter(
+            RoomBlock.room_id == r.id, RoomBlock.removed_at.is_(None),
+            RoomBlock.start_date < night_end, RoomBlock.end_date > night,
+        ).first() is not None
+        if is_ooo or blocked:
+            ooo += 1
+            continue
+        booked = Booking.query.filter(
+            Booking.room_id == r.id, Booking.status.in_(_HOLDING_STATUSES),
+            Booking.check_in_date < night_end, Booking.check_out_date > night,
+        ).first() is not None
+        if not booked:
+            free += 1
+    return {'physical': len(rooms), 'ooo': ooo, 'free': free}
+
+
+def sellable(room_type_id, night, *, now=None):
+    """THE single sellable number for (type, night). Never negative-floored —
+    callers/invariant rely on the raw signed value (a negative means oversell,
+    which the invariant flags as HIGH)."""
+    split = _free_or_ooo_split(room_type_id, night)
+    return (split['free']
+            - selection_held(room_type_id, night, now=now)
+            - pending_held(room_type_id, night, now=now))
+
+
+def available_for_stay(room_type_id, check_in, check_out, qty=1, *, now=None):
+    """Contiguity-aware availability (spec §2). Returns dict:
+        {ok, contiguous_free, min_sellable, qty, reasons}
+
+    ok iff: (a) >= qty WHOLE physical rooms free for the entire stay
+    (contiguity), AND (b) sellable >= qty on every night (capacity net of
+    OOO/assigned/pending/selection holds). Both must hold — (a) guarantees
+    real rooms exist; (b) guarantees soft holds haven't oversold the type.
+    """
+    err = validate_date_range(check_in, check_out)
+    if err:
+        return {'ok': False, 'contiguous_free': 0, 'min_sellable': 0,
+                'qty': qty, 'reasons': [err]}
+    if check_out <= check_in:
+        return {'ok': False, 'contiguous_free': 0, 'min_sellable': 0,
+                'qty': qty, 'reasons': ['stay must be at least 1 night.']}
+    if qty < 1:
+        return {'ok': False, 'contiguous_free': 0, 'min_sellable': 0,
+                'qty': qty, 'reasons': ['qty must be >= 1.']}
+
+    contiguous_free = len(free_rooms_for_stay(room_type_id, check_in, check_out))
+    min_sellable = None
+    d = check_in
+    while d < check_out:
+        s = sellable(room_type_id, d, now=now)
+        min_sellable = s if min_sellable is None else min(min_sellable, s)
+        d += timedelta(days=1)
+    min_sellable = min_sellable if min_sellable is not None else 0
+
+    reasons = []
+    if contiguous_free < qty:
+        reasons.append(
+            f'only {contiguous_free} whole room(s) of the type are free for '
+            f'the entire stay (need {qty}); fragmented availability is not '
+            f'sold publicly (front-desk override only).')
+    if min_sellable < qty:
+        reasons.append(
+            f'sellable capacity dips to {min_sellable} on at least one night '
+            f'(need {qty}) after holds/pending/OOO.')
+    return {
+        'ok': (contiguous_free >= qty and min_sellable >= qty),
+        'contiguous_free': contiguous_free,
+        'min_sellable': min_sellable,
+        'qty': qty,
+        'reasons': reasons,
+    }
+
+
+def invariant_violations(horizon_days=180, *, now=None):
+    """Runnable invariant (spec §3): for every (type, night) in the horizon,
+    held + pending + assigned <= sellable_capacity, i.e. sellable() >= 0.
+    Returns a list of violation dicts (empty == healthy)."""
+    from ..models import RoomType
+    from datetime import datetime as _dt
+    start = (now or _dt.utcnow()).date()
+    violations = []
+    for rt in RoomType.query.filter_by(is_active=True).all():
+        for i in range(horizon_days):
+            night = start + timedelta(days=i)
+            s = sellable(rt.id, night, now=now)
+            if s < 0:
+                split = _free_or_ooo_split(rt.id, night)
+                violations.append({
+                    'room_type_id': rt.id,
+                    'room_type': rt.name,
+                    'night': night.isoformat(),
+                    'sellable': s,
+                    'physical': split['physical'],
+                    'ooo': split['ooo'],
+                    'selection_held': selection_held(rt.id, night, now=now),
+                    'pending_held': pending_held(rt.id, night, now=now),
+                })
+    return violations
