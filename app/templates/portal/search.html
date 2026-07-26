@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Book your stay</title>
+<title>{{ brand.name }} — Book your stay</title>
 <style>
  body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#1f2937}
  .card{border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin:.75rem 0}
@@ -10,7 +10,8 @@
  button{background:#2563eb;color:#fff;border:0;cursor:pointer}
  .total{font-size:1.25rem;font-weight:700}
 </style></head><body>
-<h1>Book your stay</h1>
+<h1>{{ brand.name }}</h1>
+<p style="color:#6b7280;margin-top:-.5rem">Book your stay</p>
 <form method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
   <label>Check-out <input type="date" name="check_out" value="{{ check_out or '' }}" required></label>
