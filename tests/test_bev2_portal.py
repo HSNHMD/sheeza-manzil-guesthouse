@@ -210,6 +210,22 @@ class PortalServiceRules(_Base):
         db.session.commit()
         self.assertEqual(portal_svc.status(tok)['state'], 'expired')
 
+    def test_slip_transfers_to_booking_on_confirm(self):
+        tok = 'tok-slip'
+        portal_svc.create_holds([{'room_type_id': self.t2.id, 'qty': 1}], _CI, _CO, tok)
+        portal_svc.submit(tok, {'first_name': 'S', 'last_name': 'L', 'phone': '+960'},
+                          slip_filename='slip123.png',
+                          slip_drive_id='payment-slips/slip123.png')
+        h = holds_svc.holds_for_session(tok, hold_type='pending', state='active')[0]
+        self.assertEqual(h.payment_slip_filename, 'slip123.png')       # on the hold
+        conf = holds_svc.confirm_group(tok, user_id=self.admin.id)
+        self.assertTrue(conf['ok'], conf.get('reasons'))
+        b = Booking.query.get(conf['booking_ids'][0])
+        # slip reference handed off to the booking -> findable via the normal
+        # (admin-gated) booking UI after the hold archives
+        self.assertEqual(b.payment_slip_filename, 'slip123.png')
+        self.assertEqual(b.payment_slip_drive_id, 'payment-slips/slip123.png')
+
     def test_search_never_exposes_room_numbers(self):
         cards = portal_svc.search(_CI, _CO)
         # cards carry type + counts only; no room object/number leaks

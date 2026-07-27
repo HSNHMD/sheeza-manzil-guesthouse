@@ -34,6 +34,10 @@ from app.models import (                                      # noqa: E402
 )
 from app.services import whatsapp as wa                       # noqa: E402
 from app.services import ai_drafts                            # noqa: E402
+from app.utils import hotel_date                              # noqa: E402
+# Front office counts "today" in the property timezone via hotel_date(); tests
+# must seed/assert against the SAME notion, not naive UTC hotel_date() (which
+# diverges 19:00-23:59 UTC and caused a nightly-flaky failure).
 
 
 class _TestConfig(Config):
@@ -146,7 +150,7 @@ class FrontOfficeIndexTests(_RouteBase):
     def test_index_shows_correct_counts(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         # 2 arrivals
         _seed_booking(rooms[0], g, ci=today, co=today + timedelta(days=2),
                       status='confirmed', ref='BKARR1')
@@ -175,7 +179,7 @@ class FrontOfficeArrivalsTests(_RouteBase):
     def test_arrivals_renders_today(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         _seed_booking(rooms[0], g,
                       ci=today, co=today + timedelta(days=2),
                       status='confirmed', ref='BKARR_TODAY')
@@ -188,7 +192,7 @@ class FrontOfficeArrivalsTests(_RouteBase):
     def test_arrivals_excludes_cancelled(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         _seed_booking(rooms[0], g,
                       ci=today, co=today + timedelta(days=2),
                       status='cancelled', ref='BKCANCEL')
@@ -199,7 +203,7 @@ class FrontOfficeArrivalsTests(_RouteBase):
         rooms = _seed_rooms()
         g1 = _seed_guest('Hassan', 'Demo', '+1')
         g2 = _seed_guest('Sara', 'Other', '+2')
-        today = date.today()
+        today = hotel_date()
         _seed_booking(rooms[0], g1, ci=today, co=today + timedelta(days=2),
                       status='confirmed', ref='BKHASSAN')
         _seed_booking(rooms[1], g2, ci=today, co=today + timedelta(days=2),
@@ -211,7 +215,7 @@ class FrontOfficeArrivalsTests(_RouteBase):
     def test_arrivals_other_date(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        tomorrow = date.today() + timedelta(days=1)
+        tomorrow = hotel_date() + timedelta(days=1)
         _seed_booking(rooms[0], g,
                       ci=tomorrow, co=tomorrow + timedelta(days=2),
                       status='confirmed', ref='BKTOMORROW')
@@ -241,7 +245,7 @@ class FrontOfficeDeparturesTests(_RouteBase):
     def test_departures_renders_today(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         _seed_booking(rooms[0], g,
                       ci=today - timedelta(days=2), co=today,
                       status='checked_in', ref='BKDEP_TODAY')
@@ -264,7 +268,7 @@ class FrontOfficeInHouseTests(_RouteBase):
     def test_in_house_includes_active_overlap(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         # Checked in yesterday, checks out tomorrow → in-house today
         _seed_booking(rooms[0], g,
                       ci=today - timedelta(days=1),
@@ -277,7 +281,7 @@ class FrontOfficeInHouseTests(_RouteBase):
     def test_in_house_excludes_checked_out(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         _seed_booking(rooms[0], g,
                       ci=today - timedelta(days=2),
                       co=today + timedelta(days=2),
@@ -299,7 +303,7 @@ class FrontOfficeNoSideEffectTests(_RouteBase):
     def test_no_status_mutation_on_render(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         b = _seed_booking(rooms[0], g,
                           ci=today, co=today + timedelta(days=2),
                           status='confirmed', ref='BKKEEP')
@@ -315,7 +319,7 @@ class FrontOfficeNoSideEffectTests(_RouteBase):
     def test_no_whatsapp_or_gemini_calls(self):
         rooms = _seed_rooms()
         g = _seed_guest()
-        today = date.today()
+        today = hotel_date()
         _seed_booking(rooms[0], g,
                       ci=today, co=today + timedelta(days=2),
                       status='confirmed', ref='BKQUIET')

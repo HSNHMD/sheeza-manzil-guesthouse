@@ -1259,7 +1259,10 @@
     padding: 5px 10px;
     border-radius: 8px;
     border: 1px solid #334155;
-    background: linear-gradient(180deg, #475569, #334155);
+    /* Out-of-order / blocked ranges: grey diagonal STRIPES (spec §6) so a
+       date-ranged RoomBlock reads as unsellable at a glance on the tape chart. */
+    background: repeating-linear-gradient(45deg,
+                #64748b, #64748b 6px, #475569 6px, #475569 12px);
     color: #f1f5f9;
     font-size: 11px;
     line-height: 1.15;
