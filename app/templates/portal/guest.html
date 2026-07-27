@@ -9,6 +9,11 @@
  button{background:#059669;color:#fff;border:0;border-radius:8px;padding:.6rem 1rem;cursor:pointer}
  .cd{font-weight:700;color:#b45309} .expired{color:#b91c1c}
 </style></head><body>
+{% if brand.logo_path %}
+<img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
+     alt="{{ brand.short_name or brand.name }}"
+     style="height:48px;width:auto;display:block;margin:0 0 .5rem">
+{% endif %}
 <h1>Complete your booking</h1>
 <p>Your rooms are held for you. Time remaining: <span id="cd" class="cd">…</span></p>
 <p id="expmsg" class="expired" style="display:none">

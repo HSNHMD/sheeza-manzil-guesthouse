@@ -18,6 +18,11 @@
  .searchbar button{flex:1 1 100%}
  @media(min-width:560px){.searchbar button{flex:0 0 auto}}
 </style></head><body>
+{% if brand.logo_path %}
+<img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
+     alt="{{ brand.short_name or brand.name }}"
+     style="height:56px;width:auto;display:block;margin:0 0 .5rem">
+{% endif %}
 <h1>{{ brand.name }}</h1>
 <p style="color:#6b7280;margin-top:-.5rem">Book your stay</p>
 <form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
