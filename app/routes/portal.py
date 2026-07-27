@@ -87,14 +87,26 @@ def guest():
     expires_at = min(h.expires_at for h in live)
     # Booking summary + capacity for the guest-details step.
     from ..services import inventory
+    from ..models import RoomType
     ci, co = live[0].check_in_date, live[0].check_out_date
     nights = (co - ci).days
     rooms = sum(h.qty for h in live)
     total = sum(inventory.price_stay(h.room_type_id, ci, co)['total'] * h.qty
                 for h in live)
+    # Per-type rooms breakdown (e.g. "2× Standard, 1× Deluxe") so the guest step
+    # keeps showing WHAT was selected, not just a room count. Aggregated by type.
+    rt_names = {rt.id: rt.name for rt in RoomType.query
+                .filter(RoomType.id.in_([h.room_type_id for h in live])).all()}
+    agg = {}
+    for h in live:
+        agg[h.room_type_id] = agg.get(h.room_type_id, 0) + h.qty
+    breakdown = [{'name': rt_names.get(rid, 'Room'), 'qty': qty}
+                 for rid, qty in sorted(agg.items(),
+                                        key=lambda kv: rt_names.get(kv[0], ''))]
     capacity, _ = portal_svc.group_capacity(tok)
-    summary = {'rooms': rooms, 'nights': nights, 'total': total,
-               'capacity': capacity, 'check_in': ci, 'check_out': co}
+    summary = {'rooms': rooms, 'breakdown': breakdown, 'nights': nights,
+               'total': total, 'capacity': capacity,
+               'check_in': ci, 'check_out': co}
     return render_template('portal/guest.html', holds=live,
                            expires_at=expires_at, summary=summary)
 

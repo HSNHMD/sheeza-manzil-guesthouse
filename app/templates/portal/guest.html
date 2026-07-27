@@ -16,12 +16,16 @@
 
 {% if summary %}
 <div style="border:1px solid #e5e7eb;border-radius:12px;padding:.75rem 1rem;margin:.75rem 0;background:#f9fafb">
-  <strong>Your stay:</strong>
-  {{ summary.rooms }} room(s) &middot; {{ summary.nights }} night(s) &middot;
-  {{ summary.check_in }} → {{ summary.check_out }} &middot;
-  Total <strong>MVR {{ '%.0f'|format(summary.total) }}</strong>
-  &middot; Guests: <strong id="gtotal">1</strong> (sleeps up to {{ summary.capacity }})
-  <span id="caphint" style="color:#b91c1c;display:none"> — exceeds capacity</span>
+  <div><strong>Rooms:</strong>
+    {%- for b in summary.breakdown %} {{ b.qty }}× {{ b.name }}{% if not loop.last %},{% endif %}{% endfor %}
+    &middot; {{ summary.rooms }} room(s)</div>
+  <div><strong>Stay:</strong> {{ summary.nights }} night(s) &middot;
+    {{ summary.check_in }} → {{ summary.check_out }} &middot;
+    Total <strong>MVR {{ '%.0f'|format(summary.total) }}</strong></div>
+  <div><strong>Guests:</strong> <span id="gtotal">1</span> —
+    <span id="gbreak">1 adult, 0 children</span>
+    &middot; sleeps up to {{ summary.capacity }}
+    <span id="caphint" style="color:#b91c1c;display:none"> — exceeds capacity</span></div>
 </div>
 {% endif %}
 
@@ -57,10 +61,13 @@
  // Guest total + client-side capacity hint (server enforces authoritatively).
  const cap = {{ summary.capacity if summary else 0 }};
  const ad = document.getElementById('adults'), ch = document.getElementById('children'),
-       gt = document.getElementById('gtotal'), hint = document.getElementById('caphint');
+       gt = document.getElementById('gtotal'), gb = document.getElementById('gbreak'),
+       hint = document.getElementById('caphint');
  function guests(){
-   const n = (parseInt(ad.value)||0) + (parseInt(ch.value)||0);
+   const a = parseInt(ad.value)||0, c = parseInt(ch.value)||0, n = a + c;
    if (gt) gt.textContent = n;
+   if (gb) gb.textContent = a + (a===1?' adult':' adults') + ', ' +
+                            c + (c===1?' child':' children');
    if (hint) hint.style.display = (cap && n > cap) ? 'inline' : 'none';
  }
  if (ad){ ad.addEventListener('input', guests); ch.addEventListener('input', guests); guests(); }
