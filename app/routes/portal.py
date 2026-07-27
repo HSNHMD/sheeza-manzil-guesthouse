@@ -85,7 +85,18 @@ def guest():
         flash('Your hold expired — please choose your dates again.', 'error')
         return redirect(url_for('portal.index'))
     expires_at = min(h.expires_at for h in live)
-    return render_template('portal/guest.html', holds=live, expires_at=expires_at)
+    # Booking summary + capacity for the guest-details step.
+    from ..services import inventory
+    ci, co = live[0].check_in_date, live[0].check_out_date
+    nights = (co - ci).days
+    rooms = sum(h.qty for h in live)
+    total = sum(inventory.price_stay(h.room_type_id, ci, co)['total'] * h.qty
+                for h in live)
+    capacity, _ = portal_svc.group_capacity(tok)
+    summary = {'rooms': rooms, 'nights': nights, 'total': total,
+               'capacity': capacity, 'check_in': ci, 'check_out': co}
+    return render_template('portal/guest.html', holds=live,
+                           expires_at=expires_at, summary=summary)
 
 
 @portal_bp.route('/submit', methods=['POST'])
@@ -100,7 +111,7 @@ def submit():
 
     guest_data = {k: request.form.get(k) for k in
                   ('first_name', 'last_name', 'email', 'phone',
-                   'nationality', 'id_type', 'id_number')}
+                   'nationality', 'id_type', 'id_number', 'adults', 'children')}
     slip_filename = slip_drive_id = None
     f = request.files.get('payment_slip')
     if f and f.filename:

@@ -87,11 +87,45 @@ def create_holds(items, check_in, check_out, tok, *, now=None):
     return holds.acquire_multi_selection(items, check_in, check_out, tok, now=now)
 
 
+def group_capacity(tok, *, now=None):
+    """Summed max-occupancy of the session's selected room types (max_occupancy
+    × qty per type). Returns (capacity, missing_type_ids). max_occupancy is a
+    NOT-NULL default-2 column, so `missing` should be empty in practice; the
+    fallback treats any absent value as 2 (flagged in the report)."""
+    from ..models import RoomType
+    live = holds.holds_for_session(tok, hold_type='selection',
+                                   state='active', now=now)
+    cap = 0
+    missing = []
+    for h in live:
+        rt = RoomType.query.get(h.room_type_id)
+        mo = getattr(rt, 'max_occupancy', None)
+        if not mo:
+            missing.append(h.room_type_id)
+            mo = 2
+        cap += mo * h.qty
+    return cap, missing
+
+
 def submit(tok, guest_data, *, slip_filename=None, slip_drive_id=None, now=None):
     """Guest form submission → selection group becomes ONE pending group (6h).
-    Server re-validates the holds are live (never trusts the client timer)."""
+    Server re-validates the holds are live (never trusts the client timer) AND
+    enforces the guest count ≤ the selected rooms' summed max occupancy."""
     from ..models import db, Guest
     now = now or datetime.utcnow()
+
+    # Guest count (server is authoritative; the client hint is advisory).
+    try:
+        adults = max(1, int(guest_data.get('adults') or 1))
+        children = max(0, int(guest_data.get('children') or 0))
+    except (TypeError, ValueError):
+        adults, children = 1, 0
+    total_guests = adults + children
+    capacity, _missing = group_capacity(tok, now=now)
+    if capacity and total_guests > capacity:
+        return {'ok': False, 'reasons': [
+            f'Your selected room(s) sleep up to {capacity} guest(s); '
+            f'you entered {total_guests}. Please add a room or reduce guests.']}
     g = Guest(first_name=(guest_data.get('first_name') or '').strip(),
               last_name=(guest_data.get('last_name') or '').strip(),
               email=(guest_data.get('email') or '').strip(),
@@ -104,7 +138,8 @@ def submit(tok, guest_data, *, slip_filename=None, slip_drive_id=None, now=None)
     res = holds.promote_group_to_pending(
         tok, guest_name=f'{g.first_name} {g.last_name}'.strip(),
         contact=g.phone, lead_guest_id=g.id,
-        slip_filename=slip_filename, slip_drive_id=slip_drive_id, now=now)
+        slip_filename=slip_filename, slip_drive_id=slip_drive_id,
+        adults=adults, children=children, now=now)
     if not res['ok']:
         db.session.rollback()
         return res

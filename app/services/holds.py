@@ -344,7 +344,8 @@ def acquire_multi_selection(items, check_in, check_out, session_token, *,
 
 def promote_group_to_pending(session_token, *, guest_name=None, contact=None,
                              lead_guest_id=None, slip_filename=None,
-                             slip_drive_id=None, created_by=None, now=None):
+                             slip_drive_id=None, adults=None, children=None,
+                             created_by=None, now=None):
     """Submission: convert a live SELECTION group into ONE PENDING group (6h),
     attaching lead guest + optional slip. Server re-validates the holds are
     still live (never trust the client timer). Audited transition, no delete."""
@@ -364,6 +365,8 @@ def promote_group_to_pending(session_token, *, guest_name=None, contact=None,
         if lead_guest_id: h.lead_guest_id = lead_guest_id
         if slip_filename: h.payment_slip_filename = slip_filename
         if slip_drive_id: h.payment_slip_drive_id = slip_drive_id
+        if adults is not None:   h.adults = adults
+        if children is not None: h.children = children
     log_activity('hold.group_pending', actor_type='guest',
                  old_value='selection', new_value='pending',
                  description=f'Selection group → pending ({len(live)} hold(s)).',
@@ -398,6 +401,9 @@ def confirm_group(session_token, *, lead_guest=None, user_id=None,
     slip_fn = next((h.payment_slip_filename for h in live if h.payment_slip_filename), None)
     slip_dr = next((h.payment_slip_drive_id for h in live if h.payment_slip_drive_id), None)
     total_rooms = sum(h.qty for h in live)
+    # per-GROUP guest totals (captured on the holds; per-room split deferred)
+    g_adults = live[0].adults if live[0].adults is not None else 1
+    g_children = live[0].children if live[0].children is not None else 0
 
     # exclude the converting group from its own availability re-check
     for h in live:
@@ -409,7 +415,8 @@ def confirm_group(session_token, *, lead_guest=None, user_id=None,
         [{'room_type_id': h.room_type_id, 'qty': h.qty} for h in live],
         ci, co, lead_guest=guest, created_by=user_id,
         num_guests_each=num_guests_each, status='confirmed',
-        force_group=(total_rooms > 1), now=now)
+        force_group=(total_rooms > 1),
+        adults=g_adults, children=g_children, now=now)
     if not res['ok']:
         db.session.rollback()
         return res

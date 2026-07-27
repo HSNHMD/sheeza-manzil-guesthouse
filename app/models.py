@@ -187,6 +187,11 @@ class Booking(db.Model):
     actual_check_in = db.Column(db.DateTime)
     actual_check_out = db.Column(db.DateTime)
     num_guests = db.Column(db.Integer, default=1)
+    # Guest-count split (BEv2 portal). Nullable — legacy bookings only carry
+    # num_guests. CONSUMERS (do not simplify away): Green Tax (per-guest-per-
+    # night, child exemptions) + immigration reporting.
+    adults     = db.Column(db.Integer, nullable=True)
+    children   = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(20), default='confirmed')  # unconfirmed, pending_verification, confirmed, checked_in, checked_out, cancelled
     special_requests = db.Column(db.Text)
     total_amount = db.Column(db.Float, default=0.0)
@@ -1331,6 +1336,10 @@ class BookingGroup(db.Model):
     # by Booking.billing_target + operator UI.
     billing_mode = db.Column(db.String(20), nullable=False,
                              default='individual')
+    # Per-GROUP guest totals (BEv2 portal). Per-room split is deferred. Nullable
+    # for legacy groups. CONSUMERS: Green Tax + immigration reporting.
+    adults       = db.Column(db.Integer, nullable=True)
+    children     = db.Column(db.Integer, nullable=True)
 
     # 'active' | 'cancelled' | 'completed'
     status      = db.Column(db.String(20), nullable=False, default='active')
@@ -2162,6 +2171,10 @@ class Hold(db.Model):
                              db.ForeignKey('room_types.id', ondelete='CASCADE'),
                              nullable=False, index=True)
     qty            = db.Column(db.Integer, nullable=False, server_default='1')
+    # Per-GROUP guest totals captured at the portal guest-details step.
+    # CONSUMERS (do not simplify away): Green Tax + immigration reporting.
+    adults         = db.Column(db.Integer, nullable=False, server_default='1')
+    children       = db.Column(db.Integer, nullable=False, server_default='0')
     check_in_date  = db.Column(db.Date, nullable=False)
     check_out_date = db.Column(db.Date, nullable=False)   # EXCLUSIVE
 

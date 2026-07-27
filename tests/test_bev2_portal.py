@@ -226,6 +226,46 @@ class PortalServiceRules(_Base):
         self.assertEqual(b.payment_slip_filename, 'slip123.png')
         self.assertEqual(b.payment_slip_drive_id, 'payment-slips/slip123.png')
 
+    def test_capacity_rejection_over(self):
+        # STD max_occupancy=2, qty 1 -> capacity 2
+        tok = 'tok-cap-over'
+        portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO, tok)
+        res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
+                                      'phone': '+960', 'adults': '3'})
+        self.assertFalse(res['ok'])
+        self.assertIn('sleep up to', res['reasons'][0])
+
+    def test_capacity_boundary_equal_passes(self):
+        tok = 'tok-cap-eq'
+        portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO, tok)
+        res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
+                                      'phone': '+960', 'adults': '2', 'children': '0'})
+        self.assertTrue(res['ok'], res.get('reasons'))
+        h = holds_svc.holds_for_session(tok, hold_type='pending', state='active')[0]
+        self.assertEqual((h.adults, h.children), (2, 0))
+
+    def test_children_default_zero(self):
+        tok = 'tok-ch0'
+        portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO, tok)
+        res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
+                                      'phone': '+960', 'adults': '2'})  # no children
+        self.assertTrue(res['ok'], res.get('reasons'))
+        h = holds_svc.holds_for_session(tok, hold_type='pending', state='active')[0]
+        self.assertEqual(h.children, 0)
+
+    def test_counts_hand_off_to_group_and_booking(self):
+        tok = 'tok-ghand'
+        portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1},
+                                 {'room_type_id': self.t2.id, 'qty': 1}], _CI, _CO, tok)
+        portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
+                                'phone': '+960', 'adults': '2', 'children': '1'})
+        conf = holds_svc.confirm_group(tok, user_id=self.admin.id)
+        self.assertTrue(conf['ok'], conf.get('reasons'))
+        grp = BookingGroup.query.get(conf['group_id'])
+        self.assertEqual((grp.adults, grp.children), (2, 1))    # per-group totals
+        head = Booking.query.get(conf['booking_ids'][0])
+        self.assertEqual((head.adults, head.children, head.num_guests), (2, 1, 3))
+
     def test_search_never_exposes_room_numbers(self):
         cards = portal_svc.search(_CI, _CO)
         # cards carry type + counts only; no room object/number leaks

@@ -9,6 +9,7 @@
       <h1 class="g-h1">
         {{ group.group_name }}
         <span class="pill muted" style="font-size:11px; vertical-align: middle;">{{ group.group_code }}</span>
+        {% if group.adults is not none %}<span class="pill muted" style="font-size:11px; vertical-align: middle;">{{ group.adults }} adult{{ 's' if group.adults != 1 }}{% if group.children %}, {{ group.children }} child{{ 'ren' if group.children != 1 }}{% endif %}</span>{% endif %}
       </h1>
       <p class="g-sub">
         {% if summary.member_count > 0 %}

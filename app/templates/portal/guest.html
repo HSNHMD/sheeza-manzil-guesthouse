@@ -14,10 +14,23 @@
 <p id="expmsg" class="expired" style="display:none">
   Your hold expired. <a href="{{ url_for('portal.index') }}">Start over</a>.</p>
 
+{% if summary %}
+<div style="border:1px solid #e5e7eb;border-radius:12px;padding:.75rem 1rem;margin:.75rem 0;background:#f9fafb">
+  <strong>Your stay:</strong>
+  {{ summary.rooms }} room(s) &middot; {{ summary.nights }} night(s) &middot;
+  {{ summary.check_in }} → {{ summary.check_out }} &middot;
+  Total <strong>MVR {{ '%.0f'|format(summary.total) }}</strong>
+  &middot; Guests: <strong id="gtotal">1</strong> (sleeps up to {{ summary.capacity }})
+  <span id="caphint" style="color:#b91c1c;display:none"> — exceeds capacity</span>
+</div>
+{% endif %}
+
 <form id="f" method="POST" action="{{ url_for('portal.submit') }}" enctype="multipart/form-data">
   <label>First name <input name="first_name" required></label>
   <label>Last name <input name="last_name" required></label>
   <label>WhatsApp phone <input name="phone" required></label>
+  <label>Adults <input id="adults" name="adults" type="number" min="1" max="20" value="1" required style="width:5rem"></label>
+  <label>Children <input id="children" name="children" type="number" min="0" max="20" value="0" style="width:5rem"></label>
   <label>Email <input name="email" type="email"></label>
   <label>Nationality <input name="nationality"></label>
   <label>ID / passport number <input name="id_number"></label>
@@ -40,5 +53,16 @@
    const m=Math.floor(s/60); cd.textContent = m+'m '+(s%60)+'s'; setTimeout(tick,1000);
  }
  tick();
+
+ // Guest total + client-side capacity hint (server enforces authoritatively).
+ const cap = {{ summary.capacity if summary else 0 }};
+ const ad = document.getElementById('adults'), ch = document.getElementById('children'),
+       gt = document.getElementById('gtotal'), hint = document.getElementById('caphint');
+ function guests(){
+   const n = (parseInt(ad.value)||0) + (parseInt(ch.value)||0);
+   if (gt) gt.textContent = n;
+   if (hint) hint.style.display = (cap && n > cap) ? 'inline' : 'none';
+ }
+ if (ad){ ad.addEventListener('input', guests); ch.addEventListener('input', guests); guests(); }
 </script>
 </body></html>
