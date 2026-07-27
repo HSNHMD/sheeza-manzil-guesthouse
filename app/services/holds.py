@@ -295,13 +295,17 @@ def holds_for_session(session_token, *, hold_type=None, state='active', now=None
 
 
 def acquire_multi_selection(items, check_in, check_out, session_token, *,
-                            created_by=None, now=None):
+                            guests=None, created_by=None, now=None):
     """Atomically acquire selection holds for MULTIPLE types (spec §B1): one
     hold row per type, same session_token. All-or-nothing: if any type is no
-    longer available, the whole thing rolls back (friendly 'just missed it')."""
+    longer available, the whole thing rolls back (friendly 'just missed it').
+
+    `guests` (the search-bar count) carries onto the holds as `adults` so the
+    guest step pre-fills it — the count is authoritative from search onward."""
     from ..models import db, Hold
     from .audit import log_activity
     now = now or datetime.utcnow()
+    g_adults = max(1, int(guests)) if guests else 1
     norm = [{'room_type_id': int(i['room_type_id']), 'qty': int(i.get('qty', 1))}
             for i in items if int(i.get('qty', 1)) > 0]
     if not norm:
@@ -324,7 +328,8 @@ def acquire_multi_selection(items, check_in, check_out, session_token, *,
             h = Hold(room_type_id=i['room_type_id'], qty=i['qty'],
                      check_in_date=check_in, check_out_date=check_out,
                      hold_type='selection', state='active', expires_at=now + ttl,
-                     session_token=session_token, created_by_user_id=created_by)
+                     session_token=session_token, created_by_user_id=created_by,
+                     adults=g_adults, children=0)
             db.session.add(h)
             db.session.flush()
             hold_ids.append(h.id)

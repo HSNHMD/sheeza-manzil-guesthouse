@@ -8,6 +8,7 @@
  .qty{width:4rem} .err{color:#b91c1c} .soldout{color:#9ca3af}
  input,button{padding:.5rem;border-radius:8px;border:1px solid #d1d5db}
  button{background:#2563eb;color:#fff;border:0;cursor:pointer}
+ button:disabled{background:#9ca3af;cursor:not-allowed}
  .total{font-size:1.25rem;font-weight:700}
  /* Responsive search row: labels stack above inputs on mobile, align as
     columns on desktop; the button never orphans mid-row. */
@@ -28,10 +29,13 @@
 <form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
   <label>Check-out <input type="date" name="check_out" value="{{ check_out or '' }}" required></label>
-  <label>Guests <input type="number" name="guests" min="1" value="{{ guests }}"></label>
+  <label>Guests <input type="number" name="guests" id="guestsInput" min="1" value="{{ guests }}"></label>
   <button>Search</button>
 </form>
 {% if error %}<p class="err">{{ error }}</p>{% endif %}
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, m in msgs %}<p class="err" style="font-weight:600">{{ m }}</p>{% endfor %}
+{% endwith %}
 
 {% if cards is not none %}
 <form method="POST" action="{{ url_for('portal.hold') }}">
@@ -49,17 +53,64 @@
       <label>Rooms
         <input type="number" class="qty" name="qty_{{ c.room_type.id }}" min="0"
                max="{{ c.available_qty }}" value="0"
-               data-rate="{{ c.price_total_per_room }}"></label>
+               data-rate="{{ c.price_total_per_room }}"
+               data-max="{{ c.room_type.max_occupancy }}"
+               data-base="{{ c.room_type.base_occupancy }}"
+               data-fee="{{ c.room_type.extra_person_fee }}"></label>
     {% endif %}
   </div>
   {% endfor %}
-  <p class="total">Total: MVR <span id="total">0</span></p>
-  <button type="submit">Continue</button>
+  <input type="hidden" name="guests" id="guestsHidden" value="{{ guests }}">
+  <div id="caperror" class="err" style="display:none;margin:.5rem 0;font-weight:600"></div>
+  <p style="margin:.25rem 0">Rooms: MVR <span id="total">0</span></p>
+  <p id="feeline" style="display:none;margin:.25rem 0">Extra person fee: MVR <span id="feeamt">0</span></p>
+  <p class="total">Total: MVR <span id="grand">0</span></p>
+  <button type="submit" id="continueBtn">Continue</button>
 </form>
 <script>
- const q=[...document.querySelectorAll('.qty')], t=document.getElementById('total');
- function upd(){let s=0;q.forEach(i=>s+=(parseInt(i.value)||0)*parseFloat(i.dataset.rate));t.textContent=s.toFixed(0);}
- q.forEach(i=>i.addEventListener('input',upd));
+ // Live occupancy check + extra-person fee on the SELECTION screen. The server
+ // re-validates the same rule on POST /book/hold (client is advisory). Mirrors
+ // app/services/occupancy.py: capacity = Σ(max×qty), cheapest-seat-first fee.
+ const NIGHTS = {{ cards[0].nights if cards else 1 }};
+ const q = [...document.querySelectorAll('.qty')];
+ const gi = document.getElementById('guestsInput'),
+       gh = document.getElementById('guestsHidden'),
+       roomT = document.getElementById('total'),
+       feeLine = document.getElementById('feeline'), feeAmt = document.getElementById('feeamt'),
+       grand = document.getElementById('grand'), cont = document.getElementById('continueBtn'),
+       errBox = document.getElementById('caperror');
+ function recompute(){
+   const G = Math.max(1, parseInt(gi ? gi.value : 1) || 1);
+   if (gh) gh.value = G;
+   let roomTotal=0, capacity=0, base=0, rooms=0, maxPer=0;
+   const slots=[];
+   q.forEach(i=>{
+     const qty=parseInt(i.value)||0; if(qty<=0) return;
+     const mx=parseInt(i.dataset.max)||2, bs=parseInt(i.dataset.base)||2, fe=parseFloat(i.dataset.fee)||0;
+     roomTotal += qty*(parseFloat(i.dataset.rate)||0);
+     capacity += qty*mx; base += qty*bs; rooms += qty; maxPer=Math.max(maxPer,mx);
+     for(let k=0;k<(mx-bs)*qty;k++) slots.push(fe);
+   });
+   roomT.textContent = roomTotal.toFixed(0);
+   let ok = rooms>0, msg='';
+   if(rooms>0 && G>capacity){
+     ok=false;
+     const mp = maxPer || Math.max(2, ...q.map(i=>parseInt(i.dataset.max)||2));
+     msg = 'A maximum of '+mp+' guests can stay in one room. For '+G+
+           ' guests, please select at least '+Math.ceil(G/mp)+' rooms.';
+   }
+   if(errBox){ errBox.textContent=msg; errBox.style.display = msg?'block':'none'; }
+   if(cont) cont.disabled = !ok;
+   let fee=0;
+   if(ok){ const extras=Math.max(0,G-base); slots.sort((a,b)=>a-b);
+           for(let k=0;k<extras && k<slots.length;k++) fee+=slots[k]; fee*=NIGHTS; }
+   if(feeLine) feeLine.style.display = fee>0 ? '' : 'none';
+   if(feeAmt) feeAmt.textContent = fee.toFixed(0);
+   if(grand) grand.textContent = (roomTotal+fee).toFixed(0);
+ }
+ q.forEach(i=>i.addEventListener('input',recompute));
+ if(gi) gi.addEventListener('input',recompute);
+ recompute();
 </script>
 {% endif %}
 </body></html>

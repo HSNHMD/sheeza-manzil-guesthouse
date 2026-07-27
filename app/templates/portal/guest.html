@@ -42,8 +42,8 @@
   <label>First name <input name="first_name" required></label>
   <label>Last name <input name="last_name" required></label>
   <label>WhatsApp phone <input name="phone" required></label>
-  <label>Adults <input id="adults" name="adults" type="number" min="1" max="20" value="1" required style="width:5rem"></label>
-  <label>Children <input id="children" name="children" type="number" min="0" max="20" value="0" style="width:5rem"></label>
+  <label>Adults <input id="adults" name="adults" type="number" min="1" max="20" value="{{ summary.init_adults if summary else 1 }}" required style="width:5rem"></label>
+  <label>Children <input id="children" name="children" type="number" min="0" max="20" value="{{ summary.init_children if summary else 0 }}" style="width:5rem"></label>
   <label>Email <input name="email" type="email"></label>
   <label>Nationality <input name="nationality"></label>
   <label>ID / passport number <input name="id_number"></label>
