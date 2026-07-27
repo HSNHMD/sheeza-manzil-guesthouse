@@ -103,9 +103,18 @@ def guest():
     breakdown = [{'name': rt_names.get(rid, 'Room'), 'qty': qty}
                  for rid, qty in sorted(agg.items(),
                                         key=lambda kv: rt_names.get(kv[0], ''))]
-    capacity, _ = portal_svc.group_capacity(tok)
+    # Occupancy: capacity + extra-person fee. Single source of truth shared with
+    # portal.submit (validation) and group_booking (folio). Initial render uses
+    # the counts already on the hold (default 1 adult / 0 children); the client
+    # hint recomputes the fee live from slot_fees as the guest edits the counts.
+    from ..services import occupancy
+    items = [{'room_type_id': h.room_type_id, 'qty': h.qty} for h in live]
+    init_guests = (live[0].adults or 1) + (live[0].children or 0)
+    occ = occupancy.compute(items, init_guests, nights)
     summary = {'rooms': rooms, 'breakdown': breakdown, 'nights': nights,
-               'total': total, 'capacity': capacity,
+               'total': total, 'capacity': occ['capacity'],
+               'base_total': occ['base_total'], 'slot_fees': occ['slot_fees'],
+               'extra_fee': occ['fee_total'], 'grand_total': total + occ['fee_total'],
                'check_in': ci, 'check_out': co}
     return render_template('portal/guest.html', holds=live,
                            expires_at=expires_at, summary=summary)

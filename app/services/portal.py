@@ -121,11 +121,19 @@ def submit(tok, guest_data, *, slip_filename=None, slip_drive_id=None, now=None)
     except (TypeError, ValueError):
         adults, children = 1, 0
     total_guests = adults + children
-    capacity, _missing = group_capacity(tok, now=now)
-    if capacity and total_guests > capacity:
-        return {'ok': False, 'reasons': [
-            f'Your selected room(s) sleep up to {capacity} guest(s); '
-            f'you entered {total_guests}. Please add a room or reduce guests.']}
+    # Occupancy validation: G <= Σ(max_occupancy × qty). On violation, tell the
+    # guest the per-room cap and the minimum rooms needed (mixed-type aware).
+    from . import occupancy
+    live_sel = holds.holds_for_session(tok, hold_type='selection',
+                                       state='active', now=now)
+    if not live_sel:
+        return {'ok': False, 'reasons': ['your hold expired — please start over.']}
+    items = [{'room_type_id': h.room_type_id, 'qty': h.qty} for h in live_sel]
+    nights = (live_sel[0].check_out_date - live_sel[0].check_in_date).days
+    occ = occupancy.compute(items, total_guests, nights)
+    if occ['over_capacity']:
+        return {'ok': False, 'reasons': [occupancy.block_message(
+            total_guests, occ['max_per_room'], occ['min_rooms'])]}
     g = Guest(first_name=(guest_data.get('first_name') or '').strip(),
               last_name=(guest_data.get('last_name') or '').strip(),
               email=(guest_data.get('email') or '').strip(),
