@@ -142,6 +142,23 @@ class PortalEndpointFlow(unittest.TestCase):
             self.assertTrue(all(b.room_id and b.status == 'confirmed' for b in bks))
             self.assertEqual(Hold.query.filter_by(state='converted').count(), 2)
 
+    def test_guest_summary_shows_rooms_breakdown_and_guest_split(self):
+        # Regression guard: the guest step must show BOTH the per-type rooms
+        # breakdown (not just a count) AND the adults/children guest split, so
+        # the guest-count fields coexist with the room selection detail.
+        self.client.get(f'/book/?check_in={_CI}&check_out={_CO}')
+        r = self.client.post('/book/hold', data={
+            'check_in': _CI.isoformat(), 'check_out': _CO.isoformat(),
+            f'qty_{self.t1}': '2', f'qty_{self.t2}': '1'})
+        self.assertEqual(r.status_code, 302)
+        html = self.client.get('/book/guest').get_data(as_text=True)
+        self.assertIn('2× Standard', html)     # rooms breakdown, per type
+        self.assertIn('1× Deluxe', html)
+        self.assertIn('3 room(s)', html)        # total room count kept
+        self.assertIn('name="adults"', html)    # guest-count fields still there
+        self.assertIn('name="children"', html)
+        self.assertIn('id="gbreak"', html)      # live "N adults, M children" split
+
 
 class AdminConfirmRoute(_Base):
     """The admin confirm ROUTE (fresh admin client, no guest cookies) confirms a
