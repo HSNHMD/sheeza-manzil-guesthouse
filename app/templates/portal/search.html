@@ -11,14 +11,14 @@
  button:disabled{background:#9ca3af;cursor:not-allowed}
  .total{font-size:1.25rem;font-weight:700}
  /* Responsive search row: labels stack above inputs on mobile, align as
-    columns on desktop; the button never orphans mid-row. */
- .searchbar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin:1rem 0}
+    columns on desktop; small gaps; Guests is a narrow number field. Top-align
+    so labels line up without forcing input heights (native heights are fine). */
+ .searchbar{display:flex;flex-wrap:wrap;gap:.4rem;align-items:flex-start;margin:1rem 0}
  .searchbar label{display:flex;flex-direction:column;gap:.25rem;margin:0;
-   font-size:.85rem;color:#374151;flex:1 1 8rem}
- /* Uniform height so date + number inputs line up (native date controls are
-    taller than number inputs, which broke the bottom-aligned row). */
- .searchbar input{width:100%;box-sizing:border-box;height:2.6rem}
- .searchbar button{flex:1 1 100%;height:2.6rem}
+   font-size:.85rem;color:#374151;flex:1 1 7rem}
+ .searchbar label.g{flex:0 1 5rem}     /* Guests: just a small number — keep it narrow */
+ .searchbar input{width:100%;box-sizing:border-box}
+ .searchbar button{flex:1 1 100%}
  @media(min-width:560px){.searchbar button{flex:0 0 auto}}
  /* Property photo gallery below the booking interface (auto-discovered from
     static/img/property/). Responsive grid, cover-cropped, lazy-loaded. */
@@ -36,7 +36,7 @@
 <form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
   <label>Check-out <input type="date" name="check_out" value="{{ check_out or '' }}" required></label>
-  <label>Guests <input type="number" name="guests" id="guestsInput" min="1" value="{{ guests }}"></label>
+  <label class="g">Guests <input type="number" name="guests" id="guestsInput" min="1" value="{{ guests }}"></label>
   <button>Search</button>
 </form>
 {% if error %}<p class="err">{{ error }}</p>{% endif %}
