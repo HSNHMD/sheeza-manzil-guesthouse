@@ -58,3 +58,7 @@ class Config:
 
     # ── Dev/seed routes (must be explicitly enabled; absent in production) ───────
     ENABLE_SEED_ROUTES = os.environ.get('ENABLE_SEED_ROUTES', 'false').lower() == 'true'
+
+    # ── Booking Engine V2 portal anti-abuse (config thresholds) ─────────────────
+    # Max selection-hold creations per browser session per rolling hour.
+    HOLD_MAX_PER_SESSION_HOUR = int(os.environ.get('HOLD_MAX_PER_SESSION_HOUR', '12'))

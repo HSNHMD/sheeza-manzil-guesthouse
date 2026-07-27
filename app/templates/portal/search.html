@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ brand.name }} — Book your stay</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#1f2937}
+ .card{border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin:.75rem 0}
+ .qty{width:4rem} .err{color:#b91c1c} .soldout{color:#9ca3af}
+ input,button{padding:.5rem;border-radius:8px;border:1px solid #d1d5db}
+ button{background:#2563eb;color:#fff;border:0;cursor:pointer}
+ .total{font-size:1.25rem;font-weight:700}
+</style></head><body>
+<h1>{{ brand.name }}</h1>
+<p style="color:#6b7280;margin-top:-.5rem">Book your stay</p>
+<form method="GET" action="{{ url_for('portal.index') }}">
+  <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
+  <label>Check-out <input type="date" name="check_out" value="{{ check_out or '' }}" required></label>
+  <label>Guests <input type="number" name="guests" min="1" value="{{ guests }}" style="width:4rem"></label>
+  <button>Search</button>
+</form>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+{% if cards is not none %}
+<form method="POST" action="{{ url_for('portal.hold') }}">
+  <input type="hidden" name="check_in" value="{{ check_in }}">
+  <input type="hidden" name="check_out" value="{{ check_out }}">
+  {% for c in cards %}
+  <div class="card">
+    <h3>{{ c.room_type.name }}</h3>
+    <p>MVR {{ '%.0f'|format(c.price_per_night) }} / night &middot; {{ c.nights }} night(s)
+       &middot; MVR {{ '%.0f'|format(c.price_total_per_room) }} / room</p>
+    {% if c.sold_out %}
+      <p class="soldout">Sold out for your dates</p>
+    {% else %}
+      <p>{{ c.available_qty }} left for your dates</p>
+      <label>Rooms
+        <input type="number" class="qty" name="qty_{{ c.room_type.id }}" min="0"
+               max="{{ c.available_qty }}" value="0"
+               data-rate="{{ c.price_total_per_room }}"></label>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <p class="total">Total: MVR <span id="total">0</span></p>
+  <button type="submit">Continue</button>
+</form>
+<script>
+ const q=[...document.querySelectorAll('.qty')], t=document.getElementById('total');
+ function upd(){let s=0;q.forEach(i=>s+=(parseInt(i.value)||0)*parseFloat(i.dataset.rate));t.textContent=s.toFixed(0);}
+ q.forEach(i=>i.addEventListener('input',upd));
+</script>
+{% endif %}
+</body></html>

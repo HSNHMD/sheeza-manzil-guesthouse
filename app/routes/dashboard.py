@@ -40,6 +40,13 @@ def index():
     for link in links:
         links_by_group.setdefault(link['group'], []).append(link)
 
+    # BEv2 §7 — per-type occupancy tiles from the single inventory query.
+    try:
+        from ..services.inventory import occupancy_tiles
+        bev2_tiles = occupancy_tiles()
+    except Exception:
+        bev2_tiles = []
+
     return render_template(
         'dashboard/index.html',
         snap=snap,
@@ -47,4 +54,5 @@ def index():
         new_orders_list=orders,
         messages=messages,
         links_by_group=links_by_group,
+        bev2_tiles=bev2_tiles,
     )

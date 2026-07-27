@@ -50,7 +50,7 @@ def create_app(config_class=Config):
     from .routes.cashiering import cashiering_bp
     from .routes.night_audit import night_audit_bp
     from .routes.inventory import inventory_bp
-    from .routes.booking_engine import booking_engine_bp
+    from .routes.portal import portal_bp   # Phase 2 portal REPLACES booking_engine at /book
     from .routes.reports import reports_bp
     from .routes.pos import pos_bp
     from .routes.menu_orders import menu_bp
@@ -82,7 +82,7 @@ def create_app(config_class=Config):
     app.register_blueprint(cashiering_bp)
     app.register_blueprint(night_audit_bp)
     app.register_blueprint(inventory_bp)
-    app.register_blueprint(booking_engine_bp)
+    app.register_blueprint(portal_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(pos_bp)
     app.register_blueprint(menu_bp)

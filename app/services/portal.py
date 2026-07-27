@@ -1,0 +1,135 @@
+"""Booking Engine V2 — public portal orchestration (Phase 2).
+
+Thin layer over the Phase 1 services. Renders ONLY from live inventory
+functions — no stored counters. Enforces the anti-abuse rules (one active
+selection group per session; per-session creation rate-limit).
+"""
+
+from __future__ import annotations
+
+import secrets
+from datetime import datetime, timedelta
+
+from . import inventory, holds
+
+
+def session_token(flask_session):
+    """Stable per-browser token; created on first portal visit."""
+    tok = flask_session.get('portal_token')
+    if not tok:
+        tok = secrets.token_urlsafe(24)
+        flask_session['portal_token'] = tok
+    return tok
+
+
+def public_reference(tok):
+    """Short display code the guest can quote (derived from their token)."""
+    return tok[:8].upper()
+
+
+def search(check_in, check_out, guests=1):
+    """Per-type cards for the search results — name, price, 'N left'. Never
+    exposes room numbers (all figures are type-level)."""
+    from ..models import RoomType
+    nights = max(1, (check_out - check_in).days)
+    cards = []
+    for rt in (RoomType.query.filter_by(is_active=True)
+               .order_by(RoomType.name).all()):
+        av = inventory.available_for_stay(rt.id, check_in, check_out, 1)
+        max_qty = max(0, min(av['contiguous_free'], av['min_sellable']))
+        price = inventory.price_stay(rt.id, check_in, check_out,
+                                     fallback=None)
+        cards.append({
+            'room_type': rt,
+            'available_qty': max_qty,
+            'sold_out': max_qty <= 0,
+            'nights': nights,
+            'price_total_per_room': price['total'],
+            'price_per_night': round(price['total'] / nights, 2) if price['total'] else 0,
+        })
+    return cards
+
+
+def _rate_limited(tok, now):
+    from flask import current_app
+    from ..models import Hold
+    limit = int(current_app.config.get('HOLD_MAX_PER_SESSION_HOUR', 12))
+    since = now - timedelta(hours=1)
+    n = Hold.query.filter(Hold.session_token == tok,
+                          Hold.created_at >= since).count()
+    return n >= limit
+
+
+def _release_prior_selection(tok, now):
+    """One active selection group per session: releasing the old (audited)."""
+    from ..models import db
+    from .audit import log_activity
+    prior = holds.holds_for_session(tok, hold_type='selection',
+                                    state='active', now=now)
+    for h in prior:
+        h.state = 'released'
+        h.released_reason = 'superseded by new selection'
+        h.released_at = now
+    if prior:
+        log_activity('hold.selection_superseded', actor_type='guest',
+                     description=f'{len(prior)} prior selection hold(s) released.',
+                     metadata={'session_token': tok[:32], 'count': len(prior)})
+        db.session.commit()
+
+
+def create_holds(items, check_in, check_out, tok, *, now=None):
+    """Anti-abuse guarded selection-hold creation (atomic multi-type)."""
+    now = now or datetime.utcnow()
+    if _rate_limited(tok, now):
+        return {'ok': False, 'reasons':
+                ['too many attempts from this session — please wait a minute.']}
+    _release_prior_selection(tok, now)
+    return holds.acquire_multi_selection(items, check_in, check_out, tok, now=now)
+
+
+def submit(tok, guest_data, *, slip_filename=None, slip_drive_id=None, now=None):
+    """Guest form submission → selection group becomes ONE pending group (6h).
+    Server re-validates the holds are live (never trusts the client timer)."""
+    from ..models import db, Guest
+    now = now or datetime.utcnow()
+    g = Guest(first_name=(guest_data.get('first_name') or '').strip(),
+              last_name=(guest_data.get('last_name') or '').strip(),
+              email=(guest_data.get('email') or '').strip(),
+              phone=(guest_data.get('phone') or '').strip(),
+              nationality=(guest_data.get('nationality') or '').strip() or None,
+              id_type=(guest_data.get('id_type') or '').strip() or None,
+              id_number=(guest_data.get('id_number') or '').strip() or None)
+    db.session.add(g)
+    db.session.flush()
+    res = holds.promote_group_to_pending(
+        tok, guest_name=f'{g.first_name} {g.last_name}'.strip(),
+        contact=g.phone, lead_guest_id=g.id,
+        slip_filename=slip_filename, slip_drive_id=slip_drive_id, now=now)
+    if not res['ok']:
+        db.session.rollback()
+        return res
+    res['reference'] = public_reference(tok)
+    return res
+
+
+def status(tok, *, now=None):
+    """Guest-facing status for their session: pending / confirmed / expired."""
+    from ..models import Hold
+    now = now or datetime.utcnow()
+    hs = (Hold.query.filter(Hold.session_token == tok)
+          .order_by(Hold.id).all())
+    if not hs:
+        return {'state': 'none'}
+    if any(h.state == 'converted' for h in hs):
+        return {'state': 'confirmed', 'reference': public_reference(tok)}
+    live = [h for h in hs if h.hold_type == 'pending'
+            and h.state == 'active' and h.expires_at > now]
+    if live:
+        return {'state': 'pending', 'reference': public_reference(tok),
+                'expires_at': min(h.expires_at for h in live), 'holds': live}
+    if any(h.hold_type == 'pending' for h in hs):
+        return {'state': 'expired', 'reference': public_reference(tok)}
+    sel = [h for h in hs if h.hold_type == 'selection'
+           and h.state == 'active' and h.expires_at > now]
+    return {'state': 'selection' if sel else 'expired',
+            'reference': public_reference(tok)}
