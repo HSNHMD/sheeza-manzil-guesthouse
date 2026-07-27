@@ -45,7 +45,8 @@ def index():
         else:
             cards = portal_svc.search(ci, co, guests)
     return render_template('portal/search.html', cards=cards, error=error,
-                           check_in=ci, check_out=co, guests=guests)
+                           check_in=ci, check_out=co, guests=guests,
+                           photos=portal_svc.gallery_photos())
 
 
 @portal_bp.route('/hold', methods=['POST'])

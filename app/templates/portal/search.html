@@ -18,6 +18,11 @@
  .searchbar input{width:100%;box-sizing:border-box}
  .searchbar button{flex:1 1 100%}
  @media(min-width:560px){.searchbar button{flex:0 0 auto}}
+ /* Property photo gallery below the booking interface (auto-discovered from
+    static/img/property/). Responsive grid, cover-cropped, lazy-loaded. */
+ .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem}
+ .gallery img{width:100%;height:150px;object-fit:cover;border-radius:10px;
+   display:block;border:1px solid #e5e7eb}
 </style></head><body>
 {% if brand.logo_path %}
 <img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
@@ -112,5 +117,17 @@
  if(gi) gi.addEventListener('input',recompute);
  recompute();
 </script>
+{% endif %}
+
+{% if photos %}
+<section style="margin-top:2rem">
+  <h2 style="font-size:1.15rem;margin:0 0 .6rem">Our property</h2>
+  <div class="gallery">
+    {% for p in photos %}
+    <a href="{{ p }}" target="_blank" rel="noopener">
+      <img src="{{ p }}?v={{ deploy.sha }}" alt="{{ brand.name }} — photo {{ loop.index }}" loading="lazy"></a>
+    {% endfor %}
+  </div>
+</section>
 {% endif %}
 </body></html>

@@ -27,6 +27,23 @@ def public_reference(tok):
     return tok[:8].upper()
 
 
+def gallery_photos():
+    """Property photos for the portal, auto-discovered from
+    ``static/img/property/``. Drop image files in that folder and they appear
+    below the booking interface — no code change. Sorted by filename (prefix
+    with 01_, 02_… to order them)."""
+    import os
+    from flask import current_app
+    d = os.path.join(current_app.root_path, 'static', 'img', 'property')
+    exts = ('.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif')
+    try:
+        files = sorted(f for f in os.listdir(d)
+                       if f.lower().endswith(exts) and not f.startswith('.'))
+    except FileNotFoundError:
+        files = []
+    return ['/static/img/property/' + f for f in files]
+
+
 def search(check_in, check_out, guests=1):
     """Per-type cards for the search results — name, price, 'N left'. Never
     exposes room numbers (all figures are type-level)."""
