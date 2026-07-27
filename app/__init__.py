@@ -199,6 +199,20 @@ def create_app(config_class=Config):
         except Exception as e:
             app.logger.warning('Room seeding skipped (tables not ready): %s', e)
 
+    # The public booking portal (site root + /book/*) must NEVER be browser- or
+    # proxy-cached: availability/holds are live and a stale root can show a
+    # retired flow or wrong counts. Send no-store on those surfaces so browsers
+    # always revalidate. (Diagnosed 2026-07-27: a client-cached legacy root at
+    # v=9d6b1d4 while the server already served 099e498.)
+    @app.after_request
+    def _no_store_portal(resp):
+        from flask import request
+        p = request.path or ''
+        if p == '/' or p.startswith('/book'):
+            resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            resp.headers['Pragma'] = 'no-cache'
+        return resp
+
     return app
 
 
