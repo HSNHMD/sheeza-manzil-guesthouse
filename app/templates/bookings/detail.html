@@ -82,7 +82,8 @@
       </div>
       <div>
         <p class="text-gray-500">Guests</p>
-        <p class="font-medium text-gray-800">{{ booking.num_guests }}</p>
+        <p class="font-medium text-gray-800">{{ booking.num_guests }}{%
+          if booking.adults is not none %} <span class="text-xs text-gray-500">({{ booking.adults }} adult{{ 's' if booking.adults != 1 }}{% if booking.children %}, {{ booking.children }} child{{ 'ren' if booking.children != 1 }}{% endif %})</span>{% endif %}</p>
       </div>
       {% if booking.special_requests %}
       <div class="col-span-2">
@@ -490,7 +491,10 @@
   {% if folio_items is defined %}
   <div class="bg-white rounded-xl border border-gray-200 p-5">
     <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-      <h2 class="font-semibold text-gray-700">Guest Folio</h2>
+      <h2 class="font-semibold text-gray-700">Guest Folio
+        {% if booking.adults is not none %}<span class="text-xs font-normal text-gray-500">·
+          {{ booking.adults }} adult{{ 's' if booking.adults != 1 }}{% if booking.children %}, {{ booking.children }} child{{ 'ren' if booking.children != 1 }}{% endif %}</span>{% endif %}
+      </h2>
       <p class="text-[11px] text-gray-400">
         Guest Folio V1 is for manual charges. POS / restaurant posting will come later.
       </p>

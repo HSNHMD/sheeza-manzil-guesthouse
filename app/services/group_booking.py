@@ -42,7 +42,8 @@ def _unique_group_code():
 
 def create_group_booking(items, check_in, check_out, *, lead_guest,
                          created_by=None, group_name=None, num_guests_each=1,
-                         status='confirmed', force_group=True, now=None):
+                         status='confirmed', force_group=True,
+                         adults=None, children=None, now=None):
     """Create a booking (or group booking) atomically.
 
     items: list of {'room_type_id': int, 'qty': int}
@@ -150,6 +151,19 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
                          description=(f'Booking created ({check_in}..{check_out}, '
                                       f'plain — single room).'),
                          metadata={'booking_id': booking_ids[0]})
+
+        # 6b. Guest counts (per-GROUP totals; per-room split deferred). Stored on
+        # the group (multi) or the single booking, and on the (master) booking's
+        # num_guests for folio-header display.
+        if adults is not None:
+            total = adults + (children or 0)
+            head = Booking.query.get(booking_ids[0])
+            head.adults = adults
+            head.children = (children or 0)
+            head.num_guests = total
+            if group:
+                group.adults = adults
+                group.children = (children or 0)
 
         # 7. Commit everything atomically (releases the type locks).
         db.session.commit()

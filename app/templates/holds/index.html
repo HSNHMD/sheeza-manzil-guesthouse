@@ -36,7 +36,8 @@
           </td>
           <td class="py-2 px-3">{{ r.hold.qty }}</td>
           <td class="py-2 px-3 text-gray-600">{{ r.hold.check_in_date }} → {{ r.hold.check_out_date }}</td>
-          <td class="py-2 px-3 text-gray-600">{{ r.guest }}{% if r.contact != '—' %} · {{ r.contact }}{% endif %}</td>
+          <td class="py-2 px-3 text-gray-600">{{ r.guest }}{% if r.contact != '—' %} · {{ r.contact }}{% endif %}
+            <span class="text-xs text-gray-400">· {{ r.hold.adults }} ad{% if r.hold.children %}, {{ r.hold.children }} ch{% endif %}</span></td>
           <td class="py-2 px-3 font-mono text-gray-700">{{ r.remaining_label }}</td>
           <td class="py-2 px-3">
             <div class="flex items-center justify-end gap-1">
