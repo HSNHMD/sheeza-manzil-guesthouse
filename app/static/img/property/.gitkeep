@@ -1,0 +1,3 @@
+# Drop property photos here (.jpg/.jpeg/.png/.webp/.avif). They auto-appear in
+# the portal "Our property" gallery, sorted by filename (prefix 01_, 02_ … to
+# order). See app/services/portal.py:gallery_photos().
