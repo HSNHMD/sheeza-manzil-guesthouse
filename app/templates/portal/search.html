@@ -21,10 +21,10 @@
 {% if brand.logo_path %}
 <img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
      alt="{{ brand.short_name or brand.name }}"
-     style="height:56px;width:auto;display:block;margin:0 0 .5rem">
+     style="height:120px;width:auto;display:block;margin:0 0 .25rem">
 {% endif %}
-<h1>{{ brand.name }}</h1>
-<p style="color:#6b7280;margin-top:-.5rem">Book your stay</p>
+<h1 style="font-size:1.3rem;font-weight:600;margin:.25rem 0 0">{{ brand.name }}</h1>
+<p style="color:#6b7280;margin-top:.15rem">Book your stay</p>
 <form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
   <label>Check-out <input type="date" name="check_out" value="{{ check_out or '' }}" required></label>

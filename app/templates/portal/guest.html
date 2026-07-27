@@ -12,7 +12,7 @@
 {% if brand.logo_path %}
 <img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
      alt="{{ brand.short_name or brand.name }}"
-     style="height:48px;width:auto;display:block;margin:0 0 .5rem">
+     style="height:72px;width:auto;display:block;margin:0 0 .5rem">
 {% endif %}
 <h1>Complete your booking</h1>
 <p>Your rooms are held for you. Time remaining: <span id="cd" class="cd">…</span></p>
