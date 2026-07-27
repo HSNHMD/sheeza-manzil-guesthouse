@@ -159,6 +159,40 @@ class PortalEndpointFlow(unittest.TestCase):
         self.assertIn('name="children"', html)
         self.assertIn('id="gbreak"', html)      # live "N adults, M children" split
 
+    def _occ_config(self):
+        # Standard -> base 2 / max 3 / fee 100 (Sheeza-like) for the endpoint tests
+        with self.app.app_context():
+            rt = RoomType.query.get(self.t1)
+            rt.max_occupancy = 3; rt.base_occupancy = 2; rt.extra_person_fee = 100.0
+            db.session.commit()
+
+    def test_selection_endpoint_blocks_over_capacity(self):
+        # 5 guests + 1 room (max 3) -> server rejects at /book/hold, no hold made
+        self._occ_config()
+        r = self.client.post('/book/hold', data={
+            'check_in': _CI.isoformat(), 'check_out': _CO.isoformat(),
+            'guests': '5', f'qty_{self.t1}': '1'})
+        self.assertEqual(r.status_code, 302)
+        self.assertNotIn('/book/guest', r.headers.get('Location', ''))  # bounced
+        with self.app.app_context():
+            self.assertEqual(Hold.query.filter_by(
+                hold_type='selection', state='active').count(), 0)
+
+    def test_selection_endpoint_allows_carries_guests_and_fee(self):
+        # 3 guests + 1 room (max 3): allowed, guests carried, guest step pre-filled
+        self._occ_config()
+        r = self.client.post('/book/hold', data={
+            'check_in': _CI.isoformat(), 'check_out': _CO.isoformat(),
+            'guests': '3', f'qty_{self.t1}': '1'})
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/book/guest', r.headers.get('Location', ''))
+        with self.app.app_context():
+            h = Hold.query.filter_by(hold_type='selection', state='active').first()
+            self.assertEqual(h.adults, 3)          # search-bar count carried
+        html = self.client.get('/book/guest').get_data(as_text=True)
+        self.assertIn('value="3"', html)           # adults pre-filled, not asked from 1
+        self.assertIn('id="extrafee">200', html)   # 1 extra × 100 × 2 nights, shown up front
+
 
 class AdminConfirmRoute(_Base):
     """The admin confirm ROUTE (fresh admin client, no guest cookies) confirms a

@@ -67,8 +67,19 @@ def hold():
         flash('Select at least one room.', 'error')
         return redirect(url_for('portal.index', check_in=ci, check_out=co))
 
+    # Server-side occupancy re-validation (client checks are advisory). Same rule
+    # the selection screen enforces live: G <= Σ(max_occupancy × qty).
+    guests = request.values.get('guests', 1, type=int)
+    from ..services import occupancy
+    occ = occupancy.compute(items, guests, (co - ci).days)
+    if occ['over_capacity']:
+        flash(occupancy.block_message(guests, occ['max_per_room'],
+                                      occ['min_rooms']), 'error')
+        return redirect(url_for('portal.index', check_in=ci, check_out=co,
+                                guests=guests))
+
     tok = portal_svc.session_token(session)
-    res = portal_svc.create_holds(items, ci, co, tok)
+    res = portal_svc.create_holds(items, ci, co, tok, guests=guests)
     if not res['ok']:
         # someone likely just took the last room — friendly re-query, not an error page
         flash('Someone just grabbed those — here are the latest numbers.', 'info')
@@ -109,12 +120,15 @@ def guest():
     # hint recomputes the fee live from slot_fees as the guest edits the counts.
     from ..services import occupancy
     items = [{'room_type_id': h.room_type_id, 'qty': h.qty} for h in live]
-    init_guests = (live[0].adults or 1) + (live[0].children or 0)
+    init_adults = live[0].adults or 1
+    init_children = live[0].children or 0
+    init_guests = init_adults + init_children
     occ = occupancy.compute(items, init_guests, nights)
     summary = {'rooms': rooms, 'breakdown': breakdown, 'nights': nights,
                'total': total, 'capacity': occ['capacity'],
                'base_total': occ['base_total'], 'slot_fees': occ['slot_fees'],
                'extra_fee': occ['fee_total'], 'grand_total': total + occ['fee_total'],
+               'init_adults': init_adults, 'init_children': init_children,
                'check_in': ci, 'check_out': co}
     return render_template('portal/guest.html', holds=live,
                            expires_at=expires_at, summary=summary)

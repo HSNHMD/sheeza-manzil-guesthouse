@@ -77,14 +77,16 @@ def _release_prior_selection(tok, now):
         db.session.commit()
 
 
-def create_holds(items, check_in, check_out, tok, *, now=None):
-    """Anti-abuse guarded selection-hold creation (atomic multi-type)."""
+def create_holds(items, check_in, check_out, tok, *, guests=None, now=None):
+    """Anti-abuse guarded selection-hold creation (atomic multi-type). `guests`
+    (search-bar count) carries onto the holds as adults for the guest step."""
     now = now or datetime.utcnow()
     if _rate_limited(tok, now):
         return {'ok': False, 'reasons':
                 ['too many attempts from this session — please wait a minute.']}
     _release_prior_selection(tok, now)
-    return holds.acquire_multi_selection(items, check_in, check_out, tok, now=now)
+    return holds.acquire_multi_selection(items, check_in, check_out, tok,
+                                         guests=guests, now=now)
 
 
 def group_capacity(tok, *, now=None):
