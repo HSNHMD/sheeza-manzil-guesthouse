@@ -378,9 +378,11 @@ class WiringSmokeTests(unittest.TestCase):
         self.assertIn('from ..services.audit import log_activity',
                       self._read('app/routes/bookings.py'))
 
-    def test_public_route_imports_log_activity(self):
-        self.assertIn('from ..services.audit import log_activity',
-                      self._read('app/routes/public.py'))
+    def test_public_booking_path_is_audited(self):
+        # The public booking flow moved from public.py's legacy /submit to the
+        # BEv2 portal; its audit wiring now lives in the holds/group services.
+        self.assertIn('from .audit import log_activity',
+                      self._read('app/services/holds.py'))
 
     def test_invoices_route_imports_log_activity(self):
         self.assertIn('from ..services.audit import log_activity',
