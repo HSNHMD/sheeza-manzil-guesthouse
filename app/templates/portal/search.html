@@ -9,13 +9,21 @@
  input,button{padding:.5rem;border-radius:8px;border:1px solid #d1d5db}
  button{background:#2563eb;color:#fff;border:0;cursor:pointer}
  .total{font-size:1.25rem;font-weight:700}
+ /* Responsive search row: labels stack above inputs on mobile, align as
+    columns on desktop; the button never orphans mid-row. */
+ .searchbar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin:1rem 0}
+ .searchbar label{display:flex;flex-direction:column;gap:.25rem;margin:0;
+   font-size:.85rem;color:#374151;flex:1 1 8rem}
+ .searchbar input{width:100%;box-sizing:border-box}
+ .searchbar button{flex:1 1 100%}
+ @media(min-width:560px){.searchbar button{flex:0 0 auto}}
 </style></head><body>
 <h1>{{ brand.name }}</h1>
 <p style="color:#6b7280;margin-top:-.5rem">Book your stay</p>
-<form method="GET" action="{{ url_for('portal.index') }}">
+<form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
   <label>Check-out <input type="date" name="check_out" value="{{ check_out or '' }}" required></label>
-  <label>Guests <input type="number" name="guests" min="1" value="{{ guests }}" style="width:4rem"></label>
+  <label>Guests <input type="number" name="guests" min="1" value="{{ guests }}"></label>
   <button>Search</button>
 </form>
 {% if error %}<p class="err">{{ error }}</p>{% endif %}

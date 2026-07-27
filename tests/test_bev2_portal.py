@@ -250,7 +250,9 @@ class PortalServiceRules(_Base):
         res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
                                       'phone': '+960', 'adults': '3'})
         self.assertFalse(res['ok'])
-        self.assertIn('sleep up to', res['reasons'][0])
+        # new occupancy message: per-room cap + minimum-rooms suggestion
+        self.assertIn('A maximum of 2 guests can stay in one room', res['reasons'][0])
+        self.assertIn('at least 2 rooms', res['reasons'][0])
 
     def test_capacity_boundary_equal_passes(self):
         tok = 'tok-cap-eq'
@@ -289,6 +291,93 @@ class PortalServiceRules(_Base):
         for c in cards:
             self.assertNotIn('room', {k.lower() for k in c.keys()} - {'room_type'})
             self.assertIn('available_qty', c)
+
+
+class OccupancyPricing(_Base):
+    """Occupancy capacity validation + cheapest-distribution extra-person fee
+    + itemized folio line. Sheeza config: base 2 / max 3 / fee 100."""
+
+    def setUp(self):
+        super().setUp()
+        # Standard -> Sheeza-like: base 2, max 3, fee 100 (t1 already has 10 rooms)
+        self.t1.base_occupancy = 2; self.t1.max_occupancy = 3
+        self.t1.extra_person_fee = 100.0
+        # Family: base 3, max 4, fee 100 (mixed distribution / free 3rd guest)
+        self.fam = self._type('FAM', 'Family', 4, 300)
+        self.fam.base_occupancy = 3; self.fam.max_occupancy = 4
+        self.fam.extra_person_fee = 100.0
+        # Cheap: base 2, max 3, fee 50 (cheapest-first distribution)
+        self.cheap = self._type('CHP', 'Cheap', 4, 400)
+        self.cheap.base_occupancy = 2; self.cheap.max_occupancy = 3
+        self.cheap.extra_person_fee = 50.0
+        db.session.commit()
+
+    def _occ(self, items, g, nights=2):
+        from app.services import occupancy
+        return occupancy.compute(items, g, nights)
+
+    def test_capacity_block_message(self):
+        from app.services import occupancy
+        occ = self._occ([{'room_type_id': self.t1.id, 'qty': 1}], 4)  # max 3
+        self.assertTrue(occ['over_capacity'])
+        self.assertEqual(occ['max_per_room'], 3)
+        self.assertEqual(occ['min_rooms'], 2)                          # ceil(4/3)
+        self.assertEqual(
+            occupancy.block_message(4, occ['max_per_room'], occ['min_rooms']),
+            'A maximum of 3 guests can stay in one room. '
+            'For 4 guests, please select at least 2 rooms.')
+
+    def test_fee_boundaries_uniform(self):
+        one = [{'room_type_id': self.t1.id, 'qty': 1}]   # base 2 / max 3 / 100, 2n
+        self.assertEqual(self._occ(one, 2)['fee_total'], 0)            # G=2R -> 0
+        occ3 = self._occ(one, 3)
+        self.assertEqual(occ3['extras'], 1)
+        self.assertEqual(occ3['fee_total'], 200)                      # 1×100×2n (max)
+        self.assertFalse(occ3['over_capacity'])
+        two = [{'room_type_id': self.t1.id, 'qty': 2}]
+        self.assertEqual(self._occ(two, 4)['fee_total'], 0)           # G=2R -> 0
+        self.assertEqual(self._occ(two, 5)['fee_total'], 200)         # G=2R+1 -> 1 fee
+        self.assertEqual(self._occ(two, 6)['fee_total'], 400)         # G=3R -> max
+        self.assertEqual(self._occ(two, 6)['extras'], 2)
+
+    def test_mixed_family_absorbs_third_guest_free(self):
+        items = [{'room_type_id': self.fam.id, 'qty': 1},   # base 3
+                 {'room_type_id': self.t1.id, 'qty': 1}]    # base 2  => base_total 5
+        self.assertEqual(self._occ(items, 5)['fee_total'], 0)   # 3rd Family guest free
+        self.assertEqual(self._occ(items, 6)['fee_total'], 200) # 1 extra ×100×2n
+
+    def test_cheapest_seat_charged_first(self):
+        items = [{'room_type_id': self.t1.id, 'qty': 1},     # fee 100
+                 {'room_type_id': self.cheap.id, 'qty': 1}]  # fee 50, base_total 4
+        self.assertEqual(self._occ(items, 5, nights=1)['fee_total'], 50)   # cheap first
+        self.assertEqual(self._occ(items, 6, nights=1)['fee_total'], 150)  # 50 + 100
+
+    def test_folio_itemization_and_room_rate_untouched(self):
+        from app.services import group_booking
+        from app.models import FolioItem
+        g = Guest(first_name='F', last_name='L', phone='+960')
+        db.session.add(g); db.session.commit()
+        res = group_booking.create_group_booking(
+            [{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO,
+            lead_guest=g, adults=3, children=0, force_group=False)   # 1 extra
+        self.assertTrue(res['ok'], res.get('reasons'))
+        bid = res['booking_ids'][0]
+        fees = FolioItem.query.filter_by(booking_id=bid, item_type='fee').all()
+        self.assertEqual(len(fees), 1)
+        self.assertIn('Extra person fee', fees[0].description)
+        self.assertEqual(fees[0].total_amount, 200)                 # 1 × 2n × 100
+        # fee is NOT folded into the room revenue
+        self.assertEqual(Booking.query.get(bid).total_amount or 0, 0)
+
+    def test_portal_submit_blocks_over_capacity(self):
+        tok = 'occ-token'
+        self.assertTrue(portal_svc.create_holds(
+            [{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO, tok)['ok'])
+        res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
+                                      'phone': '+960', 'adults': '4', 'children': '0'})
+        self.assertFalse(res['ok'])
+        self.assertIn('A maximum of 3 guests can stay in one room', res['reasons'][0])
+        self.assertIn('at least 2 rooms', res['reasons'][0])
 
 
 if __name__ == '__main__':

@@ -924,7 +924,17 @@ class RoomType(db.Model):
     )
     code        = db.Column(db.String(20), unique=True, nullable=False)
     name        = db.Column(db.String(100), nullable=False)
+    # Occupancy pricing (see app/services/occupancy.py):
+    #   max_occupancy  — HARD cap per room.
+    #   base_occupancy — guests included in the room rate.
+    #   extra_person_fee — MVR/night per guest above base, per room. The config
+    #   point for future policy (under-N free / half-fee child rate) — do not
+    #   fold it into the room rate; it is charged as an itemized folio line.
     max_occupancy = db.Column(db.Integer, nullable=False, default=2)
+    base_occupancy = db.Column(db.Integer, nullable=False, default=2,
+                               server_default='2')
+    extra_person_fee = db.Column(db.Float, nullable=False, default=0.0,
+                                 server_default='0')
     base_capacity = db.Column(db.Integer, nullable=False, default=2)
     description = db.Column(db.Text)
     is_active   = db.Column(db.Boolean, nullable=False, default=True)

@@ -165,6 +165,33 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
                 group.adults = adults
                 group.children = (children or 0)
 
+            # 6c. Extra-person fee — itemized folio line(s) on the master/single
+            # booking (NOT folded into the room rate). Recomputed here from the
+            # same occupancy math the portal showed the guest. Backstop capacity
+            # check in case config changed between hold and confirm.
+            from . import occupancy
+            from ..models import FolioItem
+            fee_nights = max(1, (check_out - check_in).days)
+            occ = occupancy.compute(norm, total, fee_nights)
+            if occ['over_capacity']:
+                db.session.rollback()
+                return {'ok': False, 'group_id': None, 'booking_ids': [],
+                        'reasons': [occupancy.block_message(
+                            total, occ['max_per_room'], occ['min_rooms'])]}
+            for tier in occ['breakdown']:
+                amt = round(tier['persons'] * tier['nights'] * tier['fee'], 2)
+                db.session.add(FolioItem(
+                    booking_id=head.id, guest_id=guest.id,
+                    property_id=head.property_id, item_type='fee',
+                    description=(f"Extra person fee ({tier['persons']} guest"
+                                 f" × {tier['nights']} night @ MVR "
+                                 f"{tier['fee']:.0f}/night)"),
+                    quantity=tier['persons'] * tier['nights'],
+                    unit_price=tier['fee'], amount=amt,
+                    tax_amount=0.0, service_charge_amount=0.0,
+                    total_amount=amt, status='open',
+                    source_module='booking_engine'))
+
         # 7. Commit everything atomically (releases the type locks).
         db.session.commit()
         return {'ok': True, 'group_id': (group.id if group else None),

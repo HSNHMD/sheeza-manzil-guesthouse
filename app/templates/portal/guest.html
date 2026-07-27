@@ -20,8 +20,12 @@
     {%- for b in summary.breakdown %} {{ b.qty }}× {{ b.name }}{% if not loop.last %},{% endif %}{% endfor %}
     &middot; {{ summary.rooms }} room(s)</div>
   <div><strong>Stay:</strong> {{ summary.nights }} night(s) &middot;
-    {{ summary.check_in }} → {{ summary.check_out }} &middot;
-    Total <strong>MVR {{ '%.0f'|format(summary.total) }}</strong></div>
+    {{ summary.check_in }} → {{ summary.check_out }}</div>
+  <div>Rooms: MVR {{ '%.0f'|format(summary.total) }}</div>
+  <div id="feerow" style="{{ 'display:none' if not summary.extra_fee else '' }}">
+    Extra person fee: MVR <span id="extrafee">{{ '%.0f'|format(summary.extra_fee) }}</span></div>
+  <div style="font-size:1.1rem;margin-top:.25rem"><strong>Total: MVR
+    <span id="grandtotal">{{ '%.0f'|format(summary.grand_total) }}</span></strong></div>
   <div><strong>Guests:</strong> <span id="gtotal">1</span> —
     <span id="gbreak">1 adult, 0 children</span>
     &middot; sleeps up to {{ summary.capacity }}
@@ -58,17 +62,32 @@
  }
  tick();
 
- // Guest total + client-side capacity hint (server enforces authoritatively).
+ // Guest total + capacity hint + LIVE extra-person fee. Server enforces both
+ // capacity and the fee authoritatively; these mirror the same occupancy math.
  const cap = {{ summary.capacity if summary else 0 }};
+ const BASE_TOTAL = {{ summary.base_total if summary else 0 }};
+ const SLOT_FEES = {{ (summary.slot_fees if summary else []) | tojson }};
+ const OCC_NIGHTS = {{ summary.nights if summary else 1 }};
+ const ROOM_TOTAL = {{ summary.total if summary else 0 }};
  const ad = document.getElementById('adults'), ch = document.getElementById('children'),
        gt = document.getElementById('gtotal'), gb = document.getElementById('gbreak'),
-       hint = document.getElementById('caphint');
+       hint = document.getElementById('caphint'),
+       ef = document.getElementById('extrafee'), feerow = document.getElementById('feerow'),
+       grand = document.getElementById('grandtotal');
  function guests(){
    const a = parseInt(ad.value)||0, c = parseInt(ch.value)||0, n = a + c;
    if (gt) gt.textContent = n;
    if (gb) gb.textContent = a + (a===1?' adult':' adults') + ', ' +
                             c + (c===1?' child':' children');
    if (hint) hint.style.display = (cap && n > cap) ? 'inline' : 'none';
+   // cheapest-distribution fee: fill the lowest-fee spare seats first
+   const extras = Math.max(0, n - BASE_TOTAL);
+   let fee = 0;
+   for (let i = 0; i < extras && i < SLOT_FEES.length; i++) fee += SLOT_FEES[i];
+   fee *= OCC_NIGHTS;
+   if (ef) ef.textContent = fee.toFixed(0);
+   if (feerow) feerow.style.display = fee > 0 ? '' : 'none';
+   if (grand) grand.textContent = (ROOM_TOTAL + fee).toFixed(0);
  }
  if (ad){ ad.addEventListener('input', guests); ch.addEventListener('input', guests); guests(); }
 </script>
