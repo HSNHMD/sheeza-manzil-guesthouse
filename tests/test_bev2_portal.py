@@ -119,7 +119,7 @@ class PortalEndpointFlow(unittest.TestCase):
             f'/book/?check_in={_CI}&check_out={_CO}').status_code, 200)
         r = self.client.post('/book/hold', data={
             'check_in': _CI.isoformat(), 'check_out': _CO.isoformat(),
-            f'qty_{self.t1}': '1', f'qty_{self.t2}': '1'})
+            'guests': '2', f'qty_{self.t1}': '1', f'qty_{self.t2}': '1'})
         self.assertEqual(r.status_code, 302)
         self.assertIn('/book/guest', r.headers.get('Location', ''))
         self.assertEqual(self.client.get('/book/guest').status_code, 200)
@@ -149,7 +149,7 @@ class PortalEndpointFlow(unittest.TestCase):
         self.client.get(f'/book/?check_in={_CI}&check_out={_CO}')
         r = self.client.post('/book/hold', data={
             'check_in': _CI.isoformat(), 'check_out': _CO.isoformat(),
-            f'qty_{self.t1}': '2', f'qty_{self.t2}': '1'})
+            'guests': '3', f'qty_{self.t1}': '2', f'qty_{self.t2}': '1'})
         self.assertEqual(r.status_code, 302)
         html = self.client.get('/book/guest').get_data(as_text=True)
         self.assertIn('2× Standard', html)     # rooms breakdown, per type
@@ -192,6 +192,21 @@ class PortalEndpointFlow(unittest.TestCase):
         html = self.client.get('/book/guest').get_data(as_text=True)
         self.assertIn('value="3"', html)           # adults pre-filled, not asked from 1
         self.assertIn('id="extrafee">200', html)   # 1 extra × 100 × 2 nights, shown up front
+
+    def test_selection_endpoint_requires_guests(self):
+        # guests is required (no default): missing -> rejected, no hold, bounced
+        self._occ_config()
+        r = self.client.post('/book/hold', data={
+            'check_in': _CI.isoformat(), 'check_out': _CO.isoformat(),
+            f'qty_{self.t1}': '1'})            # no 'guests'
+        self.assertEqual(r.status_code, 302)
+        self.assertNotIn('/book/guest', r.headers.get('Location', ''))
+        with self.app.app_context():
+            self.assertEqual(Hold.query.filter_by(
+                hold_type='selection', state='active').count(), 0)
+        # the flashed message shows on the next page
+        self.assertIn('Please enter number of guests',
+                      self.client.get('/book/').get_data(as_text=True))
 
 
 class AdminConfirmRoute(_Base):
