@@ -34,7 +34,7 @@ def _parse_dates():
 @portal_bp.route('/', methods=['GET'])
 def index():
     ci, co = _parse_dates()
-    guests = request.values.get('guests', 1, type=int)
+    guests = request.values.get('guests', type=int)  # no default — must be entered
     cards = None
     error = None
     if ci and co:
@@ -43,7 +43,7 @@ def index():
         elif ci < date.today():
             error = 'Check-in cannot be in the past.'
         else:
-            cards = portal_svc.search(ci, co, guests)
+            cards = portal_svc.search(ci, co, guests or 1)
     return render_template('portal/search.html', cards=cards, error=error,
                            check_in=ci, check_out=co, guests=guests,
                            photos=portal_svc.gallery_photos())
@@ -68,9 +68,13 @@ def hold():
         flash('Select at least one room.', 'error')
         return redirect(url_for('portal.index', check_in=ci, check_out=co))
 
-    # Server-side occupancy re-validation (client checks are advisory). Same rule
-    # the selection screen enforces live: G <= Σ(max_occupancy × qty).
-    guests = request.values.get('guests', 1, type=int)
+    # Guests is required — no default. Server rejects a missing/invalid count
+    # (client validation is advisory, standing rule).
+    guests = request.values.get('guests', type=int)
+    if not guests or guests < 1:
+        flash('Please enter number of guests.', 'error')
+        return redirect(url_for('portal.index', check_in=ci, check_out=co))
+    # Occupancy re-validation: G <= Σ(max_occupancy × qty).
     from ..services import occupancy
     occ = occupancy.compute(items, guests, (co - ci).days)
     if occ['over_capacity']:
