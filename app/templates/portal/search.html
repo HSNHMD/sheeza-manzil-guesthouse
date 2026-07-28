@@ -3,6 +3,9 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ brand.name }} — Book your stay</title>
 <style>
+ /* border-box everywhere so width:100% + padding never overflows the content
+    padding (fixes date inputs spilling past the right edge on mobile). */
+ *{box-sizing:border-box}
  body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#1f2937}
  /* Visually hidden but present for screen readers + SEO (the visible brand name
     now lives in the logo image, not an on-screen H1). */
@@ -23,7 +26,7 @@
  .searchbar{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0}
  .searchbar label{display:flex;flex-direction:column;gap:.25rem;margin:0;
    font-size:.85rem;color:#374151;flex:1 1 100%}
- .searchbar input{width:100%;box-sizing:border-box}
+ .searchbar input{width:100%;box-sizing:border-box;min-width:0}  /* min-width:0 lets native date inputs shrink to fit */
  .searchbar label.g input{width:5rem;max-width:100%}     /* Guests: 1-2 digits */
  .searchbar button{flex:1 1 100%}
  @media(min-width:560px){
@@ -42,11 +45,11 @@
 {% if brand.logo_path %}
 <img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
      alt="{{ brand.short_name or brand.name }}"
-     style="height:120px;width:auto;display:block;margin:0 auto .25rem">
+     style="height:120px;width:auto;display:block;margin:0 auto 0">
 {% endif %}
 <h1 class="sr-only">{{ brand.name }} — Book your stay</h1>
-<p style="color:#6b7280;margin:.25rem 0 0;font-size:1.1rem">Hanimaadhoo</p>
-<p style="color:#6b7280;margin:.1rem 0 0">Book your stay</p>
+<p style="margin:-.4rem 0 0;font-size:1.2rem;font-weight:600;letter-spacing:.01em;color:#374151">Hanimaadhoo</p>
+<p style="margin:.15rem 0 0;font-size:.95rem;font-weight:400;font-style:italic;color:#9ca3af">Book your stay</p>
 </header>
 <form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
