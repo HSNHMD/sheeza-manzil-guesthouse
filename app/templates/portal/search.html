@@ -4,6 +4,10 @@
 <title>{{ brand.name }} — Book your stay</title>
 <style>
  body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#1f2937}
+ /* Visually hidden but present for screen readers + SEO (the visible brand name
+    now lives in the logo image, not an on-screen H1). */
+ .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+   clip:rect(0,0,0,0);white-space:nowrap;border:0}
  .card{border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin:.75rem 0}
  .qty{width:4rem} .err{color:#b91c1c} .soldout{color:#9ca3af}
  /* >=16px on inputs keeps text legible AND stops iOS Safari auto-zooming on
@@ -40,8 +44,9 @@
      alt="{{ brand.short_name or brand.name }}"
      style="height:120px;width:auto;display:block;margin:0 auto .25rem">
 {% endif %}
-<h1 style="font-size:1.3rem;font-weight:600;margin:.25rem 0 0">{{ brand.name }}</h1>
-<p style="color:#6b7280;margin-top:.15rem">Book your stay</p>
+<h1 class="sr-only">{{ brand.name }} — Book your stay</h1>
+<p style="color:#6b7280;margin:.25rem 0 0;font-size:1.1rem">Hanimaadhoo</p>
+<p style="color:#6b7280;margin:.1rem 0 0">Book your stay</p>
 </header>
 <form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
