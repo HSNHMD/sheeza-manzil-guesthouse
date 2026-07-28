@@ -6,7 +6,9 @@
  body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#1f2937}
  .card{border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin:.75rem 0}
  .qty{width:4rem} .err{color:#b91c1c} .soldout{color:#9ca3af}
- input,button{padding:.5rem;border-radius:8px;border:1px solid #d1d5db}
+ /* >=16px on inputs keeps text legible AND stops iOS Safari auto-zooming on
+    focus (it zooms when an input font is < 16px). Button matches. */
+ input,button{padding:.5rem;border-radius:8px;border:1px solid #d1d5db;font-size:16px}
  button{background:#2563eb;color:#fff;border:0;cursor:pointer}
  button:disabled{background:#9ca3af;cursor:not-allowed}
  .total{font-size:1.25rem;font-weight:700}
@@ -32,17 +34,19 @@
  .gallery img{width:100%;height:auto;border-radius:12px;display:block;
    border:1px solid #e5e7eb}
 </style></head><body>
+<header style="text-align:center;margin-bottom:1rem">
 {% if brand.logo_path %}
 <img src="{{ brand.logo_path }}{{ '&' if '?' in brand.logo_path else '?' }}v={{ deploy.sha }}"
      alt="{{ brand.short_name or brand.name }}"
-     style="height:120px;width:auto;display:block;margin:0 0 .25rem">
+     style="height:120px;width:auto;display:block;margin:0 auto .25rem">
 {% endif %}
 <h1 style="font-size:1.3rem;font-weight:600;margin:.25rem 0 0">{{ brand.name }}</h1>
 <p style="color:#6b7280;margin-top:.15rem">Book your stay</p>
+</header>
 <form class="searchbar" method="GET" action="{{ url_for('portal.index') }}">
   <label>Check-in <input type="date" name="check_in" value="{{ check_in or '' }}" required></label>
   <label>Check-out <input type="date" name="check_out" value="{{ check_out or '' }}" required></label>
-  <label class="g">Guests <input type="number" name="guests" id="guestsInput" min="1" required
+  <label class="g">Number of guests <input type="number" name="guests" id="guestsInput" min="1" required
     placeholder="e.g. 2" value="{{ guests if guests else '' }}"
     oninvalid="this.setCustomValidity('Please enter number of guests')"
     oninput="this.setCustomValidity('')"></label>
