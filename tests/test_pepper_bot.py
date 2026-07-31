@@ -15,9 +15,14 @@ import unittest
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock
 
-from pepper_bot.handlers import cmd_myid, make_ping_handler, make_whitelist_gate
+import os
+import tempfile
+
+from pepper_bot.handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
+                                 make_bindtopics_handler, make_topics_handler)
 from pepper_bot.gate import resolve_access
 from pepper_bot.internal_api import _TTLCache
+from pepper_bot.topics import TopicStore
 
 try:  # the gate's silent-drop path imports telegram.ext; skip only that test w/o PTB
     import telegram  # noqa: F401
@@ -26,12 +31,19 @@ except ImportError:
     _HAS_PTB = False
 
 
-def fake_update(uid, text=""):
+def fake_update(uid, text="", chat_id=None, thread_id=None):
     u = MagicMock()
     u.effective_user.id = uid
+    u.effective_chat.id = chat_id
     u.effective_message.text = text
+    u.effective_message.message_thread_id = thread_id
     u.effective_message.reply_text = AsyncMock()
     return u
+
+
+class FakeCtx:
+    def __init__(self, args=None):
+        self.args = args or []
 
 
 class FakeClient:
@@ -107,6 +119,67 @@ class ResolveAccessTest(IsolatedAsyncioTestCase):
             FakeClient(True, raise_exc=True), owner_id=None, telegram_id=5)
         self.assertFalse(allowed)
         self.assertIsNone(role)
+
+
+class BindTopicsTest(IsolatedAsyncioTestCase):
+    def _store(self):
+        self._tmp = tempfile.mkdtemp()
+        return TopicStore(os.path.join(self._tmp, "topics.json"))
+
+    async def test_owner_binds_topic(self):
+        store = self._store()
+        h = make_bindtopics_handler(FakeClient(False), owner_id="135", store=store)
+        upd = fake_update(135, chat_id=-1001, thread_id=42)
+        await h(upd, FakeCtx(args=["alerts"]))
+        self.assertEqual(store.get("alerts"), {"chat_id": -1001, "thread_id": 42})
+        upd.effective_message.reply_text.assert_awaited_once()
+
+    async def test_non_owner_silent_and_no_write(self):
+        store = self._store()
+        # whitelisted STAFF (not owner) -> silence, nothing stored
+        h = make_bindtopics_handler(FakeClient(True, "staff"), owner_id=None, store=store)
+        upd = fake_update(222, chat_id=-1001, thread_id=42)
+        await h(upd, FakeCtx(args=["alerts"]))
+        upd.effective_message.reply_text.assert_not_awaited()
+        self.assertEqual(store.all(), {})
+
+    async def test_bad_label_rejected(self):
+        store = self._store()
+        h = make_bindtopics_handler(FakeClient(False), owner_id="135", store=store)
+        upd = fake_update(135, chat_id=-1001, thread_id=42)
+        await h(upd, FakeCtx(args=["bogus"]))
+        self.assertEqual(store.all(), {})
+        upd.effective_message.reply_text.assert_awaited_once()   # usage hint
+
+    async def test_no_topic_context_rejected(self):
+        store = self._store()
+        h = make_bindtopics_handler(FakeClient(False), owner_id="135", store=store)
+        upd = fake_update(135, chat_id=-1001, thread_id=None)     # not in a topic
+        await h(upd, FakeCtx(args=["alerts"]))
+        self.assertEqual(store.all(), {})
+
+    async def test_topics_lists_bindings(self):
+        store = self._store()
+        store.set_topic("alerts", -1001, 42)
+        h = make_topics_handler(FakeClient(False), owner_id="135", store=store)
+        upd = fake_update(135)
+        await h(upd, FakeCtx())
+        upd.effective_message.reply_text.assert_awaited_once()
+        self.assertIn("alerts", upd.effective_message.reply_text.await_args.args[0])
+
+
+class TopicStoreTest(unittest.TestCase):
+    def test_roundtrip_and_atomic(self):
+        d = tempfile.mkdtemp()
+        s = TopicStore(os.path.join(d, "topics.json"))
+        self.assertEqual(s.all(), {})
+        s.set_topic("alerts", -100, 7)
+        s.set_topic("general", -100, 9)
+        self.assertEqual(s.get("alerts"), {"chat_id": -100, "thread_id": 7})
+        self.assertEqual(set(s.all().keys()), {"alerts", "general"})
+        # reload from a fresh instance (persisted to disk)
+        self.assertEqual(TopicStore(os.path.join(d, "topics.json")).get("general"),
+                         {"chat_id": -100, "thread_id": 9})
 
 
 class TTLCacheTest(unittest.TestCase):

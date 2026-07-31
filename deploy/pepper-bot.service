@@ -25,6 +25,11 @@ Group=pepper
 WorkingDirectory=/var/www/sheeza-manzil
 EnvironmentFile=/etc/pepper/pepper.env
 Environment=HOME=/tmp
+Environment=PEPPER_STATE_DIR=/var/lib/pepper-bot
+# systemd creates /var/lib/pepper-bot owned by the service user, writable even
+# under ProtectSystem=strict (topic bindings persist here).
+StateDirectory=pepper-bot
+StateDirectoryMode=0700
 ExecStart=/opt/pepper-bot/venv/bin/python -m pepper_bot
 Restart=on-failure
 RestartSec=5

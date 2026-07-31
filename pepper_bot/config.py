@@ -13,3 +13,6 @@ class Config:
             "PEPPER_SOCKET", "/run/pepper/pepper.sock")
         # Owner is env-only so a DB compromise can't grant owner (spec §4.2/§8).
         self.owner_id = os.environ.get("PEPPER_OWNER_ID") or None
+        # Bot-local state (systemd StateDirectory) for topic bindings.
+        self.state_dir = os.environ.get("PEPPER_STATE_DIR", "/var/lib/pepper-bot")
+        self.topics_path = os.path.join(self.state_dir, "topics.json")

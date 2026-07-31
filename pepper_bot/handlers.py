@@ -31,6 +31,53 @@ def make_ping_handler(client, owner_id):
     return cmd_ping
 
 
+_VALID_LABELS = ("alerts", "newbooking", "general")
+
+
+def make_bindtopics_handler(client, owner_id, store):
+    """/bindtopics <alerts|newbooking|general> — OWNER-only. Run INSIDE the target
+    forum topic; captures that topic's chat_id + message_thread_id and persists it.
+    Non-owner (even whitelisted staff) → silence."""
+    async def cmd_bindtopics(update, context):
+        allowed, role = await resolve_access(
+            client, owner_id, update.effective_user.id)
+        if role != "owner":
+            return  # silence
+        args = list(getattr(context, "args", None) or [])
+        label = args[0].lower() if args else ""
+        if label not in _VALID_LABELS:
+            await update.effective_message.reply_text(
+                "Usage: /bindtopics <alerts|newbooking|general> — run inside the topic.")
+            return
+        thread_id = getattr(update.effective_message, "message_thread_id", None)
+        if thread_id is None:
+            await update.effective_message.reply_text(
+                "Run /bindtopics inside a forum TOPIC (no topic detected here).")
+            return
+        chat_id = update.effective_chat.id
+        store.set_topic(label, chat_id, thread_id)
+        await update.effective_message.reply_text(
+            f"Bound '{label}' → chat {chat_id}, topic {thread_id}.")
+    return cmd_bindtopics
+
+
+def make_topics_handler(client, owner_id, store):
+    """/topics — OWNER-only. Show the current topic bindings."""
+    async def cmd_topics(update, context):
+        allowed, role = await resolve_access(
+            client, owner_id, update.effective_user.id)
+        if role != "owner":
+            return
+        data = store.all()
+        if not data:
+            await update.effective_message.reply_text("No topics bound yet.")
+            return
+        lines = [f"{k}: chat {v['chat_id']}, topic {v['thread_id']}"
+                 for k, v in sorted(data.items())]
+        await update.effective_message.reply_text("\n".join(lines))
+    return cmd_topics
+
+
 def make_whitelist_gate(client, owner_id):
     """Group -1 pre-handler: enforces whitelist-before-everything for EVERY update
     except /myid. Unlisted → stop propagation silently, so no downstream handler

@@ -19,7 +19,9 @@ from telegram.ext import Application, CommandHandler, TypeHandler
 
 from .config import Config
 from .internal_api import InternalAPIClient
-from .handlers import cmd_myid, make_ping_handler, make_whitelist_gate
+from .topics import TopicStore
+from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
+                       make_bindtopics_handler, make_topics_handler)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +43,7 @@ async def _on_error(update, context):
 def build_application(cfg: Config | None = None) -> Application:
     cfg = cfg or Config()
     client = InternalAPIClient(cfg.socket_path, cfg.internal_token)
+    store = TopicStore(cfg.topics_path)
     app = Application.builder().token(cfg.bot_token).build()
     # group -1: whitelist-before-everything (except /myid).
     app.add_handler(TypeHandler(object, make_whitelist_gate(client, cfg.owner_id)),
@@ -48,6 +51,10 @@ def build_application(cfg: Config | None = None) -> Application:
     # group 0: the actual commands.
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("ping", make_ping_handler(client, cfg.owner_id)))
+    app.add_handler(CommandHandler("bindtopics",
+                                   make_bindtopics_handler(client, cfg.owner_id, store)))
+    app.add_handler(CommandHandler("topics",
+                                   make_topics_handler(client, cfg.owner_id, store)))
     app.add_error_handler(_on_error)
     return app
 
