@@ -17,6 +17,17 @@
   <h1 class="warn">Booking request received</h1>
   <p>Your reference: <span class="ref">{{ st.reference }}</span></p>
   <p>Your rooms are held. <strong>Confirmed once payment is verified.</strong></p>
+  {% if st.total is defined and st.total %}
+  <p style="font-size:1.15rem"><strong>Total to transfer: MVR {{ '%.0f'|format(st.total) }}</strong></p>
+  {% endif %}
+  {% if brand.bank_account_number %}
+  <div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:.75rem 1rem;margin:.75rem auto;font-size:.95rem;text-align:left;max-width:23rem">
+    <strong>Bank transfer</strong><br>
+    Bank: <strong>{{ brand.bank_name }}</strong><br>
+    Account name: <strong>{{ brand.bank_account_name }}</strong><br>
+    Account number: <strong style="user-select:all;-webkit-user-select:all">{{ brand.bank_account_number }}</strong>
+  </div>
+  {% endif %}
   <p>Please complete payment and slip upload before
      <strong>{{ st.expires_at.strftime('%b %d, %H:%M UTC') }}</strong>, or the hold expires.</p>
 {% elif st.state == 'confirmed' %}
