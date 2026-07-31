@@ -122,6 +122,26 @@ def create_app(config_class=Config):
         return {'deploy': {'sha': deployed_sha(short=True),
                            'staging': is_staging()}}
 
+    # Sidebar "Holds ⏳" badge — count of LIVE pending holds (booking requests
+    # awaiting confirm). Admin-only + defensive: a query error must never break
+    # page render, so it degrades to no badge.
+    @app.context_processor
+    def _inject_pending_holds_count():
+        from flask_login import current_user
+        if not current_user.is_authenticated or not getattr(
+                current_user, 'is_admin', False):
+            return {}
+        try:
+            from datetime import datetime
+            from .models import Hold
+            now = datetime.utcnow()
+            n = (Hold.query
+                 .filter(Hold.hold_type == 'pending', Hold.state == 'active',
+                         Hold.expires_at > now).count())
+            return {'pending_holds_count': n}
+        except Exception:
+            return {'pending_holds_count': 0}
+
     from flask import request, redirect
     from flask_login import current_user
 

@@ -134,6 +134,13 @@
         Guests
       </a>
       {% if current_user.is_admin %}
+      <a href="{{ url_for('holds_admin.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'holds_admin' %}bg-amber-50 text-amber-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        <span class="w-4 h-4 inline-flex items-center justify-center text-base leading-none">⏳</span>
+        Holds
+        {% if pending_holds_count %}
+        <span class="ml-auto inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[11px] font-semibold">{{ pending_holds_count }}</span>
+        {% endif %}
+      </a>
       <a href="{{ url_for('groups.index') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if request.blueprint == 'groups' %}bg-amber-50 text-amber-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         Groups
