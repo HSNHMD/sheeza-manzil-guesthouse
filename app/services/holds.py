@@ -257,11 +257,18 @@ def confirm_pending(hold_id, *, lead_guest=None, user_id=None, num_guests_each=1
     hold.converted_at = now
     db.session.flush()
 
+    # Source guest counts from the pending hold so the now-UNCONDITIONAL capacity
+    # backstop in create_group_booking runs on this path too (Pepper Phase 0).
+    # Coalesce null→1/0 (same as confirm_group) — prod holds carry these, but a
+    # legacy null must degrade safely, never 500 or falsely reject.
+    p_adults = hold.adults if hold.adults is not None else 1
+    p_children = hold.children if hold.children is not None else 0
     res = group_booking.create_group_booking(
         [{'room_type_id': hold.room_type_id, 'qty': hold.qty}],
         hold.check_in_date, hold.check_out_date,
         lead_guest=guest, created_by=user_id,
-        num_guests_each=num_guests_each, status='confirmed', now=now)
+        num_guests_each=num_guests_each, status='confirmed',
+        adults=p_adults, children=p_children, now=now)
     if not res['ok']:
         db.session.rollback()          # also reverts the 'converted' flush
         return res
@@ -377,6 +384,18 @@ def promote_group_to_pending(session_token, *, guest_name=None, contact=None,
                  description=f'Selection group → pending ({len(live)} hold(s)).',
                  metadata={'session_token': session_token[:32],
                            'count': len(live), 'slip': bool(slip_filename)})
+    # Pepper outbox — a new booking request (from ANY source) queues an alert in
+    # THIS transaction (at-least-once delivery). booking_id is null here: the real
+    # Booking is created later at admin confirm; the pending request carries the
+    # public reference the guest quotes.
+    from . import pepper_outbox
+    ref = session_token[:8].upper()
+    pepper_outbox.emit('booking.created', reference=ref,
+                       payload={'source': 'portal', 'holds': len(live),
+                                'guest_name': guest_name, 'slip': bool(slip_filename)})
+    if slip_filename:
+        pepper_outbox.emit('slip.uploaded', reference=ref,
+                           payload={'source': 'portal', 'filename': slip_filename})
     db.session.commit()
     return {'ok': True, 'expires_at': now + ttl, 'count': len(live)}
 

@@ -153,11 +153,16 @@ def submit(tok, guest_data, *, slip_filename=None, slip_drive_id=None, now=None)
     if occ['over_capacity']:
         return {'ok': False, 'reasons': [occupancy.block_message(
             total_guests, occ['max_per_room'], occ['min_rooms'])]}
+    # Nationality is REQUIRED (Pepper Phase 0 / Green-Tax correctness) — enforced
+    # server-side here so it holds regardless of the client form.
+    nationality = (guest_data.get('nationality') or '').strip()
+    if not nationality:
+        return {'ok': False, 'reasons': ['Nationality is required.']}
     g = Guest(first_name=(guest_data.get('first_name') or '').strip(),
               last_name=(guest_data.get('last_name') or '').strip(),
               email=(guest_data.get('email') or '').strip(),
               phone=(guest_data.get('phone') or '').strip(),
-              nationality=(guest_data.get('nationality') or '').strip() or None,
+              nationality=nationality,
               id_type=(guest_data.get('id_type') or '').strip() or None,
               id_number=(guest_data.get('id_number') or '').strip() or None)
     db.session.add(g)
