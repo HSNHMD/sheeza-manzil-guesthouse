@@ -158,8 +158,14 @@ def submit():
         # Reuse the exact guest-upload semantics: local write ALWAYS + R2
         # dual-write; drive_id is None when R2 is unconfigured/fails (local
         # fallback) — same as public._save_file / booking uploads.
-        from .public import _save_file
-        slip_filename, slip_drive_id = _save_file(f, 'holdslip', 'payment_slip')
+        from .public import _save_file, UploadRejected
+        try:
+            slip_filename, slip_drive_id = _save_file(f, 'holdslip', 'payment_slip')
+        except UploadRejected as e:
+            # Slip is optional at this step — reject the bad file (not the whole
+            # booking) and send the guest back with a clear message; hold intact.
+            flash(str(e), 'error')
+            return redirect(url_for('portal.guest'))
 
     res = portal_svc.submit(tok, guest_data, slip_filename=slip_filename,
                             slip_drive_id=slip_drive_id)
