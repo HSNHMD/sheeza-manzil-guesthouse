@@ -19,6 +19,12 @@ from pepper_bot.handlers import cmd_myid, make_ping_handler, make_whitelist_gate
 from pepper_bot.gate import resolve_access
 from pepper_bot.internal_api import _TTLCache
 
+try:  # the gate's silent-drop path imports telegram.ext; skip only that test w/o PTB
+    import telegram  # noqa: F401
+    _HAS_PTB = True
+except ImportError:
+    _HAS_PTB = False
+
 
 def fake_update(uid, text=""):
     u = MagicMock()
@@ -83,6 +89,7 @@ class GateTest(IsolatedAsyncioTestCase):
         await gate(fake_update(999, text="/myid"), None)   # no raise
         self.assertEqual(c.calls, 0)
 
+    @unittest.skipUnless(_HAS_PTB, "python-telegram-bot not installed (bot venv only)")
     async def test_gate_blocks_unlisted_silently(self):
         from telegram.ext import ApplicationHandlerStop
         gate = make_whitelist_gate(FakeClient(False), owner_id=None)
