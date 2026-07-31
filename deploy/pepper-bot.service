@@ -1,0 +1,48 @@
+# Pepper Telegram bot — long-poll, single instance, dedicated non-root user.
+# Deploy (gated): create a DEDICATED venv (NOT the app venv — the bot never
+# imports PMS code):
+#     python3.12 -m venv /opt/pepper-bot/venv
+#     /opt/pepper-bot/venv/bin/pip install -r /var/www/sheeza-manzil/requirements-bot.txt
+#     chown -R pepper:pepper /opt/pepper-bot
+# Token/secrets come from /etc/pepper/pepper.env (TELEGRAM_BOT_TOKEN,
+# PEPPER_INTERNAL_TOKEN, PEPPER_OWNER_ID). Then:
+#     install -m0644 deploy/pepper-bot.service /etc/systemd/system/
+#     systemctl daemon-reload && systemctl enable --now pepper-bot.service
+#
+# The SAME hardening profile below is to be backfilled onto pepper-internal.service
+# (it currently lacks ProtectSystem=strict et al.).
+
+[Unit]
+Description=Pepper Telegram bot (long-poll) — Sheeza PMS agent
+After=network-online.target pepper-internal.service
+Wants=network-online.target
+Requires=pepper-internal.service
+
+[Service]
+Type=simple
+User=pepper
+Group=pepper
+WorkingDirectory=/var/www/sheeza-manzil
+EnvironmentFile=/etc/pepper/pepper.env
+Environment=HOME=/tmp
+ExecStart=/opt/pepper-bot/venv/bin/python -m pepper_bot
+Restart=on-failure
+RestartSec=5
+
+# --- hardening (spec §8.1 full profile) ---
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
