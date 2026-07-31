@@ -23,8 +23,13 @@ from .handlers import cmd_myid, make_ping_handler, make_whitelist_gate
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s pepper_bot %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+# CRITICAL: httpx/httpcore log the full request URL at INFO, and Telegram URLs
+# embed the bot token (…/bot<TOKEN>/getUpdates). Silence them so the token NEVER
+# lands in logs (journald or elsewhere).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("pepper_bot")
 
 
