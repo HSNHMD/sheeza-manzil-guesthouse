@@ -47,11 +47,26 @@
   <label>Email <input name="email" type="email"></label>
   <label>Nationality <input name="nationality"></label>
   <label>ID / passport number <input name="id_number"></label>
+  {% if brand.bank_account_number %}
+  <div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:.75rem 1rem;margin:.75rem 0;font-size:.92rem;color:#1f2937">
+    <strong>Pay by bank transfer</strong>
+    <div style="margin-top:.4rem;line-height:1.7">
+      Bank: <strong>{{ brand.bank_name }}</strong><br>
+      Account name: <strong>{{ brand.bank_account_name }}</strong><br>
+      Account number:
+      <strong style="user-select:all;-webkit-user-select:all">{{ brand.bank_account_number }}</strong>
+      <button type="button"
+        onclick="if(navigator.clipboard){navigator.clipboard.writeText('{{ brand.bank_account_number }}');this.textContent='Copied'}"
+        style="margin-left:.4rem;font-size:.8rem;padding:.15rem .5rem;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer">Copy</button>
+    </div>
+    <div style="margin-top:.5rem;color:#92400e">Transfer the total amount and upload your slip below, or before the hold deadline.</div>
+  </div>
+  {% else %}
+  <p style="font-size:.9rem;color:#6b7280">Pay by bank transfer per the property's payment instructions.</p>
+  {% endif %}
   <label>Payment slip (optional now — you have until the deadline)
     <input type="file" name="payment_slip" accept="image/*,application/pdf"></label>
-  <p style="font-size:.9rem;color:#6b7280">
-    Pay by bank transfer per the property's payment instructions; upload the slip
-    now or later. Your booking is confirmed once payment is verified.</p>
+  <p style="font-size:.9rem;color:#6b7280">Your booking is confirmed once payment is verified.</p>
   <button type="submit" id="sub">Submit booking request</button>
 </form>
 

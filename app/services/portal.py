@@ -187,8 +187,19 @@ def status(tok, *, now=None):
     live = [h for h in hs if h.hold_type == 'pending'
             and h.state == 'active' and h.expires_at > now]
     if live:
+        # Grand total (rooms + extra-person fee) so the confirmation can tell the
+        # guest exactly what to transfer. Same math as the guest step; display only.
+        from . import occupancy
+        ci, co = live[0].check_in_date, live[0].check_out_date
+        nights = (co - ci).days
+        items = [{'room_type_id': h.room_type_id, 'qty': h.qty} for h in live]
+        room_total = sum(inventory.price_stay(h.room_type_id, ci, co)['total'] * h.qty
+                         for h in live)
+        guests = (live[0].adults or 1) + (live[0].children or 0)
+        occ = occupancy.compute(items, guests, nights)
         return {'state': 'pending', 'reference': public_reference(tok),
-                'expires_at': min(h.expires_at for h in live), 'holds': live}
+                'expires_at': min(h.expires_at for h in live), 'holds': live,
+                'total': room_total + occ['fee_total']}
     if any(h.hold_type == 'pending' for h in hs):
         return {'state': 'expired', 'reference': public_reference(tok)}
     sel = [h for h in hs if h.hold_type == 'selection'
