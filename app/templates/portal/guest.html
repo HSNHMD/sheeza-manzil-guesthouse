@@ -59,12 +59,12 @@
         onclick="if(navigator.clipboard){navigator.clipboard.writeText('{{ brand.bank_account_number }}');this.textContent='Copied!';this.style.background='#d1fae5';this.style.color='#065f46';this.style.borderColor='#059669'}"
         style="margin-left:.4rem;font-size:.8rem;padding:.2rem .55rem;border:1px solid #9ca3af;border-radius:6px;background:#fff;color:#1f2937;cursor:pointer">Copy</button>
     </div>
-    <div style="margin-top:.5rem;color:#92400e">Transfer the total amount and upload your slip below, or before the hold deadline.</div>
+    <div style="margin-top:.5rem;color:#92400e">Transfer the total amount and upload your slip below.</div>
   </div>
   {% else %}
   <p style="font-size:.9rem;color:#6b7280">Pay by bank transfer per the property's payment instructions.</p>
   {% endif %}
-  <label>Payment slip (optional now — you have until the deadline)
+  <label>Payment slip
     <input type="file" name="payment_slip" accept="image/*,application/pdf"></label>
   <p style="font-size:.9rem;color:#6b7280">Your booking is confirmed once payment is verified.</p>
   <button type="submit" id="sub">Submit booking request</button>
