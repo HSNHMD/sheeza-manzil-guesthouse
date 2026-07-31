@@ -1,0 +1,4 @@
+# Pepper bot process deps — installed in a DEDICATED venv, separate from the PMS
+# app venv (the bot never imports PMS code). Keep this list tiny.
+python-telegram-bot==21.6
+httpx>=0.27,<0.28
