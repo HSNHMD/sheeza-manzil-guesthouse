@@ -56,8 +56,8 @@
       Account number:
       <strong style="user-select:all;-webkit-user-select:all">{{ brand.bank_account_number }}</strong>
       <button type="button"
-        onclick="if(navigator.clipboard){navigator.clipboard.writeText('{{ brand.bank_account_number }}');this.textContent='Copied'}"
-        style="margin-left:.4rem;font-size:.8rem;padding:.15rem .5rem;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer">Copy</button>
+        onclick="if(navigator.clipboard){navigator.clipboard.writeText('{{ brand.bank_account_number }}');this.textContent='Copied!';this.style.background='#d1fae5';this.style.color='#065f46';this.style.borderColor='#059669'}"
+        style="margin-left:.4rem;font-size:.8rem;padding:.2rem .55rem;border:1px solid #9ca3af;border-radius:6px;background:#fff;color:#1f2937;cursor:pointer">Copy</button>
     </div>
     <div style="margin-top:.5rem;color:#92400e">Transfer the total amount and upload your slip below, or before the hold deadline.</div>
   </div>
