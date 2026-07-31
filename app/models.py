@@ -2243,3 +2243,72 @@ class Hold(db.Model):
         return (f'<Hold id={self.id} type={self.hold_type} state={self.state} '
                 f'rt={self.room_type_id} qty={self.qty} '
                 f'{self.check_in_date}..{self.check_out_date}>')
+
+
+# ── Pepper (Telegram PMS agent) — Phase 0 foundations ──────────────────────
+# All three tables are ADDITIVE-ONLY (new tables, no changes to existing ones)
+# so a code revert leaves them harmless and unused. The bot never touches these
+# directly — access is via the localhost internal API (unix socket + bearer).
+
+class PepperUser(db.Model):
+    """Telegram-ID whitelist. Owner is NOT stored here (env PEPPER_OWNER_ID) so a
+    DB compromise can't grant owner. Resolved via the internal API's PII-free
+    allow/deny endpoint; the bot holds no DB credentials."""
+    __tablename__ = 'pepper_users'
+
+    telegram_id  = db.Column(db.BigInteger, primary_key=True)  # Telegram user id
+    display_name = db.Column(db.String(120), nullable=True)
+    role         = db.Column(db.String(20), nullable=False, default='staff')
+    # 'manager' | 'staff'  (owner is env-only)
+    added_by     = db.Column(db.BigInteger, nullable=True)     # telegram id of adder
+    added_at     = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    revoked_at   = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None
+
+    def __repr__(self):
+        return f'<PepperUser tg={self.telegram_id} role={self.role}>'
+
+
+class PepperFlow(db.Model):
+    """Per-user booking-flow snapshot for restart recovery (one active per user).
+    Kept minimal; conversational state only — the durable booking state lives in
+    holds/bookings."""
+    __tablename__ = 'pepper_flows'
+
+    telegram_id = db.Column(db.BigInteger, primary_key=True)
+    step        = db.Column(db.String(40), nullable=True)
+    draft_json  = db.Column(db.Text, nullable=True)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
+                            onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f'<PepperFlow tg={self.telegram_id} step={self.step}>'
+
+
+class PepperOutbox(db.Model):
+    """Transactional outbox — a row is written in the SAME transaction as the
+    booking/slip insert so an alert survives bot/Telegram downtime (at-least-once
+    delivery). The bot polls undelivered rows and marks them delivered."""
+    __tablename__ = 'pepper_outbox'
+
+    id           = db.Column(db.Integer, primary_key=True)
+    event_type   = db.Column(db.String(40), nullable=False)  # 'booking.created' | 'slip.uploaded'
+    booking_id   = db.Column(db.Integer,
+                             db.ForeignKey('bookings.id', ondelete='SET NULL'),
+                             nullable=True)
+    reference    = db.Column(db.String(64), nullable=True)   # public ref (portal pending)
+    payload_json = db.Column(db.Text, nullable=True)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow,
+                             nullable=False, index=True)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.Index('ix_pepper_outbox_undelivered', 'delivered_at', 'created_at'),
+    )
+
+    def __repr__(self):
+        return (f'<PepperOutbox id={self.id} {self.event_type} '
+                f'delivered={self.delivered_at is not None}>')

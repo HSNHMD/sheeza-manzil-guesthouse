@@ -124,7 +124,8 @@ class PortalEndpointFlow(unittest.TestCase):
         self.assertIn('/book/guest', r.headers.get('Location', ''))
         self.assertEqual(self.client.get('/book/guest').status_code, 200)
         r = self.client.post('/book/submit', data={
-            'first_name': 'Test', 'last_name': 'Guest', 'phone': '+9600000000'})
+            'first_name': 'Test', 'last_name': 'Guest', 'phone': '+9600000000',
+            'nationality': 'MDV'})
         self.assertEqual(r.status_code, 302)
         self.assertIn('/book/status', r.headers.get('Location', ''))
         self.assertEqual(self.client.get('/book/status').status_code, 200)
@@ -217,7 +218,8 @@ class AdminConfirmRoute(_Base):
         tok = 'route-token'
         ps.create_holds([{'room_type_id': self.t1.id, 'qty': 1},
                          {'room_type_id': self.t2.id, 'qty': 1}], _CI, _CO, tok)
-        ps.submit(tok, {'first_name': 'R', 'last_name': 'T', 'phone': '+960'})
+        ps.submit(tok, {'first_name': 'R', 'last_name': 'T', 'phone': '+960',
+                        'nationality': 'MDV'})
         pend = Hold.query.filter_by(hold_type='pending', state='active').first()
         c = self.app.test_client()
         with c.session_transaction() as s:
@@ -239,7 +241,8 @@ class PortalServiceRules(_Base):
         res = portal_svc.create_holds([{'room_type_id': self.t2.id, 'qty': 1}],
                                       _CI, _CO, tok)
         self.assertTrue(res['ok'])
-        portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B', 'phone': '+9600'})
+        portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B', 'phone': '+9600',
+                                'nationality': 'MDV'})
         conf = holds_svc.confirm_group(tok, user_id=self.admin.id)
         self.assertTrue(conf['ok'], conf.get('reasons'))
         self.assertIsNone(conf['group_id'])                  # plain booking, no group
@@ -264,13 +267,15 @@ class PortalServiceRules(_Base):
         for h in holds_svc.holds_for_session(tok, hold_type='selection', state='active'):
             h.expires_at = datetime.utcnow() - timedelta(seconds=1)
         db.session.commit()
-        res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B', 'phone': '+960'})
+        res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B', 'phone': '+960',
+                                      'nationality': 'MDV'})
         self.assertFalse(res['ok'])                          # dead hold -> no submit
 
     def test_pending_expiry_status_is_rebook(self):
         tok = 'tok-pexp'
         portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO, tok)
-        portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B', 'phone': '+960'})
+        portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B', 'phone': '+960',
+                                'nationality': 'MDV'})
         for h in holds_svc.holds_for_session(tok, hold_type='pending', state='active'):
             h.expires_at = datetime.utcnow() - timedelta(seconds=1)
         db.session.commit()
@@ -279,7 +284,8 @@ class PortalServiceRules(_Base):
     def test_slip_transfers_to_booking_on_confirm(self):
         tok = 'tok-slip'
         portal_svc.create_holds([{'room_type_id': self.t2.id, 'qty': 1}], _CI, _CO, tok)
-        portal_svc.submit(tok, {'first_name': 'S', 'last_name': 'L', 'phone': '+960'},
+        portal_svc.submit(tok, {'first_name': 'S', 'last_name': 'L', 'phone': '+960',
+                                'nationality': 'MDV'},
                           slip_filename='slip123.png',
                           slip_drive_id='payment-slips/slip123.png')
         h = holds_svc.holds_for_session(tok, hold_type='pending', state='active')[0]
@@ -307,7 +313,8 @@ class PortalServiceRules(_Base):
         tok = 'tok-cap-eq'
         portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO, tok)
         res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
-                                      'phone': '+960', 'adults': '2', 'children': '0'})
+                                      'phone': '+960', 'adults': '2', 'children': '0',
+                                      'nationality': 'MDV'})
         self.assertTrue(res['ok'], res.get('reasons'))
         h = holds_svc.holds_for_session(tok, hold_type='pending', state='active')[0]
         self.assertEqual((h.adults, h.children), (2, 0))
@@ -316,7 +323,8 @@ class PortalServiceRules(_Base):
         tok = 'tok-ch0'
         portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1}], _CI, _CO, tok)
         res = portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
-                                      'phone': '+960', 'adults': '2'})  # no children
+                                      'phone': '+960', 'adults': '2',        # no children
+                                      'nationality': 'MDV'})
         self.assertTrue(res['ok'], res.get('reasons'))
         h = holds_svc.holds_for_session(tok, hold_type='pending', state='active')[0]
         self.assertEqual(h.children, 0)
@@ -326,7 +334,8 @@ class PortalServiceRules(_Base):
         portal_svc.create_holds([{'room_type_id': self.t1.id, 'qty': 1},
                                  {'room_type_id': self.t2.id, 'qty': 1}], _CI, _CO, tok)
         portal_svc.submit(tok, {'first_name': 'A', 'last_name': 'B',
-                                'phone': '+960', 'adults': '2', 'children': '1'})
+                                'phone': '+960', 'adults': '2', 'children': '1',
+                                'nationality': 'MDV'})
         conf = holds_svc.confirm_group(tok, user_id=self.admin.id)
         self.assertTrue(conf['ok'], conf.get('reasons'))
         grp = BookingGroup.query.get(conf['group_id'])

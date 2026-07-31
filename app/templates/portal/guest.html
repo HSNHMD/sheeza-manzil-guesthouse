@@ -45,7 +45,7 @@
   <label>Adults <input id="adults" name="adults" type="number" min="1" max="20" value="{{ summary.init_adults if summary else 1 }}" required style="width:5rem"></label>
   <label>Children <input id="children" name="children" type="number" min="0" max="20" value="{{ summary.init_children if summary else 0 }}" style="width:5rem"></label>
   <label>Email <input name="email" type="email"></label>
-  <label>Nationality <input name="nationality"></label>
+  <label>Nationality <input name="nationality" required></label>
   <label>ID / passport number <input name="id_number"></label>
   {% if brand.bank_account_number %}
   <div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:.75rem 1rem;margin:.75rem 0;font-size:.92rem;color:#1f2937">

@@ -85,6 +85,13 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
         if isinstance(lead_guest, Guest):
             guest = lead_guest
         else:
+            # Nationality REQUIRED for a NEW guest created via the shared layer
+            # (e.g. the Pepper internal API). Existing Guest instances (admin
+            # confirm paths) are not re-validated — their record already exists.
+            if not (lead_guest.get('nationality') or '').strip():
+                db.session.rollback()
+                return {'ok': False, 'group_id': None, 'booking_ids': [],
+                        'reasons': ['nationality is required.']}
             guest = Guest(**{k: lead_guest.get(k) for k in
                              ('first_name', 'last_name', 'email', 'phone',
                               'id_type', 'id_number', 'nationality')
@@ -155,42 +162,50 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
         # 6b. Guest counts (per-GROUP totals; per-room split deferred). Stored on
         # the group (multi) or the single booking, and on the (master) booking's
         # num_guests for folio-header display.
-        if adults is not None:
-            total = adults + (children or 0)
-            head = Booking.query.get(booking_ids[0])
-            head.adults = adults
-            head.children = (children or 0)
-            head.num_guests = total
-            if group:
-                group.adults = adults
-                group.children = (children or 0)
+        #
+        # Capacity/fee is checked UNCONDITIONALLY (Pepper Phase 0): every create
+        # path — admin confirm AND the internal API — passes the same occupancy
+        # backstop; no caller may skip it via adults=None. Null counts are
+        # coalesced (adults→1, children→0), mirroring confirm_group's own
+        # null-handling (holds.py), so a legacy hold with missing counts degrades
+        # to a safe 1-guest booking rather than a 500 or a false rejection.
+        adults = adults if adults is not None else 1
+        children = children if children is not None else 0
+        total = adults + children
+        head = Booking.query.get(booking_ids[0])
+        head.adults = adults
+        head.children = children
+        head.num_guests = total
+        if group:
+            group.adults = adults
+            group.children = children
 
-            # 6c. Extra-person fee — itemized folio line(s) on the master/single
-            # booking (NOT folded into the room rate). Recomputed here from the
-            # same occupancy math the portal showed the guest. Backstop capacity
-            # check in case config changed between hold and confirm.
-            from . import occupancy
-            from ..models import FolioItem
-            fee_nights = max(1, (check_out - check_in).days)
-            occ = occupancy.compute(norm, total, fee_nights)
-            if occ['over_capacity']:
-                db.session.rollback()
-                return {'ok': False, 'group_id': None, 'booking_ids': [],
-                        'reasons': [occupancy.block_message(
-                            total, occ['max_per_room'], occ['min_rooms'])]}
-            for tier in occ['breakdown']:
-                amt = round(tier['persons'] * tier['nights'] * tier['fee'], 2)
-                db.session.add(FolioItem(
-                    booking_id=head.id, guest_id=guest.id,
-                    property_id=head.property_id, item_type='fee',
-                    description=(f"Extra person fee ({tier['persons']} guest"
-                                 f" × {tier['nights']} night @ MVR "
-                                 f"{tier['fee']:.0f}/night)"),
-                    quantity=tier['persons'] * tier['nights'],
-                    unit_price=tier['fee'], amount=amt,
-                    tax_amount=0.0, service_charge_amount=0.0,
-                    total_amount=amt, status='open',
-                    source_module='booking_engine'))
+        # 6c. Extra-person fee — itemized folio line(s) on the master/single
+        # booking (NOT folded into the room rate). Recomputed here from the
+        # same occupancy math the portal showed the guest. Backstop capacity
+        # check in case config changed between hold and confirm.
+        from . import occupancy
+        from ..models import FolioItem
+        fee_nights = max(1, (check_out - check_in).days)
+        occ = occupancy.compute(norm, total, fee_nights)
+        if occ['over_capacity']:
+            db.session.rollback()
+            return {'ok': False, 'group_id': None, 'booking_ids': [],
+                    'reasons': [occupancy.block_message(
+                        total, occ['max_per_room'], occ['min_rooms'])]}
+        for tier in occ['breakdown']:
+            amt = round(tier['persons'] * tier['nights'] * tier['fee'], 2)
+            db.session.add(FolioItem(
+                booking_id=head.id, guest_id=guest.id,
+                property_id=head.property_id, item_type='fee',
+                description=(f"Extra person fee ({tier['persons']} guest"
+                             f" × {tier['nights']} night @ MVR "
+                             f"{tier['fee']:.0f}/night)"),
+                quantity=tier['persons'] * tier['nights'],
+                unit_price=tier['fee'], amount=amt,
+                tax_amount=0.0, service_charge_amount=0.0,
+                total_amount=amt, status='open',
+                source_module='booking_engine'))
 
         # 7. Commit everything atomically (releases the type locks).
         db.session.commit()
