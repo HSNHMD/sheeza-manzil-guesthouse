@@ -638,18 +638,67 @@ class ActionCallbackTest(IsolatedAsyncioTestCase):
                       u.callback_query.message.edit_text.await_args.args[0])
 
     async def test_manager_cash_received_confirms_cash_mode(self):
-        # 💵 Cash received (pv:cash:b:<id>) -> confirm_target(cash=True); the alert
-        # edits to "CASH RECEIVED by <name>".
+        # 💵 Cash received (pv:cash:b:<id>) routes through state (armable pending)
+        # -> confirm_target(cash=True); the alert edits to the DISTINCT cash
+        # signature "💵 CASH confirmed by <name>".
         client = FakeActionClient(role="manager",
+                                  state={"state": "pending", "armable": True,
+                                         "payment_method": "cash"},
                                   confirm=(200, {"ok": True, "by": "Aisha",
                                                  "method": "cash"}))
         h = make_action_callback(client, owner_id=None, pending_rejects={})
         u = _fake_cq(111, "pv:cash:b:42", name="Aisha")
         await h(u, None)
-        # recorded WITH the cash marker (3-tuple)
+        self.assertEqual(client.state_calls, ["b:42"])             # state checked FIRST
         self.assertEqual(client.confirm_calls, [("b:42", "Aisha", "cash")])
-        self.assertIn("CASH RECEIVED by Aisha",
+        edit = u.callback_query.message.edit_text.await_args.args[0]
+        self.assertIn("CASH confirmed by Aisha", edit)             # distinct signature
+        self.assertNotIn("✅ CONFIRMED by Aisha", edit)            # NOT the bank one
+
+    async def test_cash_and_bank_signatures_differ(self):
+        # Bank verify -> "✅ CONFIRMED by X"; cash -> "💵 CASH confirmed by X".
+        bank = FakeActionClient(role="manager",
+                                confirm=(200, {"ok": True, "by": "Aisha"}))
+        hb = make_action_callback(bank, owner_id=None, pending_rejects={})
+        ub = _fake_cq(111, "pv:v:b:42", name="Aisha")
+        await hb(ub, None)
+        bank_line = ub.callback_query.message.edit_text.await_args.args[0]
+
+        cash = FakeActionClient(role="manager",
+                                state={"state": "pending", "armable": True},
+                                confirm=(200, {"ok": True, "by": "Aisha"}))
+        hc = make_action_callback(cash, owner_id=None, pending_rejects={})
+        uc = _fake_cq(111, "pv:cash:b:42", name="Aisha")
+        await hc(uc, None)
+        cash_line = uc.callback_query.message.edit_text.await_args.args[0]
+
+        self.assertNotEqual(bank_line, cash_line)                  # ledger-distinct
+        self.assertIn("✅ CONFIRMED by Aisha", bank_line)
+        self.assertIn("💵 CASH confirmed by Aisha", cash_line)
+
+    async def test_stale_cash_tap_on_confirmed_shows_truth_no_fire(self):
+        # A tap on an OLD cash alert for a booking already confirmed by someone
+        # else -> shows "CONFIRMED by X", does NOT fire the cash confirm.
+        client = FakeActionClient(role="manager",
+                                  state={"state": "confirmed", "armable": False,
+                                         "by": "Bob"})
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:cash:b:42", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.state_calls, ["b:42"])
+        self.assertEqual(client.confirm_calls, [])                 # DID NOT fire
+        self.assertIn("CONFIRMED by Bob",
                       u.callback_query.message.edit_text.await_args.args[0])
+
+    async def test_stale_cash_tap_on_cancelled_shows_truth_no_fire(self):
+        client = FakeActionClient(role="manager",
+                                  state={"state": "cancelled", "armable": False})
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:cash:b:42", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.confirm_calls, [])                 # DID NOT fire
+        self.assertIn("cancelled",
+                      u.callback_query.message.edit_text.await_args.args[0].lower())
 
     async def test_staff_cash_tap_bounces_no_confirm(self):
         # A staff-role tap on 💵 Cash received is denied (manager-gated) — no confirm.
@@ -659,6 +708,7 @@ class ActionCallbackTest(IsolatedAsyncioTestCase):
         await h(u, None)
         self.assertIn("manager", u.callback_query.answer.await_args.args[0].lower())
         self.assertEqual(client.confirm_calls, [])                 # NO confirm
+        self.assertEqual(client.state_calls, [])                   # gated before state
         u.callback_query.message.edit_text.assert_not_awaited()
 
     async def test_preset_reason_rejects_booking_target(self):

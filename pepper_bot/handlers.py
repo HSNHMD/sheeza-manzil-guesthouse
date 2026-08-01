@@ -245,6 +245,49 @@ async def _resolve_to_state(bot, client, pend, note=None):
     return state
 
 
+def _state_line(st):
+    """A human 'current state' line for a booking/hold state dict — the honest
+    truth shown when an action can't fire because the target already moved on."""
+    state = st.get("state")
+    return {
+        "confirmed": f"✅ CONFIRMED by {st.get('by', 'someone')}",
+        "cancelled": "🚫 Booking cancelled.",
+        "slip_rejected": f"❌ SLIP already rejected: {st.get('reason') or '—'}",
+        "expired": "⌛ Expired.",
+        "awaiting_slip": "⏳ Awaiting a slip.",
+    }.get(state, "ℹ️ State changed — buttons cleared.")
+
+
+async def _cash_received(client, cq, target, name):
+    """💵 Cash received tap. Anti-stale (same discipline as ↩︎ Cancel): route
+    through the authoritative booking state FIRST. Only fire the cash confirm when
+    it's still an armable pending booking; otherwise edit the alert to the honest
+    current state and do NOT act — so a tap on an OLD alert for a booking that's
+    since been verified/cancelled/rejected reads the truth, not a stale view.
+    On success the alert gets the DISTINCT cash signature '💵 CASH confirmed by X'
+    (vs the bank path's '✅ CONFIRMED by X') so the Alerts topic scans as a ledger."""
+    st = await client.target_state(target)
+    if not (st.get("state") == "pending" and st.get("armable")):
+        # already moved on -> show the truth, fire nothing.
+        line = _state_line(st)
+        await _finalize_alert(cq.message, line)
+        await cq.answer(line.replace("*", "")[:190], show_alert=True)
+        return
+    status, body = await client.confirm_target(
+        target, actor_id=cq.from_user.id, actor_name=name, cash=True)
+    if status == 200 and body.get("ok"):
+        await cq.answer("Cash received 💵")
+        await _finalize_alert(cq.message, f"💵 CASH confirmed by {name}")
+    elif body.get("already"):                       # lost a race between state+confirm
+        by = body.get("by", "someone")
+        await cq.answer(f"Already confirmed by {by}.", show_alert=True)
+        await _finalize_alert(cq.message, f"✅ CONFIRMED by {by}")
+    else:
+        await cq.answer(
+            "; ".join(body.get("reasons", ["could not confirm"]))[:190],
+            show_alert=True)
+
+
 def _cancel_timeout(pend):
     task = pend.get("task") if pend else None
     if task is not None and not task.done():
@@ -338,15 +381,13 @@ def make_action_callback(client, owner_id, pending_rejects):
         key = (cq.message.chat_id, uid)
         thread_id = getattr(cq.message, "message_thread_id", None)
 
-        if tag in ("v", "cash"):
+        if tag == "v":                                  # ✅ bank slip verify
             _cancel_timeout(pending_rejects.pop(key, None))   # a pending reject is moot
-            is_cash = (tag == "cash")
             status, body = await client.confirm_target(
-                target, actor_id=uid, actor_name=name, cash=is_cash)
-            done_word = "CASH RECEIVED" if is_cash else "CONFIRMED"
+                target, actor_id=uid, actor_name=name)
             if status == 200 and body.get("ok"):
-                await cq.answer("Cash received 💵" if is_cash else "Confirmed ✅")
-                await _finalize_alert(cq.message, f"✅ {done_word} by {name}")
+                await cq.answer("Confirmed ✅")
+                await _finalize_alert(cq.message, f"✅ CONFIRMED by {name}")
             elif body.get("already"):
                 by = body.get("by", "someone")
                 await cq.answer(f"Already confirmed by {by}.", show_alert=True)
@@ -355,6 +396,11 @@ def make_action_callback(client, owner_id, pending_rejects):
                 await cq.answer(
                     "; ".join(body.get("reasons", ["could not confirm"]))[:190],
                     show_alert=True)
+            return
+
+        if tag == "cash":                               # 💵 cash received
+            _cancel_timeout(pending_rejects.pop(key, None))
+            await _cash_received(client, cq, target, name)
             return
 
         if tag == "r":                                  # show the reason menu

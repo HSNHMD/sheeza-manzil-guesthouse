@@ -477,6 +477,47 @@ class InternalApiTest(unittest.TestCase):
                         headers=self._auth())
         self.assertEqual(r.status_code, 400)
 
+    def test_cash_booking_state_armable_without_slip(self):
+        # A CASH booking has no slip and none is coming -> pending_verification is
+        # directly ARMABLE (the 💵 Cash received anti-stale gate can fire).
+        bid = self._pending_cash_booking()
+        r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
+                       headers=self._auth())
+        j = r.get_json()
+        self.assertEqual(j['state'], 'pending')
+        self.assertTrue(j['armable'])
+        self.assertEqual(j['payment_method'], 'cash')
+
+    def test_bank_booking_state_not_armable_without_slip(self):
+        # A BANK booking with no slip is NOT armable (awaiting_slip) — the guard
+        # difference between the two methods.
+        bid = self._pending_verif_booking(slip=None)   # bank default, no slip
+        r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
+                       headers=self._auth())
+        j = r.get_json()
+        self.assertEqual(j['state'], 'awaiting_slip')
+        self.assertFalse(j['armable'])
+
+    def test_cash_booking_state_confirmed_after_cash_verify(self):
+        bid = self._pending_cash_booking()
+        self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                    json={'actor_name': 'Aisha', 'cash': True}, headers=self._auth())
+        r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
+                       headers=self._auth())
+        self.assertEqual(r.get_json()['state'], 'confirmed')
+        self.assertFalse(r.get_json()['armable'])
+
+    def test_cancelled_booking_state_distinct(self):
+        from app.models import db, Booking
+        bid = self._pending_cash_booking()
+        with self.app.app_context():
+            Booking.query.get(bid).status = 'cancelled'
+            db.session.commit()
+        r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
+                       headers=self._auth())
+        self.assertEqual(r.get_json()['state'], 'cancelled')
+        self.assertFalse(r.get_json()['armable'])
+
     def test_booking_verify_idempotent_loser_gets_winner(self):
         bid = self._pending_verif_booking()
         r1 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',

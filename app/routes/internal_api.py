@@ -633,30 +633,43 @@ def booking_reject(booking_id):
 @require_bearer
 def booking_state(booking_id):
     """Authoritative disposition for a bot-created booking — the ↩︎ Cancel /
-    reject-timeout re-arm authority (mirror of /holds/state):
+    reject-timeout re-arm authority AND the anti-stale gate for 💵 Cash received
+    (a tap on an OLD alert routes through here first). ``payment_method`` is
+    always returned so the caller knows the confirm MODE (cash vs slip).
 
-      pending       -> pending_verification WITH a valid slip  (armable ✅/❌)
+      pending       -> ARMABLE. bank: pending_verification WITH a valid slip;
+                       CASH: pending_verification (no slip is expected for cash).
       slip_rejected -> pending_verification, slip soft-rejected (not armable)
-      awaiting_slip -> pending_verification, no slip yet        (not armable)
+      awaiting_slip -> pending_verification bank booking, no slip yet (not armable)
       confirmed     -> already confirmed (by whom, if known)    (not armable)
+      cancelled     -> booking cancelled                        (not armable)
       other         -> any other status                         (not armable)
     """
     from ..models import Booking
     b = Booking.query.get(booking_id)
     if b is None:
         return jsonify(error='not found'), 404
+    pm = b.payment_method or 'bank_transfer'
+    is_cash = (pm == 'cash')
     if b.status == 'pending_verification':
+        # Cash has no slip and none is coming, so pending_verification is directly
+        # armable; a soft-reject (unusual for cash) still blocks. Bank needs a
+        # valid slip to be armable.
+        if is_cash and not b.slip_rejected_at:
+            return jsonify(ok=True, state='pending', armable=True, payment_method=pm)
         if b.payment_slip_filename and not b.slip_rejected_at:
-            return jsonify(ok=True, state='pending', armable=True)
+            return jsonify(ok=True, state='pending', armable=True, payment_method=pm)
         if b.slip_rejected_at:
             return jsonify(ok=True, state='slip_rejected', armable=False,
-                           reason=b.slip_rejected_reason)
-        return jsonify(ok=True, state='awaiting_slip', armable=False)
+                           reason=b.slip_rejected_reason, payment_method=pm)
+        return jsonify(ok=True, state='awaiting_slip', armable=False,
+                       payment_method=pm)
     if b.status == 'confirmed':
-        return jsonify(ok=True, state='confirmed', armable=False,
+        return jsonify(ok=True, state='confirmed', armable=False, payment_method=pm,
                        by=_last_actor_by('booking_id', booking_id,
                                          ['pepper.booking_confirmed']))
-    return jsonify(ok=True, state=b.status, armable=False)
+    # cancelled / checked_in / … — the honest current status, never armable.
+    return jsonify(ok=True, state=b.status, armable=False, payment_method=pm)
 
 
 @internal_api_bp.post('/whitelist')
