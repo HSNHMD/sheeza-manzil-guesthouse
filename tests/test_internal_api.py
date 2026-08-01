@@ -103,8 +103,8 @@ class InternalApiTest(unittest.TestCase):
                        headers=self._auth())
         self.assertEqual(r.status_code, 404)
 
-    # --- Phase 3: verify (confirm hold) / reject (release hold) ---
-    def _pending_hold(self, token):
+    # --- Phase 3: verify (confirm hold) / soft-reject (mark slip rejected) ---
+    def _pending_hold(self, token, slip='holdslip_test.jpg'):
         from datetime import datetime, timedelta
         with self.app.app_context():
             g = Guest(first_name='A', last_name='B', phone='7', nationality='MDV')
@@ -114,9 +114,18 @@ class InternalApiTest(unittest.TestCase):
                                 check_in_date=date.today() + timedelta(days=20),
                                 check_out_date=date.today() + timedelta(days=22),
                                 expires_at=datetime.utcnow() + timedelta(hours=6),
-                                adults=1, children=0, lead_guest_id=g.id))
+                                adults=1, children=0, lead_guest_id=g.id,
+                                payment_slip_filename=slip))
             db.session.commit()
         return token[:8].upper()
+
+    def test_verify_refuses_slipless_hold(self):
+        ref = self._pending_hold('NOSLIP01-session-token', slip=None)
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': ref, 'actor_name': 'Aisha'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.get_json().get('no_slip'))
 
     def test_verify_requires_reference(self):
         r = self.c.post('/api/internal/pepper/holds/verify', json={},
@@ -150,7 +159,7 @@ class InternalApiTest(unittest.TestCase):
         self.assertTrue(r2.get_json()['already'])
         self.assertEqual(r2.get_json()['by'], 'Aisha')     # the winner, not Bob
 
-    def test_reject_releases_hold_with_reason(self):
+    def test_reject_soft_marks_slip_keeps_hold_active(self):
         from app.models import Hold
         ref = self._pending_hold('REJECT01-session-token')
         r = self.c.post('/api/internal/pepper/holds/reject',
@@ -161,10 +170,12 @@ class InternalApiTest(unittest.TestCase):
         self.assertTrue(r.get_json()['ok'])
         with self.app.app_context():
             h = Hold.query.filter(Hold.session_token == 'REJECT01-session-token').first()
-            self.assertEqual(h.state, 'released')
-            self.assertIn('blurry slip', h.released_reason)
+            self.assertEqual(h.state, 'active')            # NOT released
+            self.assertIsNotNone(h.slip_rejected_at)
+            self.assertIn('blurry slip', h.slip_rejected_reason)
+            self.assertEqual(h.payment_slip_filename, 'holdslip_test.jpg')  # file kept
 
-    def test_reject_then_verify_is_idempotent(self):
+    def test_verify_refused_after_soft_reject(self):
         ref = self._pending_hold('REJECT02-session-token')
         self.c.post('/api/internal/pepper/holds/reject',
                     json={'reference': ref, 'actor_name': 'Aisha', 'reason': 'x'},
@@ -172,7 +183,28 @@ class InternalApiTest(unittest.TestCase):
         r = self.c.post('/api/internal/pepper/holds/verify',
                         json={'reference': ref, 'actor_name': 'Bob'},
                         headers=self._auth())
-        self.assertEqual(r.status_code, 409)   # already released -> can't verify
+        self.assertEqual(r.status_code, 409)               # rejected slip -> no valid slip
+        self.assertTrue(r.get_json().get('no_slip'))
+
+    # --- whitelist add / revoke (/authorize, /revoke) ---
+    def test_authorize_then_revoke(self):
+        r = self.c.post('/api/internal/pepper/whitelist',
+                        json={'telegram_id': 555, 'role': 'staff', 'display_name': 'Zoe'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['ok'])
+        w = self.c.get('/api/internal/pepper/whitelist/555', headers=self._auth())
+        self.assertEqual(w.get_json(), {'allowed': True, 'role': 'staff'})
+        rv = self.c.post('/api/internal/pepper/whitelist/555/revoke', headers=self._auth())
+        self.assertTrue(rv.get_json()['ok'])
+        w2 = self.c.get('/api/internal/pepper/whitelist/555', headers=self._auth())
+        self.assertEqual(w2.get_json(), {'allowed': False, 'role': None})
+
+    def test_authorize_bad_role_rejected(self):
+        r = self.c.post('/api/internal/pepper/whitelist',
+                        json={'telegram_id': 5, 'role': 'admin'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 400)
 
     def test_slip_serves_real_file_from_app_uploads(self):
         # Would fail with the old current_app.root_path bug (internal app's

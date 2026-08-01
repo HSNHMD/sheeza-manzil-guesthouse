@@ -202,9 +202,13 @@ def status(tok, *, now=None):
                          for h in live)
         guests = (live[0].adults or 1) + (live[0].children or 0)
         occ = occupancy.compute(items, guests, nights)
+        first = live[0]
+        slip_state = ('rejected' if first.slip_rejected_at else
+                      'uploaded' if first.payment_slip_filename else 'awaiting')
         return {'state': 'pending', 'reference': public_reference(tok),
                 'expires_at': min(h.expires_at for h in live), 'holds': live,
-                'total': room_total + occ['fee_total']}
+                'total': room_total + occ['fee_total'],
+                'slip_state': slip_state, 'slip_reason': first.slip_rejected_reason}
     if any(h.hold_type == 'pending' for h in hs):
         return {'state': 'expired', 'reference': public_reference(tok)}
     sel = [h for h in hs if h.hold_type == 'selection'

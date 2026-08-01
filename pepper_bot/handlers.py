@@ -177,6 +177,68 @@ def make_reject_reason_handler(client, pending_rejects):
     return on_reason
 
 
+def make_authorize_handler(client, owner_id):
+    """/authorize <telegram_id> <manager|staff> <name> — OWNER only. Silent for
+    non-owners (whitelist-first means only listed users reach here anyway)."""
+    async def cmd_authorize(update, context):
+        _allowed, role = await resolve_access(
+            client, owner_id, update.effective_user.id)
+        if role != "owner":
+            return
+        args = list(getattr(context, "args", None) or [])
+        if len(args) < 2:
+            await update.effective_message.reply_text(
+                "Usage: /authorize <telegram_id> <manager|staff> <name>")
+            return
+        try:
+            tid = int(args[0])
+        except ValueError:
+            await update.effective_message.reply_text("telegram_id must be a number.")
+            return
+        role_arg = args[1].lower()
+        if role_arg not in ("manager", "staff"):
+            await update.effective_message.reply_text("Role must be manager or staff.")
+            return
+        name = " ".join(args[2:]) or str(tid)
+        status, body = await client.authorize(
+            tid, role_arg, name, added_by=update.effective_user.id)
+        if status == 200 and body.get("ok"):
+            client.invalidate_whitelist(tid)     # take effect immediately
+            await update.effective_message.reply_text(
+                f"Authorized {name} ({tid}) as {role_arg}.")
+        else:
+            await update.effective_message.reply_text(
+                "Could not authorize: " + str(body.get("error", "error")))
+    return cmd_authorize
+
+
+def make_revoke_handler(client, owner_id):
+    """/revoke <telegram_id> — OWNER only."""
+    async def cmd_revoke(update, context):
+        _allowed, role = await resolve_access(
+            client, owner_id, update.effective_user.id)
+        if role != "owner":
+            return
+        args = list(getattr(context, "args", None) or [])
+        if not args:
+            await update.effective_message.reply_text("Usage: /revoke <telegram_id>")
+            return
+        try:
+            tid = int(args[0])
+        except ValueError:
+            await update.effective_message.reply_text("telegram_id must be a number.")
+            return
+        status, body = await client.revoke(tid)
+        if status == 200 and body.get("ok"):
+            client.invalidate_whitelist(tid)
+            await update.effective_message.reply_text(f"Revoked {tid}.")
+        elif body.get("not_found"):
+            await update.effective_message.reply_text(f"{tid} is not on the whitelist.")
+        else:
+            await update.effective_message.reply_text("Could not revoke.")
+    return cmd_revoke
+
+
 def make_whitelist_gate(client, owner_id):
     """Group -1 pre-handler: enforces whitelist-before-everything for EVERY update
     except /myid. Unlisted → stop propagation silently, so no downstream handler

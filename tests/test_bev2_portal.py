@@ -8,6 +8,7 @@ The endpoint-level race is in test_bev2_race.py (Postgres).
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 import unittest
@@ -113,6 +114,42 @@ class PortalEndpointFlow(unittest.TestCase):
                                 housekeeping_status='clean'))
         db.session.commit()
         return rt.id
+
+    def test_reupload_slip_supersedes_and_clears_rejection(self):
+        from app.models import PepperOutbox
+        with self.client.session_transaction() as s:      # own-hold via session token
+            s['portal_token'] = 'reupload-sess-token'
+        with self.app.app_context():
+            g = Guest(first_name='A', last_name='B', phone='9', nationality='MDV')
+            db.session.add(g); db.session.commit()
+            db.session.add(Hold(
+                session_token='reupload-sess-token', hold_type='pending', state='active',
+                room_type_id=self.t1, qty=1, check_in_date=_CI, check_out_date=_CO,
+                expires_at=datetime.utcnow() + timedelta(hours=6),
+                adults=1, children=0, lead_guest_id=g.id,
+                payment_slip_filename='old_rejected.jpg',
+                slip_rejected_at=datetime.utcnow(), slip_rejected_reason='blurry'))
+            db.session.commit()
+        r = self.client.post(
+            '/book/slip', content_type='multipart/form-data',
+            data={'payment_slip': (io.BytesIO(b'\xff\xd8\xffNEWSLIP'), 'new.jpg')})
+        self.assertEqual(r.status_code, 302)
+        with self.app.app_context():
+            h = Hold.query.filter_by(session_token='reupload-sess-token').first()
+            self.assertNotEqual(h.payment_slip_filename, 'old_rejected.jpg')   # superseded
+            self.assertTrue(h.payment_slip_filename.startswith('holdslip_'))
+            self.assertIsNone(h.slip_rejected_at)                             # cleared
+            self.assertIsNone(h.slip_rejected_reason)
+            self.assertEqual(h.state, 'active')                              # hold survives
+            self.assertGreaterEqual(                                        # fresh alert queued
+                PepperOutbox.query.filter_by(event_type='slip.uploaded').count(), 1)
+        updir = os.path.join(self.app.root_path, 'uploads')                # clean up written file
+        for fn in (os.listdir(updir) if os.path.isdir(updir) else []):
+            if fn.startswith('holdslip_'):
+                try:
+                    os.remove(os.path.join(updir, fn))
+                except OSError:
+                    pass
 
     def test_full_flow_search_to_confirmed_group(self):
         self.assertEqual(self.client.get(

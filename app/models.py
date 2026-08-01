@@ -2208,6 +2208,10 @@ class Hold(db.Model):
     # booking at confirmation. R2 dual-write (same pattern as Booking).
     payment_slip_filename = db.Column(db.String(255), nullable=True)
     payment_slip_drive_id = db.Column(db.String(255), nullable=True)
+    # Pepper soft-reject: mark the slip rejected (with reason) WITHOUT releasing
+    # the hold — it stays active on its normal expiry so the guest can re-upload.
+    slip_rejected_at     = db.Column(db.DateTime, nullable=True)
+    slip_rejected_reason = db.Column(db.String(255), nullable=True)
 
     released_reason     = db.Column(db.String(255), nullable=True)
     released_at         = db.Column(db.DateTime, nullable=True)

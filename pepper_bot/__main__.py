@@ -25,7 +25,8 @@ from .msgids import MsgIdStore
 from .poller import poller_loop
 from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
                        make_bindtopics_handler, make_topics_handler,
-                       make_action_callback, make_reject_reason_handler)
+                       make_action_callback, make_reject_reason_handler,
+                       make_authorize_handler, make_revoke_handler)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +68,10 @@ def build_application(cfg: Config | None = None) -> Application:
                                    make_bindtopics_handler(client, cfg.owner_id, store)))
     app.add_handler(CommandHandler("topics",
                                    make_topics_handler(client, cfg.owner_id, store)))
+    app.add_handler(CommandHandler("authorize",
+                                   make_authorize_handler(client, cfg.owner_id)))
+    app.add_handler(CommandHandler("revoke",
+                                   make_revoke_handler(client, cfg.owner_id)))
     # Phase 3: inline ✅ Verify / ❌ Reject on booking alerts + the reject-reason
     # force-reply. pending_rejects is shared between the callback and the reply.
     pending_rejects: dict = {}
