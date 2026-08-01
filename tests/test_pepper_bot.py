@@ -21,11 +21,16 @@ import tempfile
 import pytest
 pytest.importorskip("telegram")   # the bot tests run in the bot venv (PTB present)
 
+from pepper_bot import handlers as _h                            # noqa: E402
 from pepper_bot.handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,   # noqa: E402
                                  make_bindtopics_handler, make_topics_handler,
                                  make_action_callback, make_reject_reason_handler,
+                                 make_reason_command_handler, reason_menu_keyboard,
+                                 REJECT_REASONS, _reject_timeout,
                                  make_authorize_handler, make_revoke_handler,
                                  verify_keyboard)
+
+_h._TIMEOUTS_ENABLED = False   # don't spawn real 120s timers during unit tests
 from pepper_bot.gate import resolve_access                       # noqa: E402
 from pepper_bot.internal_api import _TTLCache                    # noqa: E402
 from pepper_bot.topics import TopicStore                         # noqa: E402
@@ -390,19 +395,33 @@ def _fake_cq(uid, data, name="Aisha", chat_id=-100, msg_id=15, text="alert"):
     cq.message.message_id = msg_id
     cq.message.text = text
     cq.message.caption = None
+    cq.message.message_thread_id = 7
     cq.message.edit_text = AsyncMock()
     cq.message.edit_caption = AsyncMock()
+    cq.message.edit_reply_markup = AsyncMock()
     cq.message.reply_text = AsyncMock(return_value=MagicMock(message_id=99))
     return u
 
 
+def _fake_ctx():
+    """A context whose .bot has async edit/send methods (for the reject sub-menu)."""
+    ctx = MagicMock()
+    ctx.bot.edit_message_text = AsyncMock()
+    ctx.bot.edit_message_caption = AsyncMock()
+    ctx.bot.edit_message_reply_markup = AsyncMock()
+    ctx.bot.send_message = AsyncMock(return_value=MagicMock(message_id=42))
+    return ctx
+
+
 class FakeActionClient:
     def __init__(self, role="manager", confirm=(200, {"ok": True, "by": "Aisha"}),
-                 reject=(200, {"ok": True})):
+                 reject=(200, {"ok": True}), state=None):
         self.role = role
         self._confirm, self._reject = confirm, reject
+        self._state = state or {"state": "pending", "armable": True}
         self.confirm_calls, self.reject_calls = [], []
         self.authorize_calls, self.revoke_calls, self.invalidated = [], [], []
+        self.state_calls = []
 
     async def whitelist(self, tid):
         return {"allowed": self.role is not None, "role": self.role}
@@ -425,6 +444,10 @@ class FakeActionClient:
 
     def invalidate_whitelist(self, tid):
         self.invalidated.append(tid)
+
+    async def hold_state(self, reference):
+        self.state_calls.append(reference)
+        return self._state
 
 
 class AuthorizeTest(IsolatedAsyncioTestCase):
@@ -475,6 +498,19 @@ class VerifyKeyboardTest(unittest.TestCase):
         self.assertEqual(row[0].callback_data, "pv:v:FAY9VDPF")
         self.assertEqual(row[1].callback_data, "pv:r:FAY9VDPF")
 
+    def test_reason_menu_presets_other_and_cancel(self):
+        kb = reason_menu_keyboard("FAY9VDPF").inline_keyboard
+        codes = [btn.callback_data for row in kb for btn in row]
+        self.assertIn("pv:rr:amt:FAY9VDPF", codes)
+        self.assertIn("pv:rr:noslip:FAY9VDPF", codes)
+        self.assertIn("pv:ro:FAY9VDPF", codes)                # ✍️ Other
+        self.assertIn("pv:rc:FAY9VDPF", codes)                # ↩︎ Cancel
+        # every preset code maps to a guest-facing sentence
+        for code in ("blur", "amt", "acct", "noslip"):
+            self.assertRegex(REJECT_REASONS[code], r"please")
+        # callback_data stays within Telegram's 64-byte cap
+        self.assertTrue(all(len(c.encode()) <= 64 for c in codes))
+
 
 class ActionCallbackTest(IsolatedAsyncioTestCase):
     async def test_staff_tap_denied_no_state_change(self):
@@ -514,18 +550,129 @@ class ActionCallbackTest(IsolatedAsyncioTestCase):
         await h(u, None)
         self.assertEqual(len(client.confirm_calls), 1)   # owner bypasses role check
 
-    async def test_reject_opens_reason_flow(self):
+    async def test_reject_opens_reason_menu(self):
         client = FakeActionClient(role="manager")
         pr = {}
         h = make_action_callback(client, owner_id=None, pending_rejects=pr)
         u = _fake_cq(111, "pv:r:FAY9VDPF", name="Aisha", chat_id=-100)
-        await h(u, None)
-        u.callback_query.message.reply_text.assert_awaited_once()   # force-reply prompt
+        await h(u, _fake_ctx())
+        # ❌ Reject swaps the keyboard to the preset menu (NOT a force-reply prompt).
+        u.callback_query.message.edit_reply_markup.assert_awaited_once()
         self.assertEqual(pr[(-100, 111)]["ref"], "FAY9VDPF")
+        self.assertEqual(pr[(-100, 111)]["stage"], "menu")
+        self.assertEqual(client.reject_calls, [])                   # nothing rejected yet
+
+    async def test_preset_reason_rejects_with_guest_facing_text(self):
+        client = FakeActionClient(role="manager", reject=(200, {"ok": True}))
+        pr = {}
+        h = make_action_callback(client, owner_id=None, pending_rejects=pr)
+        ctx = _fake_ctx()
+        u = _fake_cq(111, "pv:rr:amt:FAY9VDPF", name="Aisha", chat_id=-100)
+        await h(u, ctx)
+        # The GUEST-facing sentence lands on the hold, NOT the terse button label.
+        ref, reason, actor = client.reject_calls[0]
+        self.assertEqual(ref, "FAY9VDPF")
+        self.assertEqual(reason, REJECT_REASONS["amt"])
+        self.assertNotIn("Amount doesn't match", reason)            # not the raw label
+        self.assertIn("SLIP REJECTED by Aisha",
+                      ctx.bot.edit_message_text.await_args.kwargs["text"])
+        self.assertEqual(pr, {})                                    # pending cleared
+
+    async def test_other_opens_typed_prompt(self):
+        client = FakeActionClient(role="manager")
+        pr = {}
+        h = make_action_callback(client, owner_id=None, pending_rejects=pr)
+        u = _fake_cq(111, "pv:ro:FAY9VDPF", name="Aisha", chat_id=-100)
+        await h(u, _fake_ctx())
+        u.callback_query.message.reply_text.assert_awaited_once()   # force-reply prompt
+        self.assertEqual(pr[(-100, 111)]["stage"], "await_text")
+
+    async def test_reason_command_completes_pending(self):
+        client = FakeActionClient(role="manager", reject=(200, {"ok": True}))
+        pr = {(-100, 111): {"ref": "FAY9VDPF", "alert_msg_id": 15, "alert_text": "a",
+                            "name": "Aisha", "stage": "await_text", "task": None}}
+        h = make_reason_command_handler(client, pr)
+        msg = MagicMock(); msg.chat_id = -100
+        msg.reply_text = AsyncMock()
+        u = MagicMock(); u.effective_message = msg; u.effective_user.id = 111
+        ctx = _fake_ctx(); ctx.args = ["amount", "wrong"]
+        await h(u, ctx)
+        self.assertEqual(client.reject_calls, [("FAY9VDPF", "amount wrong", "Aisha")])
+        self.assertEqual(pr, {})
+
+    async def test_reason_command_without_pending_hints(self):
+        client = FakeActionClient(role="manager")
+        h = make_reason_command_handler(client, {})
+        msg = MagicMock(); msg.chat_id = -100
+        msg.reply_text = AsyncMock()
+        u = MagicMock(); u.effective_message = msg; u.effective_user.id = 111
+        ctx = _fake_ctx(); ctx.args = ["blah"]
+        await h(u, ctx)
+        self.assertEqual(client.reject_calls, [])
+        self.assertIn("no pending", msg.reply_text.await_args.args[0].lower())
+
+    async def test_cancel_rearms_when_still_pending(self):
+        client = FakeActionClient(role="manager",
+                                  state={"state": "pending", "armable": True})
+        pr = {(-100, 111): {"ref": "FAY9VDPF", "alert_msg_id": 15, "alert_text": "a",
+                            "name": "Aisha", "stage": "menu", "task": None,
+                            "chat_id": -100}}
+        h = make_action_callback(client, owner_id=None, pending_rejects=pr)
+        ctx = _fake_ctx()
+        u = _fake_cq(111, "pv:rc:FAY9VDPF", name="Aisha", chat_id=-100)
+        await h(u, ctx)
+        self.assertEqual(client.state_calls, ["FAY9VDPF"])          # went through state
+        ctx.bot.edit_message_reply_markup.assert_awaited_once()     # re-armed ✅/❌
+        self.assertEqual(pr, {})
+
+    async def test_cancel_does_not_rearm_dead_buttons(self):
+        # Someone else confirmed while the reject was pending -> Cancel must NOT
+        # re-arm; it shows current state and clears the buttons.
+        client = FakeActionClient(role="manager",
+                                  state={"state": "confirmed", "armable": False,
+                                         "by": "Bob"})
+        pr = {(-100, 111): {"ref": "FAY9VDPF", "alert_msg_id": 15, "alert_text": "a",
+                            "name": "Aisha", "stage": "menu", "task": None,
+                            "chat_id": -100}}
+        h = make_action_callback(client, owner_id=None, pending_rejects=pr)
+        ctx = _fake_ctx()
+        u = _fake_cq(111, "pv:rc:FAY9VDPF", name="Aisha", chat_id=-100)
+        await h(u, ctx)
+        self.assertEqual(client.state_calls, ["FAY9VDPF"])
+        ctx.bot.edit_message_reply_markup.assert_not_awaited()      # NO re-arm
+        self.assertIn("CONFIRMED by Bob",
+                      ctx.bot.edit_message_text.await_args.kwargs["text"])
+
+    async def test_timeout_reprompts_once_then_disarms(self):
+        client = FakeActionClient(role="manager",
+                                  state={"state": "pending", "armable": True})
+        pr = {(-100, 111): {"ref": "FAY9VDPF", "alert_msg_id": 15, "alert_text": "a",
+                            "name": "Aisha", "stage": "await_text", "reprompted": False,
+                            "task": None, "chat_id": -100, "thread_id": 7}}
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=MagicMock(message_id=42))
+        bot.edit_message_text = AsyncMock(); bot.edit_message_caption = AsyncMock()
+        bot.edit_message_reply_markup = AsyncMock()
+        orig = _h.TIMEOUT_SECONDS
+        _h.TIMEOUT_SECONDS = 0.0
+        try:
+            # first lapse -> re-prompt once (still pending, reprompted flips True)
+            await _reject_timeout(bot, client, pr, (-100, 111))
+            self.assertTrue(pr[(-100, 111)]["reprompted"])
+            bot.send_message.assert_awaited_once()
+            self.assertIn("SWIPE TO REPLY",
+                          bot.send_message.await_args.kwargs["text"])
+            # second lapse -> clean disarm through the state check
+            await _reject_timeout(bot, client, pr, (-100, 111))
+            self.assertEqual(pr, {})                                # pending cleared
+            self.assertIn("FAY9VDPF", client.state_calls)           # state consulted
+            bot.edit_message_reply_markup.assert_awaited()          # re-armed on pending
+        finally:
+            _h.TIMEOUT_SECONDS = orig
 
     async def test_reject_reason_rejects_and_edits(self):
         client = FakeActionClient(role="manager", reject=(200, {"ok": True}))
-        pr = {(-100, 111): {"ref": "FAY9VDPF", "alert_msg_id": 15,
+        pr = {(-100, 111): {"ref": "FAY9VDPF", "alert_msg_id": 15, "task": None,
                             "alert_text": "alert", "name": "Aisha"}}
         h = make_reject_reason_handler(client, pr)
         u = MagicMock()
@@ -533,10 +680,10 @@ class ActionCallbackTest(IsolatedAsyncioTestCase):
         u.effective_message.text = "blurry slip"
         u.effective_message.reply_text = AsyncMock()
         u.effective_user.id = 111
-        ctx = MagicMock(); ctx.bot.edit_message_text = AsyncMock()
+        ctx = _fake_ctx()
         await h(u, ctx)
         self.assertEqual(client.reject_calls, [("FAY9VDPF", "blurry slip", "Aisha")])
-        self.assertIn("REJECTED by Aisha: blurry slip",
+        self.assertIn("SLIP REJECTED by Aisha: blurry slip",
                       ctx.bot.edit_message_text.await_args.kwargs["text"])
         self.assertEqual(pr, {})                       # cleared
 

@@ -26,6 +26,7 @@ from .poller import poller_loop
 from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
                        make_bindtopics_handler, make_topics_handler,
                        make_action_callback, make_reject_reason_handler,
+                       make_reason_command_handler,
                        make_authorize_handler, make_revoke_handler)
 
 logging.basicConfig(
@@ -77,6 +78,10 @@ def build_application(cfg: Config | None = None) -> Application:
     pending_rejects: dict = {}
     app.add_handler(CallbackQueryHandler(
         make_action_callback(client, cfg.owner_id, pending_rejects), pattern=r"^pv:"))
+    # Typed reason: a reply to the ✍️ Other prompt, OR the privacy-mode-proof
+    # /reason <text> command (works from any topic, no reply threading).
+    app.add_handler(CommandHandler(
+        "reason", make_reason_command_handler(client, pending_rejects)))
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         make_reject_reason_handler(client, pending_rejects)))

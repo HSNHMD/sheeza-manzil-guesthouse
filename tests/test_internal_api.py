@@ -186,6 +186,35 @@ class InternalApiTest(unittest.TestCase):
         self.assertEqual(r.status_code, 409)               # rejected slip -> no valid slip
         self.assertTrue(r.get_json().get('no_slip'))
 
+    # --- /holds/state (Cancel / timeout re-arm authority) ---
+    def test_state_pending_is_armable(self):
+        ref = self._pending_hold('STATE01A-session-token')
+        r = self.c.get('/api/internal/pepper/holds/state',
+                       query_string={'reference': ref}, headers=self._auth())
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()['state'], 'pending')
+        self.assertTrue(r.get_json()['armable'])
+
+    def test_state_confirmed_not_armable(self):
+        ref = self._pending_hold('STATE02A-session-token')
+        self.c.post('/api/internal/pepper/holds/verify',
+                    json={'reference': ref, 'actor_name': 'Aisha'}, headers=self._auth())
+        r = self.c.get('/api/internal/pepper/holds/state',
+                       query_string={'reference': ref}, headers=self._auth())
+        self.assertEqual(r.get_json()['state'], 'confirmed')
+        self.assertFalse(r.get_json()['armable'])
+
+    def test_state_soft_rejected_not_armable(self):
+        ref = self._pending_hold('STATE03A-session-token')
+        self.c.post('/api/internal/pepper/holds/reject',
+                    json={'reference': ref, 'actor_name': 'Aisha', 'reason': 'blurry'},
+                    headers=self._auth())
+        r = self.c.get('/api/internal/pepper/holds/state',
+                       query_string={'reference': ref}, headers=self._auth())
+        self.assertEqual(r.get_json()['state'], 'slip_rejected')
+        self.assertFalse(r.get_json()['armable'])
+        self.assertIn('blurry', r.get_json()['reason'])
+
     # --- whitelist add / revoke (/authorize, /revoke) ---
     def test_authorize_then_revoke(self):
         r = self.c.post('/api/internal/pepper/whitelist',
