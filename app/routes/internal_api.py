@@ -148,19 +148,29 @@ def create_booking():
     children = int(data.get('children', 0) or 0)
     if not (guest.get('nationality') or '').strip():
         return jsonify(error='guest.nationality is required'), 400
+    # Payment method: canonical cashiering vocabulary; default bank_transfer
+    # (the historical slip path). Stamped on the booking so finance can split
+    # cash vs transfer AND the alert can pick cash-received-vs-slip.
+    pm = (data.get('payment_method') or 'bank_transfer').strip().lower()
+    if pm not in ('cash', 'bank_transfer'):
+        return jsonify(error="payment_method must be 'cash' or 'bank_transfer'"), 400
 
     res = group_booking.create_group_booking(
         items, ci, co, lead_guest=guest, adults=adults, children=children,
         created_by=None, status=data.get('status', 'confirmed'),
-        force_group=bool(data.get('force_group', False)))
+        force_group=bool(data.get('force_group', False)),
+        payment_method=pm)
     if not res['ok']:
         return jsonify(ok=False, reasons=res['reasons']), 409
     # Outbox alert joins THIS request's transaction (the create committed inside
     # create_group_booking; emit + commit here so the alert is durable).
+    # payment_method rides in the payload so _assemble_alert can branch the alert
+    # (cash-received button vs slip flow) WITHOUT a schema read.
     from ..services import pepper_outbox
     bid = res['booking_ids'][0]
     pepper_outbox.emit('booking.created', booking_id=bid,
-                       payload={'source': 'bot', 'group_id': res['group_id']})
+                       payload={'source': 'bot', 'group_id': res['group_id'],
+                                'payment_method': pm})
     db.session.commit()
     return jsonify(ok=True, group_id=res['group_id'],
                    booking_ids=res['booking_ids']), 201
@@ -200,6 +210,15 @@ def _pending_holds_for_ref(reference):
         .order_by(Hold.id).all())
 
 
+def _event_payload(ev):
+    """The outbox row's JSON payload as a dict (empty on absent/bad JSON)."""
+    import json
+    try:
+        return json.loads(ev.payload_json or '{}')
+    except (ValueError, TypeError):
+        return {}
+
+
 def _assemble_alert(ev):
     """Render the §7.2 alert fields server-side (bot stays PMS-logic-free).
     Deliberately OMITS id/passport numbers (PII discipline)."""
@@ -211,6 +230,10 @@ def _assemble_alert(ev):
             return None
         g = b.guest
         nat = g.nationality if g else None
+        # payment_method rides in the outbox payload (durable branch, no schema
+        # dependency); fall back to the booking column if the payload predates it.
+        pm = (_event_payload(ev).get('payment_method')
+              or b.payment_method or 'bank_transfer')
         return {'source': 'bot', 'ref': b.booking_ref, 'booking_id': b.id,
                 'guest_name': (g.full_name if g else '—') or '—',
                 'nationality': nat or '—', 'green_tax': _green_tax(nat),
@@ -219,6 +242,7 @@ def _assemble_alert(ev):
                 'nights': (b.check_out_date - b.check_in_date).days,
                 'rooms': '—', 'adults': b.adults, 'children': b.children,
                 'total': float(b.total_amount or 0), 'deadline': None,
+                'payment_method': pm,
                 # a VALID slip = filename on file AND not soft-rejected (mirror
                 # the hold branch), so a rejected booking slip re-reads as
                 # 'awaiting slip' rather than falsely 'uploaded'.
@@ -532,11 +556,21 @@ def _lock_booking(booking_id):
 def booking_verify(booking_id):
     """✅ Verify a bot-created booking: pending_verification → confirmed.
     DB-idempotent: exactly one caller wins; the loser gets who already verified.
-    Refuses a booking with no valid (non-rejected) slip."""
+
+    Two modes, both manager-gated at the bot and idempotent here:
+      * bank transfer (default) — the SLIP GUARD applies: refuses a booking with
+        no valid (non-rejected) slip. This is the 💵 Cash-received guard's mirror.
+      * cash (``cash: true`` / ``require_slip: false``) — a walk-in paying cash has
+        no slip and no slip is ever coming, so cash mode SKIPS the slip guard and
+        records method=cash. This closes the un-verifiable-forever leak (a cash
+        booking would otherwise sit pending_verification with nothing to verify).
+    """
     from ..models import db
     from ..services.audit import log_activity
     data = request.get_json(silent=True) or {}
     actor_name = data.get('actor_name') or 'staff'
+    # cash mode: explicit cash flag OR require_slip=false. Default = slip required.
+    cash = bool(data.get('cash')) or (data.get('require_slip') is False)
     b = _lock_booking(booking_id)
     if b is None:
         return jsonify(error='not found'), 404
@@ -545,19 +579,21 @@ def booking_verify(booking_id):
         return jsonify(ok=False, already=True,
                        by=_last_actor_by('booking_id', booking_id,
                                          ['pepper.booking_confirmed'])), 409
-    if not (b.payment_slip_filename and not b.slip_rejected_at):
+    if not cash and not (b.payment_slip_filename and not b.slip_rejected_at):
         return jsonify(ok=False, no_slip=True,
                        reasons=['no valid slip on record — cannot verify']), 409
+    method = 'cash' if cash else (b.payment_method or 'bank_transfer')
     b.status = 'confirmed'
+    how = 'cash received' if cash else 'slip verified'
     log_activity('pepper.booking_confirmed', actor_type='ai_agent',
                  booking_id=b.id, old_value='pending_verification',
                  new_value='confirmed',
                  description=(f'Booking {b.booking_ref} confirmed via Pepper by '
-                              f'{actor_name}.'),
+                              f'{actor_name} ({how}).'),
                  metadata={'booking_id': booking_id, 'actor_name': actor_name,
-                           'telegram_id': data.get('actor_id')})
+                           'method': method, 'telegram_id': data.get('actor_id')})
     db.session.commit()
-    return jsonify(ok=True, by=actor_name, booking_id=b.id)
+    return jsonify(ok=True, by=actor_name, booking_id=b.id, method=method)
 
 
 @internal_api_bp.post('/bookings/<int:booking_id>/reject')

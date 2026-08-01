@@ -208,6 +208,11 @@ class Booking(db.Model):
     # slip_rejected_at is None. Nullable/additive — a revert leaves them unused.
     slip_rejected_at      = db.Column(db.DateTime, nullable=True)
     slip_rejected_reason  = db.Column(db.String(255), nullable=True)
+    # How the guest is paying ('cash' | 'bank_transfer' | …, cashiering vocab).
+    # Nullable so legacy/portal bookings stay unchanged. Drives the bot alert
+    # (cash-received button vs slip flow) and lets finance (Alfred) split cash
+    # vs transfer. Distinct from Invoice.payment_method (a paid-invoice fact).
+    payment_method        = db.Column(db.String(30), nullable=True)
 
     # Group Bookings V1 — both nullable so standalone bookings stay
     # unchanged. `booking_group_id` is set when the booking is

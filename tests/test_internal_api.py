@@ -400,6 +400,83 @@ class InternalApiTest(unittest.TestCase):
         self.assertEqual(r.status_code, 409)
         self.assertTrue(r.get_json()['no_slip'])
 
+    # --- CASH path: a walk-in paying cash has NO slip; cash mode confirms it ---
+    def _pending_cash_booking(self):
+        from app.models import db, Booking, Guest, Room
+        with self.app.app_context():
+            g = Guest(first_name='C', last_name='K', phone='7', nationality='MDV')
+            db.session.add(g); db.session.commit()
+            room = Room.query.first()
+            b = Booking(booking_ref='BKCASH01', room_id=room.id, guest_id=g.id,
+                        check_in_date=date.today() + timedelta(days=20),
+                        check_out_date=date.today() + timedelta(days=22),
+                        adults=1, children=0, num_guests=1, total_amount=1000.0,
+                        status='pending_verification', payment_method='cash',
+                        payment_slip_filename=None)          # NO slip, ever
+            db.session.add(b); db.session.commit()
+            return b.id
+
+    def test_cash_verify_confirms_without_slip(self):
+        # Cash mode SKIPS the slip guard — this is the leak-closing path (a cash
+        # booking has no slip and none is coming).
+        from app.models import Booking
+        bid = self._pending_cash_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Aisha', 'cash': True},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['ok'])
+        self.assertEqual(r.get_json()['method'], 'cash')
+        with self.app.app_context():
+            self.assertEqual(Booking.query.get(bid).status, 'confirmed')
+
+    def test_cash_verify_via_require_slip_false_alias(self):
+        bid = self._pending_cash_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'A', 'require_slip': False},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['ok'])
+
+    def test_cash_verify_idempotent_loser_told_winner(self):
+        bid = self._pending_cash_booking()
+        r1 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                         json={'actor_name': 'Aisha', 'cash': True}, headers=self._auth())
+        self.assertTrue(r1.get_json()['ok'])
+        r2 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                         json={'actor_name': 'Bob', 'cash': True}, headers=self._auth())
+        self.assertEqual(r2.status_code, 409)
+        self.assertTrue(r2.get_json()['already'])
+        self.assertEqual(r2.get_json()['by'], 'Aisha')       # first winner
+
+    def test_bank_verify_still_requires_slip_when_not_cash(self):
+        # The slip guard stays INTACT for a bank-transfer booking — a plain verify
+        # (no cash flag) on a slipless booking is still refused.
+        bid = self._pending_verif_booking(slip=None)
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Aisha'}, headers=self._auth())
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.get_json()['no_slip'])
+
+    def test_bot_booking_created_payment_method_in_alert(self):
+        # payment_method rides in the booking.created outbox payload -> alert.
+        r = self.c.post('/api/internal/pepper/bookings',
+                        json=self._booking_body(status='pending_verification',
+                                                payment_method='cash'),
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 201, r.get_data(as_text=True))
+        o = self.c.get('/api/internal/pepper/outbox?undelivered=1',
+                       headers=self._auth())
+        ev = next(e for e in o.get_json()['events']
+                  if e['event_type'] == 'booking.created')
+        self.assertEqual(ev['alert']['payment_method'], 'cash')
+
+    def test_create_rejects_bad_payment_method(self):
+        r = self.c.post('/api/internal/pepper/bookings',
+                        json=self._booking_body(payment_method='crypto'),
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 400)
+
     def test_booking_verify_idempotent_loser_gets_winner(self):
         bid = self._pending_verif_booking()
         r1 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',

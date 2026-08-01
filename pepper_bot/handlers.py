@@ -130,6 +130,17 @@ def verify_keyboard(target_or_ref):
     ]])
 
 
+def cash_keyboard(target):
+    """💵 Cash received — the manager-gated confirm on a CASH booking.created
+    alert (no slip is coming, so there's no ✅/❌ slip pair to arm). Booking-only.
+    `pv:cash:b:<id>`."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    tok = _as_target(target).token()
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("💵 Cash received", callback_data=f"pv:cash:{tok}"),
+    ]])
+
+
 async def _finalize_alert(message, outcome_line):
     """Append the outcome to the alert and drop the buttons (edit in place)."""
     base = message.text or message.caption or ""
@@ -295,6 +306,7 @@ def make_action_callback(client, owner_id, pending_rejects):
     the tag is either a bare hold ref (`FAY9VDPF`, Phase 3 wire) or `b:<id>` for a
     bot-created booking — parsed identically for both, so the SAME UX composes:
       pv:v:<tok>          ✅ Verify  -> confirm_target (idempotent; loser told who won)
+      pv:cash:b:<id>      💵 Cash    -> confirm_target(cash=True) (no slip; booking only)
       pv:r:<tok>          ❌ Reject  -> swap keyboard to the preset-reason menu
       pv:rr:<code>:<tok>  preset     -> reject with the mapped GUEST-facing sentence
       pv:ro:<tok>         ✍️ Other…  -> force-reply prompt (reply OR /reason <text>)
@@ -326,13 +338,15 @@ def make_action_callback(client, owner_id, pending_rejects):
         key = (cq.message.chat_id, uid)
         thread_id = getattr(cq.message, "message_thread_id", None)
 
-        if tag == "v":
+        if tag in ("v", "cash"):
             _cancel_timeout(pending_rejects.pop(key, None))   # a pending reject is moot
+            is_cash = (tag == "cash")
             status, body = await client.confirm_target(
-                target, actor_id=uid, actor_name=name)
+                target, actor_id=uid, actor_name=name, cash=is_cash)
+            done_word = "CASH RECEIVED" if is_cash else "CONFIRMED"
             if status == 200 and body.get("ok"):
-                await cq.answer("Confirmed ✅")
-                await _finalize_alert(cq.message, f"✅ CONFIRMED by {name}")
+                await cq.answer("Cash received 💵" if is_cash else "Confirmed ✅")
+                await _finalize_alert(cq.message, f"✅ {done_word} by {name}")
             elif body.get("already"):
                 by = body.get("by", "someone")
                 await cq.answer(f"Already confirmed by {by}.", show_alert=True)

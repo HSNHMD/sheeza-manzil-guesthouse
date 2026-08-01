@@ -250,10 +250,10 @@ def _nb_cq(data):
 
 
 async def _drive_full_flow(mgr, bot, uid, name, *, nationality="Maldivian",
-                           adults_btn=2, children_btn=0):
-    """Drive one flow from /newbooking through Confirm using ONLY the live
-    prompt_id of that user's flow — the privacy-mode reply threading. Returns
-    the Flow (or None if already popped after confirm)."""
+                           adults_btn=2, children_btn=0, payment="bank_transfer"):
+    """Drive one flow from /newbooking through the summary using ONLY the live
+    prompt_id of that user's flow — the privacy-mode reply threading. Stops AT the
+    summary (does NOT confirm). Returns the Flow."""
     await mgr.start(bot, uid, chat_id=-100, thread_id=7, name=name)
     f = mgr.flows[uid]
 
@@ -271,6 +271,7 @@ async def _drive_full_flow(mgr, bot, uid, name, *, nationality="Maldivian",
     await mgr.handle_callback(bot, _nb_cq("nb:count:1"), uid)
     await mgr.handle_callback(bot, _nb_cq(f"nb:adults:{adults_btn}"), uid)
     await mgr.handle_callback(bot, _nb_cq(f"nb:children:{children_btn}"), uid)
+    await mgr.handle_callback(bot, _nb_cq(f"nb:pay:{payment}"), uid)   # payment step
     return f
 
 
@@ -306,6 +307,42 @@ class FlowHappyPathTest(IsolatedAsyncioTestCase):
         self.assertEqual(client.created_bodies, [])
         self.assertEqual(mgr.flows[111].step, "summary")
 
+    async def test_cash_flow_pending_verification_cash_success_msg(self):
+        # Cash walk-in: booking still pending_verification, payment_method=cash,
+        # and the success message says "manager taps Cash received" (NO bank block,
+        # NO slip instructions — there is no slip for cash).
+        os.environ.pop('PEPPER_OPENROUTER_KEY', None)
+        client = FakeFlowClient()
+        mgr = FlowManager(client, get_brand=client.get_brand)
+        bot = FakeFlowBot()
+        await _drive_full_flow(mgr, bot, 111, "Aisha", payment="cash")
+        await mgr.handle_callback(bot, _nb_cq("nb:confirm"), 111)
+        body = client.created_bodies[0]
+        self.assertEqual(body["status"], "pending_verification")
+        self.assertEqual(body["payment_method"], "cash")
+        joined = "\n".join(s["text"] for s in bot.sent)
+        self.assertIn("Cash received", joined)              # the confirm path
+        self.assertIn("cash", joined.lower())
+        self.assertNotIn("BML", joined)                     # NO bank block for cash
+        self.assertNotIn("/slip", joined)                   # NO slip instructions
+
+    async def test_summary_shows_payment_method(self):
+        client = FakeFlowClient()
+        mgr = FlowManager(client, get_brand=client.get_brand)
+        bot = FakeFlowBot()
+        await _drive_full_flow(mgr, bot, 111, "Aisha", payment="cash")
+        # the summary card (last message) names the chosen method
+        self.assertIn("Cash", bot.last_text())
+
+    async def test_confirm_ignored_before_summary(self):
+        # a stale confirm tap on an earlier step must NOT create a booking
+        client = FakeFlowClient()
+        mgr = FlowManager(client, get_brand=client.get_brand)
+        bot = FakeFlowBot()
+        await mgr.start(bot, 111, -100, 7, "Aisha")   # step 'name'
+        await mgr.handle_callback(bot, _nb_cq("nb:confirm"), 111)
+        self.assertEqual(client.created_bodies, [])
+
 
 class FlowInterleaveTest(IsolatedAsyncioTestCase):
     async def test_two_interleaved_flows_uncontaminated(self):
@@ -338,26 +375,32 @@ class FlowInterleaveTest(IsolatedAsyncioTestCase):
         await mgr.handle_callback(bot, _nb_cq("nb:adults:4"), 222)
         await mgr.handle_callback(bot, _nb_cq("nb:children:0"), 111)
         await mgr.handle_callback(bot, _nb_cq("nb:children:1"), 222)
+        # payment: Aisha's guest pays CASH, Bilal's by BANK TRANSFER — the two
+        # methods must not cross-contaminate either.
+        await mgr.handle_callback(bot, _nb_cq("nb:pay:cash"), 111)
+        await mgr.handle_callback(bot, _nb_cq("nb:pay:bank_transfer"), 222)
         await mgr.handle_callback(bot, _nb_cq("nb:confirm"), 111)
         await mgr.handle_callback(bot, _nb_cq("nb:confirm"), 222)
 
         self.assertEqual(len(client.created_bodies), 2)
         by_ci = {b["check_in"]: b for b in client.created_bodies}
         a = by_ci["2026-09-05"]; b = by_ci["2026-10-01"]
-        # Aisha's booking is 100% Ahmed / MDV / 1 room / 2 adults / 0 kids
+        # Aisha's booking is 100% Ahmed / MDV / 1 room / 2 adults / 0 kids / CASH
         self.assertEqual(a["guest"]["first_name"], "Ahmed")
         self.assertEqual(a["guest"]["last_name"], "Hassan")
         self.assertEqual(a["guest"]["nationality"], "MDV")
         self.assertEqual(a["guest"]["phone"], "7770001")
         self.assertEqual(a["items"], [{"room_type_id": 1, "qty": 1}])
         self.assertEqual((a["adults"], a["children"]), (2, 0))
-        # Bilal's booking is 100% Bob / GBR / 2 rooms / 4 adults / 1 kid
+        self.assertEqual(a["payment_method"], "cash")
+        # Bilal's booking is 100% Bob / GBR / 2 rooms / 4 adults / 1 kid / BANK
         self.assertEqual(b["guest"]["first_name"], "Bob")
         self.assertEqual(b["guest"]["last_name"], "Stone")
         self.assertEqual(b["guest"]["nationality"], "GBR")
         self.assertEqual(b["guest"]["phone"], "7770002")
         self.assertEqual(b["items"], [{"room_type_id": 1, "qty": 2}])
         self.assertEqual((b["adults"], b["children"]), (4, 1))
+        self.assertEqual(b["payment_method"], "bank_transfer")
 
 
 class FlowResilienceTest(IsolatedAsyncioTestCase):

@@ -43,13 +43,17 @@ def _unique_group_code():
 def create_group_booking(items, check_in, check_out, *, lead_guest,
                          created_by=None, group_name=None, num_guests_each=1,
                          status='confirmed', force_group=True,
-                         adults=None, children=None, now=None):
+                         adults=None, children=None, now=None,
+                         payment_method=None):
     """Create a booking (or group booking) atomically.
 
     items: list of {'room_type_id': int, 'qty': int}
     lead_guest: an existing Guest instance OR a dict of guest fields to create.
     force_group: when False AND exactly one room is booked, produce a PLAIN
       booking (no BookingGroup / master-folio overhead) per spec §B3 intent.
+    payment_method: optional 'cash' | 'bank_transfer' | … (cashiering vocabulary),
+      stamped on every booking so finance (Alfred) can split cash vs transfer and
+      the bot can pick the cash-received-vs-slip alert. None leaves it unset.
     Returns {'ok', 'group_id', 'booking_ids', 'reasons'} (group_id None if plain).
     On any failure the transaction is rolled back entirely.
     """
@@ -136,6 +140,7 @@ def create_group_booking(items, check_in, check_out, *, lead_guest,
                     booking_group_id=(group.id if group else None),
                     billing_target=('master' if group else 'individual'),
                     created_by=created_by,
+                    payment_method=payment_method,
                 )
                 db.session.add(b)
                 db.session.flush()

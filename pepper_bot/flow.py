@@ -52,10 +52,14 @@ CANCEL_SECONDS = 60 * 60
 _TIMEOUTS_ENABLED = True
 
 # Ordered steps. Each: key, kind ('text'|'choice'), and prompt text.
+# 'payment' (bank transfer vs cash) sits just before the summary so the summary
+# card shows the chosen method and the confirm creates with the right
+# payment_method (cash bookings get a manager-gated Cash-received alert instead
+# of the slip flow — closes the un-verifiable-forever leak).
 STEP_ORDER = [
     "name", "phone", "nationality", "id_number",
     "check_in", "check_out", "room", "count", "adults", "children",
-    "summary",
+    "payment", "summary",
 ]
 
 _PROMPTS = {
@@ -69,7 +73,10 @@ _PROMPTS = {
     "count": "🔢 How many of that room?",
     "adults": "🧑 How many adults?",
     "children": "🧒 How many children?",
+    "payment": "💳 How is the guest paying?",
 }
+
+_PAYMENT_LABELS = {"bank_transfer": "Bank transfer", "cash": "Cash"}
 
 _GREEN_MDV = {"MDV"}
 
@@ -176,6 +183,9 @@ class FlowManager:
         if step in ("count", "adults", "children"):
             await self._prompt_choice_numbers(bot, f, step, prefix)
             return
+        if step == "payment":
+            await self._prompt_payment(bot, f, prefix)
+            return
         if step == "summary":
             await self._prompt_summary(bot, f)
             return
@@ -226,6 +236,18 @@ class FlowManager:
                                      text=f"@{f.name} " + text, reply_markup=kb)
         f.prompt_id = getattr(msg, "message_id", None)
 
+    async def _prompt_payment(self, bot, f, prefix=""):
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🏦 Bank transfer",
+                                 callback_data="nb:pay:bank_transfer"),
+            InlineKeyboardButton("💵 Cash", callback_data="nb:pay:cash")]])
+        text = (prefix + _PROMPTS["payment"]).strip()
+        msg = await bot.send_message(chat_id=f.chat_id,
+                                     message_thread_id=f.thread_id,
+                                     text=f"@{f.name} " + text, reply_markup=kb)
+        f.prompt_id = getattr(msg, "message_id", None)
+
     async def _prompt_summary(self, bot, f):
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         card = await self._summary_text(f)
@@ -248,6 +270,7 @@ class FlowManager:
         total = (quote or {}).get("total", 0)
         f.draft["_quote_total"] = total
         nat = g.get("nationality", "—")
+        method = d.get("payment_method", "bank_transfer")
         return "\n".join([
             "🧾 *Booking summary* — please review",
             f"Guest: {g.get('first_name','')} {g.get('last_name','')}".strip(),
@@ -257,10 +280,12 @@ class FlowManager:
             f"Stay: {d['check_in']} → {d['check_out']}",
             f"Room: {d.get('room_name','type '+str(d.get('room_type_id')))} × {d['count']}",
             f"Guests: {d.get('adults',1)} adult(s), {d.get('children',0)} child(ren)",
+            f"Payment: {_PAYMENT_LABELS.get(method, method)}",
             f"Total: MVR {total:.0f}",
             "",
             "On ✅ Confirm the booking is created *pending verification* "
-            "(not yet confirmed) until the payment slip is verified.",
+            "(not yet confirmed) — a bank transfer is confirmed when the slip is "
+            "verified; cash is confirmed when a manager taps 💵 Cash received.",
         ])
 
     # ── inbound: force-reply text ────────────────────────────────────────────
@@ -380,7 +405,22 @@ class FlowManager:
             await self._advance(bot, f)
             return True
 
+        if sub == "pay":
+            method = parts[2]
+            if method not in ("bank_transfer", "cash"):
+                await self._answer(cq); return True
+            f.draft["payment_method"] = method
+            await self._answer(cq, f"{_PAYMENT_LABELS[method]} selected.")
+            await self._advance(bot, f)
+            return True
+
         if sub == "confirm":
+            # Confirm only acts from the summary card — a stale/duplicate tap on
+            # an earlier step is ignored (guards against creating a booking before
+            # the payment method is chosen).
+            if f.step != "summary":
+                await self._answer(cq)
+                return True
             await self._answer(cq)
             await self._do_confirm(bot, f, cq)
             return True
@@ -408,7 +448,8 @@ class FlowManager:
     async def _offer_edit_menu(self, bot, f):
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         fields = ["name", "phone", "nationality", "id_number",
-                  "check_in", "check_out", "room", "count", "adults", "children"]
+                  "check_in", "check_out", "room", "count", "adults", "children",
+                  "payment"]
         rows, row = [], []
         for fld in fields:
             row.append(InlineKeyboardButton(fld, callback_data=f"nb:editf:{fld}"))
@@ -450,6 +491,7 @@ class FlowManager:
             "check_in": d["check_in"], "check_out": d["check_out"],
             "adults": d.get("adults", 1), "children": d.get("children", 0),
             "guest": g, "status": "pending_verification",
+            "payment_method": d.get("payment_method", "bank_transfer"),
         }
         status, resp = await self.client.create_booking(body)
         if status == 201 and resp.get("ok"):
@@ -501,15 +543,24 @@ class FlowManager:
 
     def _success_message(self, booking_id, d, brand=None) -> str:
         brand = brand or {}
+        total = d.get('_quote_total', 0)
+        head = [f"✅ Booking #{booking_id} created — *pending verification*.",
+                f"Total: MVR {total:.0f}", ""]
+        if d.get("payment_method") == "cash":
+            # Cash: NO bank block, NO slip. A manager taps 💵 Cash received on the
+            # Alerts post to confirm — that's the cash booking's confirm path.
+            return "\n".join(head + [
+                f"Collect MVR {total:.0f} in cash from the guest.",
+                "A manager taps 💵 Cash received on the Alerts post to confirm "
+                "this booking.",
+            ])
+        # Bank transfer: the get_brand() bank block + slip instructions.
         bank = "\n".join([
             f"Bank: {brand.get('bank_name','—')}",
             f"Account name: {brand.get('bank_account_name','—')}",
             f"Account number: {brand.get('bank_account_number','—')}",
         ])
-        return "\n".join([
-            f"✅ Booking #{booking_id} created — *pending verification*.",
-            f"Total: MVR {d.get('_quote_total', 0):.0f}",
-            "",
+        return "\n".join(head + [
             "Forward the guest the payment details:",
             bank,
             "",

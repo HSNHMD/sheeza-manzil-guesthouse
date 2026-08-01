@@ -120,15 +120,18 @@ class InternalAPIClient:
             return {"state": "unknown", "armable": False}
 
     # --- target-aware verify/reject/state (hold OR booking) ---
-    async def confirm_target(self, target, *, actor_id=None, actor_name=None):
+    async def confirm_target(self, target, *, actor_id=None, actor_name=None,
+                             cash=False):
         """✅ Verify a Target (hold -> confirm; booking -> pending_verification →
-        confirmed). Returns (status_code, json)."""
+        confirmed). `cash=True` (booking only) confirms a cash walk-in with NO
+        slip (skips the slip guard server-side). Returns (status_code, json)."""
         if target.kind == "booking":
             async with self._client() as client:
                 resp = await client.post(
                     self._url(f"/bookings/{target.booking_id}/verify"),
                     headers=self._auth(),
-                    json={"actor_id": actor_id, "actor_name": actor_name})
+                    json={"actor_id": actor_id, "actor_name": actor_name,
+                          "cash": bool(cash)})
                 return resp.status_code, self._json(resp)
         return await self.confirm_hold(target.ref, actor_id=actor_id,
                                        actor_name=actor_name)
