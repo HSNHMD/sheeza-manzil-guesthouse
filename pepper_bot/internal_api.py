@@ -26,6 +26,9 @@ class _TTLCache:
     def put(self, key, value):
         self._store[key] = (time.monotonic() + self._ttl, value)
 
+    def invalidate(self, key):
+        self._store.pop(key, None)
+
 
 class InternalAPIClient:
     def __init__(self, socket_path: str, token: str,
@@ -72,6 +75,22 @@ class InternalAPIClient:
             resp = await client.post(self._url(f"/outbox/{event_id}/delivered"),
                                      headers=self._auth())
             return resp.status_code == 200
+
+    def invalidate_whitelist(self, telegram_id):
+        self.cache.invalidate(telegram_id)
+
+    async def authorize(self, telegram_id, role, name, *, added_by=None):
+        async with self._client() as client:
+            resp = await client.post(self._url("/whitelist"), headers=self._auth(),
+                                     json={"telegram_id": telegram_id, "role": role,
+                                           "display_name": name, "added_by": added_by})
+            return resp.status_code, self._json(resp)
+
+    async def revoke(self, telegram_id):
+        async with self._client() as client:
+            resp = await client.post(self._url(f"/whitelist/{telegram_id}/revoke"),
+                                     headers=self._auth())
+            return resp.status_code, self._json(resp)
 
     async def confirm_hold(self, reference, *, actor_id=None, actor_name=None):
         """✅ Verify — confirm the pending hold. Returns (status_code, json)."""

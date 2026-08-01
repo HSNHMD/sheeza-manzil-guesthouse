@@ -67,17 +67,19 @@ class Poller:
                                                 booking_id=ev.get("booking_id"))
             if not data:
                 return False          # slip not fetchable yet -> retry
+            # The ✅ Verify / ❌ Reject buttons live on the SLIP alert — it has a
+            # slip by definition (slip guard, bot side).
             await bot.send_photo(
                 chat_id=chat_id, message_thread_id=thread, photo=data[0],
                 caption=format_slip_caption(ref, (a or {}).get("total")),
-                reply_to_message_id=self.msgids.get(ref))
+                reply_to_message_id=self.msgids.get(ref),
+                reply_markup=verify_keyboard(ref) if ref is not None else None)
             return True
-        # booking.created — with ✅ Verify / ❌ Reject buttons (Phase 3)
+        # booking.created — notification only; NO buttons (no slip to verify yet).
         if not a:
             return False              # can't render yet -> retry
-        kb = verify_keyboard(ref) if ref is not None else None
         msg = await bot.send_message(chat_id=chat_id, message_thread_id=thread,
-                                     text=format_booking_created(a), reply_markup=kb)
+                                     text=format_booking_created(a))
         if ref is not None:
             self.msgids.set(ref, msg.message_id)
         return True

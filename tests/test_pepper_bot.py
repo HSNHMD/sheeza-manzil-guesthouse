@@ -24,6 +24,7 @@ pytest.importorskip("telegram")   # the bot tests run in the bot venv (PTB prese
 from pepper_bot.handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,   # noqa: E402
                                  make_bindtopics_handler, make_topics_handler,
                                  make_action_callback, make_reject_reason_handler,
+                                 make_authorize_handler, make_revoke_handler,
                                  verify_keyboard)
 from pepper_bot.gate import resolve_access                       # noqa: E402
 from pepper_bot.internal_api import _TTLCache                    # noqa: E402
@@ -283,6 +284,7 @@ class PollerTest(IsolatedAsyncioTestCase):
         self.assertEqual(len(bot.messages), 1)
         self.assertEqual(bot.messages[0]["message_thread_id"], 7)
         self.assertIn("Ahmed Hassan", bot.messages[0]["text"])
+        self.assertIsNone(bot.messages[0].get("reply_markup"))   # NO buttons on booking
         self.assertEqual(client.marked, [1])
         self.assertEqual(msgids.get("ABC12345"), 555)   # remembered for slip
 
@@ -299,6 +301,7 @@ class PollerTest(IsolatedAsyncioTestCase):
         self.assertEqual(len(bot.photos), 1)
         self.assertEqual(bot.photos[0]["reply_to_message_id"], 555)
         self.assertEqual(bot.photos[0]["photo"], b"PNGDATA")
+        self.assertIsNotNone(bot.photos[0].get("reply_markup"))   # buttons on the SLIP
         self.assertEqual(client.marked, [2])
 
     async def test_no_alerts_topic_leaves_undelivered(self):
@@ -399,6 +402,7 @@ class FakeActionClient:
         self.role = role
         self._confirm, self._reject = confirm, reject
         self.confirm_calls, self.reject_calls = [], []
+        self.authorize_calls, self.revoke_calls, self.invalidated = [], [], []
 
     async def whitelist(self, tid):
         return {"allowed": self.role is not None, "role": self.role}
@@ -410,6 +414,58 @@ class FakeActionClient:
     async def reject_hold(self, ref, reason, actor_id=None, actor_name=None):
         self.reject_calls.append((ref, reason, actor_name))
         return self._reject
+
+    async def authorize(self, tid, role, name, added_by=None):
+        self.authorize_calls.append((tid, role, name))
+        return (200, {"ok": True})
+
+    async def revoke(self, tid):
+        self.revoke_calls.append(tid)
+        return (200, {"ok": True})
+
+    def invalidate_whitelist(self, tid):
+        self.invalidated.append(tid)
+
+
+class AuthorizeTest(IsolatedAsyncioTestCase):
+    def _msg_update(self, uid):
+        u = MagicMock()
+        u.effective_user.id = uid
+        u.effective_message.reply_text = AsyncMock()
+        return u
+
+    async def test_owner_authorizes_staff_and_invalidates(self):
+        client = FakeActionClient()
+        h = make_authorize_handler(client, owner_id="111")
+        u = self._msg_update(111)
+        await h(u, FakeCtx(args=["555", "staff", "Zoe", "Q"]))
+        self.assertEqual(client.authorize_calls, [(555, "staff", "Zoe Q")])
+        self.assertIn(555, client.invalidated)          # cache cleared -> immediate
+        u.effective_message.reply_text.assert_awaited()
+
+    async def test_non_owner_silent_no_authorize(self):
+        client = FakeActionClient(role="manager")        # whitelisted but not owner
+        h = make_authorize_handler(client, owner_id=None)
+        u = self._msg_update(222)
+        await h(u, FakeCtx(args=["555", "staff", "Zoe"]))
+        self.assertEqual(client.authorize_calls, [])
+        u.effective_message.reply_text.assert_not_awaited()
+
+    async def test_bad_role_rejected(self):
+        client = FakeActionClient()
+        h = make_authorize_handler(client, owner_id="111")
+        u = self._msg_update(111)
+        await h(u, FakeCtx(args=["555", "admin", "Zoe"]))
+        self.assertEqual(client.authorize_calls, [])
+        self.assertIn("manager", u.effective_message.reply_text.await_args.args[0].lower())
+
+    async def test_owner_revokes(self):
+        client = FakeActionClient()
+        h = make_revoke_handler(client, owner_id="111")
+        u = self._msg_update(111)
+        await h(u, FakeCtx(args=["555"]))
+        self.assertEqual(client.revoke_calls, [555])
+        self.assertIn(555, client.invalidated)
 
 
 class VerifyKeyboardTest(unittest.TestCase):

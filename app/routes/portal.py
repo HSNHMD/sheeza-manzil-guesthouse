@@ -181,3 +181,40 @@ def status():
     tok = portal_svc.session_token(session)
     st = portal_svc.status(tok)
     return render_template('portal/status.html', st=st)
+
+
+@portal_bp.route('/slip', methods=['POST'])
+def reupload_slip():
+    """Re-upload a payment slip to the REQUESTER'S OWN active pending hold (same
+    session-token identity the status page uses — no cross-hold uploads). Reuses
+    the hardened _save_file; supersedes the previous slip (new filename; the old
+    rejected file is kept, never overwritten/deleted); clears the rejected flag
+    and emits a fresh slip.uploaded so a new alert (with buttons) is posted."""
+    from ..models import db
+    from ..services import pepper_outbox
+    tok = portal_svc.session_token(session)
+    live = holds_svc.holds_for_session(tok, hold_type='pending', state='active',
+                                       now=datetime.utcnow())
+    if not live:
+        flash('No active booking to attach a slip to.', 'error')
+        return redirect(url_for('portal.status'))
+    f = request.files.get('payment_slip')
+    if not (f and f.filename):
+        flash('Choose a payment slip (image or PDF) to upload.', 'error')
+        return redirect(url_for('portal.status'))
+    from .public import _save_file, UploadRejected
+    try:
+        slip_filename, slip_drive_id = _save_file(f, 'holdslip', 'payment_slip')
+    except UploadRejected as e:
+        flash(str(e), 'error')
+        return redirect(url_for('portal.status'))
+    for h in live:                       # supersede: point at the NEW file, clear reject
+        h.payment_slip_filename = slip_filename
+        h.payment_slip_drive_id = slip_drive_id
+        h.slip_rejected_at = None
+        h.slip_rejected_reason = None
+    pepper_outbox.emit('slip.uploaded', reference=portal_svc.public_reference(tok),
+                       payload={'source': 'portal-reupload', 'filename': slip_filename})
+    db.session.commit()
+    flash('New payment slip uploaded — we’ll review it shortly.', 'success')
+    return redirect(url_for('portal.status'))

@@ -234,7 +234,10 @@ def _assemble_alert(ev):
                 'total': round(room_total + occ['fee_total'], 2),
                 'deadline': deadline.isoformat(),
                 'expired': deadline <= datetime.utcnow(),
-                'has_slip': any(h.payment_slip_filename for h in holds)}
+                # a VALID slip = filename on file AND not soft-rejected
+                'has_slip': any(h.payment_slip_filename and not h.slip_rejected_at
+                                for h in holds),
+                'slip_rejected': any(h.slip_rejected_at for h in holds)}
     return None
 
 
@@ -330,6 +333,10 @@ def holds_verify():
     if not rows:                                     # someone else already acted
         return jsonify(ok=False, already=True,
                        by=_last_actor(reference, ['pepper.hold_confirmed'])), 409
+    # Slip guard: never confirm a hold without a valid (non-rejected) slip.
+    if not any(h.payment_slip_filename and not h.slip_rejected_at for h in rows):
+        return jsonify(ok=False, no_slip=True,
+                       reasons=['no valid slip on record — cannot verify']), 409
     res = holds_svc.confirm_group(rows[0].session_token, user_id=None)
     if not res.get('ok'):
         db.session.rollback()
@@ -357,21 +364,63 @@ def holds_reject():
     if not reference:
         return jsonify(error='reference required'), 400
     rows = _lock_active_pending(reference)
-    if not rows:
+    if not rows:                                     # confirmed already -> can't reject
         return jsonify(ok=False, already=True,
                        by=_last_actor(reference,
-                                      ['pepper.hold_confirmed', 'pepper.hold_rejected'])), 409
+                                      ['pepper.hold_confirmed', 'pepper.slip_rejected'])), 409
+    # SOFT reject: mark the slip rejected + reason; the hold stays 'active' on its
+    # normal expiry (release stays PMS-only), and the file is KEPT (never deleted /
+    # overwritten) so the guest can re-upload a new one.
     now = datetime.utcnow()
     for h in rows:
-        h.state = 'released'
-        h.released_reason = f'pepper reject: {reason}'[:200]
-        h.released_at = now
-    log_activity('pepper.hold_rejected', actor_type='ai_agent', new_value='released',
-                 description=f'Hold {reference} rejected via Pepper by {actor_name}: {reason}',
+        h.slip_rejected_at = now
+        h.slip_rejected_reason = reason[:255]
+    log_activity('pepper.slip_rejected', actor_type='ai_agent', new_value='slip_rejected',
+                 description=f'Slip for hold {reference} rejected via Pepper by '
+                             f'{actor_name}: {reason}',
                  metadata={'reference': reference, 'actor_name': actor_name,
                            'reason': reason, 'telegram_id': data.get('actor_id')})
     db.session.commit()
     return jsonify(ok=True, by=actor_name)
+
+
+@internal_api_bp.post('/whitelist')
+@require_bearer
+def whitelist_add():
+    """Owner-driven staff onboarding (/authorize). Upsert a pepper_users row."""
+    from ..models import db, PepperUser
+    data = request.get_json(silent=True) or {}
+    try:
+        tid = int(data['telegram_id'])
+    except (KeyError, ValueError, TypeError):
+        return jsonify(error='telegram_id required (integer)'), 400
+    role = (data.get('role') or 'staff').lower()
+    if role not in ('manager', 'staff'):
+        return jsonify(error='role must be manager or staff'), 400
+    u = PepperUser.query.get(tid)
+    if u is None:
+        u = PepperUser(telegram_id=tid)
+        db.session.add(u)
+    u.role = role
+    u.display_name = (data.get('display_name') or u.display_name or '')[:120]
+    u.added_by = data.get('added_by')
+    u.revoked_at = None                              # (re)activate
+    db.session.commit()
+    return jsonify(ok=True, telegram_id=tid, role=role, display_name=u.display_name)
+
+
+@internal_api_bp.post('/whitelist/<int:telegram_id>/revoke')
+@require_bearer
+def whitelist_revoke(telegram_id):
+    from datetime import datetime
+    from ..models import db, PepperUser
+    u = PepperUser.query.get(telegram_id)
+    if u is None:
+        return jsonify(ok=False, not_found=True), 404
+    if u.revoked_at is None:
+        u.revoked_at = datetime.utcnow()
+        db.session.commit()
+    return jsonify(ok=True, telegram_id=telegram_id)
 
 
 @internal_api_bp.post('/outbox/<int:row_id>/delivered')

@@ -30,6 +30,30 @@
   {% endif %}
   <p>Please complete payment and slip upload before
      <strong>{{ st.expires_at.strftime('%b %d, %H:%M UTC') }}</strong>, or the hold expires.</p>
+
+  {# Slip state + (re)upload — the hold stays active on a rejection so the guest
+     can send a new slip. #}
+  {% if st.slip_state == 'rejected' %}
+  <div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:.75rem 1rem;margin:.75rem auto;max-width:23rem;text-align:left;color:#991b1b">
+    <strong>❌ Your payment slip was rejected.</strong>
+    {% if st.slip_reason %}<div style="margin-top:.3rem">Reason: {{ st.slip_reason }}</div>{% endif %}
+    <div style="margin-top:.3rem;color:#7f1d1d">Please upload a new slip below.</div>
+  </div>
+  {% elif st.slip_state == 'uploaded' %}
+  <p style="color:#065f46">🧾 Payment slip received — awaiting review.</p>
+  {% else %}
+  <p style="color:#92400e">Please upload your payment slip below.</p>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('portal.reupload_slip') }}"
+        enctype="multipart/form-data"
+        style="margin:.5rem auto;max-width:23rem;text-align:left">
+    <label style="display:block;margin:.4rem 0">{{ 'Replace slip' if st.slip_state == 'uploaded' else 'Upload slip' }}
+      <input type="file" name="payment_slip" accept="image/*,application/pdf" required
+             style="width:100%;padding:.4rem;border:1px solid #d1d5db;border-radius:8px"></label>
+    <button type="submit"
+            style="background:#059669;color:#fff;border:0;border-radius:8px;padding:.5rem 1rem;cursor:pointer">Upload slip</button>
+  </form>
 {% elif st.state == 'confirmed' %}
   <h1 class="ok">Booking confirmed</h1>
   <p>Reference <span class="ref">{{ st.reference }}</span> — your rooms are booked. See you soon!</p>
