@@ -103,6 +103,77 @@ class InternalApiTest(unittest.TestCase):
                        headers=self._auth())
         self.assertEqual(r.status_code, 404)
 
+    # --- Phase 3: verify (confirm hold) / reject (release hold) ---
+    def _pending_hold(self, token):
+        from datetime import datetime, timedelta
+        with self.app.app_context():
+            g = Guest(first_name='A', last_name='B', phone='7', nationality='MDV')
+            db.session.add(g); db.session.commit()
+            db.session.add(Hold(session_token=token, hold_type='pending',
+                                state='active', room_type_id=self.rt_id, qty=1,
+                                check_in_date=date.today() + timedelta(days=20),
+                                check_out_date=date.today() + timedelta(days=22),
+                                expires_at=datetime.utcnow() + timedelta(hours=6),
+                                adults=1, children=0, lead_guest_id=g.id))
+            db.session.commit()
+        return token[:8].upper()
+
+    def test_verify_requires_reference(self):
+        r = self.c.post('/api/internal/pepper/holds/verify', json={},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 400)
+
+    def test_verify_confirms_hold_and_creates_booking(self):
+        from app.models import Booking, Hold
+        ref = self._pending_hold('VERIFY01-session-token')
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['ok'])
+        self.assertEqual(r.get_json()['by'], 'Aisha')
+        with self.app.app_context():
+            self.assertGreaterEqual(Booking.query.count(), 1)
+            self.assertEqual(Hold.query.filter_by(state='converted').count(), 1)
+
+    def test_verify_idempotent_loser_gets_winner(self):
+        ref = self._pending_hold('VERIFY02-session-token')
+        r1 = self.c.post('/api/internal/pepper/holds/verify',
+                         json={'reference': ref, 'actor_name': 'Aisha'},
+                         headers=self._auth())
+        self.assertTrue(r1.get_json()['ok'])
+        r2 = self.c.post('/api/internal/pepper/holds/verify',
+                         json={'reference': ref, 'actor_name': 'Bob'},
+                         headers=self._auth())
+        self.assertEqual(r2.status_code, 409)
+        self.assertFalse(r2.get_json()['ok'])
+        self.assertTrue(r2.get_json()['already'])
+        self.assertEqual(r2.get_json()['by'], 'Aisha')     # the winner, not Bob
+
+    def test_reject_releases_hold_with_reason(self):
+        from app.models import Hold
+        ref = self._pending_hold('REJECT01-session-token')
+        r = self.c.post('/api/internal/pepper/holds/reject',
+                        json={'reference': ref, 'actor_name': 'Aisha',
+                              'reason': 'blurry slip'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['ok'])
+        with self.app.app_context():
+            h = Hold.query.filter(Hold.session_token == 'REJECT01-session-token').first()
+            self.assertEqual(h.state, 'released')
+            self.assertIn('blurry slip', h.released_reason)
+
+    def test_reject_then_verify_is_idempotent(self):
+        ref = self._pending_hold('REJECT02-session-token')
+        self.c.post('/api/internal/pepper/holds/reject',
+                    json={'reference': ref, 'actor_name': 'Aisha', 'reason': 'x'},
+                    headers=self._auth())
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': ref, 'actor_name': 'Bob'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 409)   # already released -> can't verify
+
     def test_slip_serves_real_file_from_app_uploads(self):
         # Would fail with the old current_app.root_path bug (internal app's
         # root_path is the repo root, not app/), which returned 404.

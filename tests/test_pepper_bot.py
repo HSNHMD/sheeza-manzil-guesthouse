@@ -18,20 +18,21 @@ from unittest.mock import AsyncMock, MagicMock
 import os
 import tempfile
 
-from pepper_bot.handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
-                                 make_bindtopics_handler, make_topics_handler)
-from pepper_bot.gate import resolve_access
-from pepper_bot.internal_api import _TTLCache
-from pepper_bot.topics import TopicStore
-from pepper_bot.msgids import MsgIdStore
-from pepper_bot.alerts import format_booking_created, format_slip_caption
-from pepper_bot.poller import Poller
+import pytest
+pytest.importorskip("telegram")   # the bot tests run in the bot venv (PTB present)
 
-try:  # the gate's silent-drop path imports telegram.ext; skip only that test w/o PTB
-    import telegram  # noqa: F401
-    _HAS_PTB = True
-except ImportError:
-    _HAS_PTB = False
+from pepper_bot.handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,   # noqa: E402
+                                 make_bindtopics_handler, make_topics_handler,
+                                 make_action_callback, make_reject_reason_handler,
+                                 verify_keyboard)
+from pepper_bot.gate import resolve_access                       # noqa: E402
+from pepper_bot.internal_api import _TTLCache                    # noqa: E402
+from pepper_bot.topics import TopicStore                         # noqa: E402
+from pepper_bot.msgids import MsgIdStore                         # noqa: E402
+from pepper_bot.alerts import format_booking_created, format_slip_caption  # noqa: E402
+from pepper_bot.poller import Poller                             # noqa: E402
+
+_HAS_PTB = True
 
 
 def fake_update(uid, text="", chat_id=None, thread_id=None):
@@ -373,6 +374,126 @@ class MsgIdStoreTest(unittest.TestCase):
         self.assertIsNone(s.get("ref0"))                 # evicted (cap 3)
         self.assertEqual(s.get("ref4"), 104)
         self.assertLessEqual(len(s._load()), 3)
+
+
+def _fake_cq(uid, data, name="Aisha", chat_id=-100, msg_id=15, text="alert"):
+    u = MagicMock()
+    cq = u.callback_query
+    cq.data = data
+    cq.from_user.id = uid
+    cq.from_user.full_name = name
+    cq.answer = AsyncMock()
+    cq.message.chat_id = chat_id
+    cq.message.message_id = msg_id
+    cq.message.text = text
+    cq.message.caption = None
+    cq.message.edit_text = AsyncMock()
+    cq.message.edit_caption = AsyncMock()
+    cq.message.reply_text = AsyncMock(return_value=MagicMock(message_id=99))
+    return u
+
+
+class FakeActionClient:
+    def __init__(self, role="manager", confirm=(200, {"ok": True, "by": "Aisha"}),
+                 reject=(200, {"ok": True})):
+        self.role = role
+        self._confirm, self._reject = confirm, reject
+        self.confirm_calls, self.reject_calls = [], []
+
+    async def whitelist(self, tid):
+        return {"allowed": self.role is not None, "role": self.role}
+
+    async def confirm_hold(self, ref, actor_id=None, actor_name=None):
+        self.confirm_calls.append((ref, actor_name))
+        return self._confirm
+
+    async def reject_hold(self, ref, reason, actor_id=None, actor_name=None):
+        self.reject_calls.append((ref, reason, actor_name))
+        return self._reject
+
+
+class VerifyKeyboardTest(unittest.TestCase):
+    def test_two_buttons_with_callback_data(self):
+        row = verify_keyboard("FAY9VDPF").inline_keyboard[0]
+        self.assertEqual(len(row), 2)
+        self.assertEqual(row[0].callback_data, "pv:v:FAY9VDPF")
+        self.assertEqual(row[1].callback_data, "pv:r:FAY9VDPF")
+
+
+class ActionCallbackTest(IsolatedAsyncioTestCase):
+    async def test_staff_tap_denied_no_state_change(self):
+        client = FakeActionClient(role="staff")
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(222, "pv:v:FAY9VDPF")
+        await h(u, None)
+        self.assertIn("manager", u.callback_query.answer.await_args.args[0].lower())
+        self.assertEqual(client.confirm_calls, [])                 # NO confirm
+        u.callback_query.message.edit_text.assert_not_awaited()
+
+    async def test_manager_verify_confirms_and_edits_in_place(self):
+        client = FakeActionClient(role="manager",
+                                  confirm=(200, {"ok": True, "by": "Aisha"}))
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:v:FAY9VDPF", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.confirm_calls, [("FAY9VDPF", "Aisha")])
+        u.callback_query.message.edit_text.assert_awaited_once()
+        self.assertIn("CONFIRMED by Aisha",
+                      u.callback_query.message.edit_text.await_args.args[0])
+
+    async def test_verify_loser_told_who_won(self):
+        client = FakeActionClient(
+            role="manager", confirm=(409, {"ok": False, "already": True, "by": "Aisha"}))
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(333, "pv:v:FAY9VDPF", name="Bob")
+        await h(u, None)
+        self.assertIn("Aisha", u.callback_query.answer.await_args.args[0])
+        self.assertIn("CONFIRMED by Aisha",
+                      u.callback_query.message.edit_text.await_args.args[0])
+
+    async def test_owner_can_verify(self):
+        client = FakeActionClient(role="staff")   # API role staff, but env owner
+        h = make_action_callback(client, owner_id="111", pending_rejects={})
+        u = _fake_cq(111, "pv:v:FAY9VDPF")         # uid matches owner env
+        await h(u, None)
+        self.assertEqual(len(client.confirm_calls), 1)   # owner bypasses role check
+
+    async def test_reject_opens_reason_flow(self):
+        client = FakeActionClient(role="manager")
+        pr = {}
+        h = make_action_callback(client, owner_id=None, pending_rejects=pr)
+        u = _fake_cq(111, "pv:r:FAY9VDPF", name="Aisha", chat_id=-100)
+        await h(u, None)
+        u.callback_query.message.reply_text.assert_awaited_once()   # force-reply prompt
+        self.assertEqual(pr[(-100, 111)]["ref"], "FAY9VDPF")
+
+    async def test_reject_reason_rejects_and_edits(self):
+        client = FakeActionClient(role="manager", reject=(200, {"ok": True}))
+        pr = {(-100, 111): {"ref": "FAY9VDPF", "alert_msg_id": 15,
+                            "alert_text": "alert", "name": "Aisha"}}
+        h = make_reject_reason_handler(client, pr)
+        u = MagicMock()
+        u.effective_message.chat_id = -100
+        u.effective_message.text = "blurry slip"
+        u.effective_message.reply_text = AsyncMock()
+        u.effective_user.id = 111
+        ctx = MagicMock(); ctx.bot.edit_message_text = AsyncMock()
+        await h(u, ctx)
+        self.assertEqual(client.reject_calls, [("FAY9VDPF", "blurry slip", "Aisha")])
+        self.assertIn("REJECTED by Aisha: blurry slip",
+                      ctx.bot.edit_message_text.await_args.kwargs["text"])
+        self.assertEqual(pr, {})                       # cleared
+
+    async def test_reject_reason_ignored_without_pending(self):
+        client = FakeActionClient(role="manager")
+        h = make_reject_reason_handler(client, {})
+        u = MagicMock()
+        u.effective_message.chat_id = -100
+        u.effective_message.text = "random chatter"
+        u.effective_message.reply_text = AsyncMock()
+        u.effective_user.id = 111
+        await h(u, MagicMock())
+        self.assertEqual(client.reject_calls, [])      # ignored
 
 
 class TTLCacheTest(unittest.TestCase):

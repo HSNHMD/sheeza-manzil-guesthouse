@@ -284,6 +284,96 @@ def slip():
     return send_file(path)
 
 
+def _last_actor(reference, actions):
+    """Actor name from the most recent matching pepper audit for a reference —
+    for the loser's 'already handled by X' message."""
+    import json
+    from ..models import ActivityLog
+    rows = (ActivityLog.query.filter(ActivityLog.action.in_(actions))
+            .order_by(ActivityLog.id.desc()).limit(30).all())
+    for r in rows:
+        try:
+            meta = json.loads(r.metadata_json or '{}')
+        except ValueError:
+            meta = {}
+        if meta.get('reference') == reference:
+            return meta.get('actor_name') or 'someone'
+    return 'someone'
+
+
+def _lock_active_pending(reference):
+    """Row-lock (FOR UPDATE) the active pending holds for a reference — the
+    DB-level idempotency claim. On Postgres two racing taps serialize here and
+    only one sees rows 'active'; the loser sees them already converted/released."""
+    from sqlalchemy import func
+    from ..models import Hold
+    return (Hold.query.filter(
+        func.upper(func.substr(Hold.session_token, 1, 8)) == reference,
+        Hold.hold_type == 'pending', Hold.state == 'active')
+        .with_for_update().all())
+
+
+@internal_api_bp.post('/holds/verify')
+@require_bearer
+def holds_verify():
+    """✅ Verify = confirm the pending hold (creates the Booking). Idempotent:
+    exactly one caller wins; the loser gets who already confirmed."""
+    from ..models import db
+    from ..services import holds as holds_svc
+    from ..services.audit import log_activity
+    data = request.get_json(silent=True) or {}
+    reference = (data.get('reference') or '').strip()
+    actor_name = data.get('actor_name') or 'staff'
+    if not reference:
+        return jsonify(error='reference required'), 400
+    rows = _lock_active_pending(reference)
+    if not rows:                                     # someone else already acted
+        return jsonify(ok=False, already=True,
+                       by=_last_actor(reference, ['pepper.hold_confirmed'])), 409
+    res = holds_svc.confirm_group(rows[0].session_token, user_id=None)
+    if not res.get('ok'):
+        db.session.rollback()
+        return jsonify(ok=False, reasons=res.get('reasons', ['confirm failed'])), 409
+    log_activity('pepper.hold_confirmed', actor_type='ai_agent', new_value='confirmed',
+                 booking_id=(res['booking_ids'][0] if res.get('booking_ids') else None),
+                 description=f'Hold {reference} confirmed via Pepper by {actor_name}.',
+                 metadata={'reference': reference, 'actor_name': actor_name,
+                           'telegram_id': data.get('actor_id')})
+    db.session.commit()
+    return jsonify(ok=True, by=actor_name, booking_ids=res.get('booking_ids'))
+
+
+@internal_api_bp.post('/holds/reject')
+@require_bearer
+def holds_reject():
+    """❌ Reject = release the pending hold with a reason. Idempotent."""
+    from datetime import datetime
+    from ..models import db
+    from ..services.audit import log_activity
+    data = request.get_json(silent=True) or {}
+    reference = (data.get('reference') or '').strip()
+    actor_name = data.get('actor_name') or 'staff'
+    reason = (data.get('reason') or '').strip() or 'no reason given'
+    if not reference:
+        return jsonify(error='reference required'), 400
+    rows = _lock_active_pending(reference)
+    if not rows:
+        return jsonify(ok=False, already=True,
+                       by=_last_actor(reference,
+                                      ['pepper.hold_confirmed', 'pepper.hold_rejected'])), 409
+    now = datetime.utcnow()
+    for h in rows:
+        h.state = 'released'
+        h.released_reason = f'pepper reject: {reason}'[:200]
+        h.released_at = now
+    log_activity('pepper.hold_rejected', actor_type='ai_agent', new_value='released',
+                 description=f'Hold {reference} rejected via Pepper by {actor_name}: {reason}',
+                 metadata={'reference': reference, 'actor_name': actor_name,
+                           'reason': reason, 'telegram_id': data.get('actor_id')})
+    db.session.commit()
+    return jsonify(ok=True, by=actor_name)
+
+
 @internal_api_bp.post('/outbox/<int:row_id>/delivered')
 @require_bearer
 def outbox_mark_delivered(row_id):

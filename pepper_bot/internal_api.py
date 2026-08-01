@@ -73,6 +73,29 @@ class InternalAPIClient:
                                      headers=self._auth())
             return resp.status_code == 200
 
+    async def confirm_hold(self, reference, *, actor_id=None, actor_name=None):
+        """✅ Verify — confirm the pending hold. Returns (status_code, json)."""
+        async with self._client() as client:
+            resp = await client.post(self._url("/holds/verify"), headers=self._auth(),
+                                     json={"reference": reference, "actor_id": actor_id,
+                                           "actor_name": actor_name})
+            return resp.status_code, self._json(resp)
+
+    async def reject_hold(self, reference, reason, *, actor_id=None, actor_name=None):
+        """❌ Reject — release the pending hold with a reason. Returns (status, json)."""
+        async with self._client() as client:
+            resp = await client.post(self._url("/holds/reject"), headers=self._auth(),
+                                     json={"reference": reference, "reason": reason,
+                                           "actor_id": actor_id, "actor_name": actor_name})
+            return resp.status_code, self._json(resp)
+
+    @staticmethod
+    def _json(resp):
+        try:
+            return resp.json()
+        except Exception:
+            return {}
+
     async def slip_bytes(self, *, reference=None, booking_id=None):
         """Return (bytes, content_type) for the slip image, or None."""
         q = (f"reference={reference}" if reference
