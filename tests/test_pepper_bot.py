@@ -434,6 +434,24 @@ class FakeActionClient:
         self.reject_calls.append((ref, reason, actor_name))
         return self._reject
 
+    # target-aware forms (hold OR booking). For a hold, record the bare ref so the
+    # existing Phase 3 assertions (confirm_calls == [("FAY9VDPF", ...)]) still hold;
+    # for a booking, record its token 'b:<id>'.
+    @staticmethod
+    def _tok(target):
+        return target.ref if target.kind == "hold" else f"b:{target.booking_id}"
+
+    async def confirm_target(self, target, actor_id=None, actor_name=None):
+        return await self.confirm_hold(self._tok(target), actor_id=actor_id,
+                                       actor_name=actor_name)
+
+    async def reject_target(self, target, reason, actor_id=None, actor_name=None):
+        return await self.reject_hold(self._tok(target), reason, actor_id=actor_id,
+                                      actor_name=actor_name)
+
+    async def target_state(self, target):
+        return await self.hold_state(self._tok(target))
+
     async def authorize(self, tid, role, name, added_by=None):
         self.authorize_calls.append((tid, role, name))
         return (200, {"ok": True})
@@ -498,6 +516,25 @@ class VerifyKeyboardTest(unittest.TestCase):
         self.assertEqual(row[0].callback_data, "pv:v:FAY9VDPF")
         self.assertEqual(row[1].callback_data, "pv:r:FAY9VDPF")
 
+    def test_booking_target_uses_b_token(self):
+        from pepper_bot.target import Target
+        row = verify_keyboard(Target.booking(42)).inline_keyboard[0]
+        self.assertEqual(row[0].callback_data, "pv:v:b:42")
+        self.assertEqual(row[1].callback_data, "pv:r:b:42")
+        # reason menu, booking target -> pv:rr:<code>:b:<id> (still ≤ 64 bytes)
+        kb = reason_menu_keyboard(Target.booking(42)).inline_keyboard
+        codes = [b.callback_data for r in kb for b in r]
+        self.assertIn("pv:rr:amt:b:42", codes)
+        self.assertIn("pv:ro:b:42", codes)
+        self.assertIn("pv:rc:b:42", codes)
+        self.assertTrue(all(len(c.encode()) <= 64 for c in codes))
+
+    def test_hold_ref_token_is_backward_compatible(self):
+        # a bare hold ref (Phase 3 wire) is unchanged whether passed as str or Target
+        from pepper_bot.target import Target
+        self.assertEqual(verify_keyboard("FAY9VDPF").inline_keyboard[0][0].callback_data,
+                         verify_keyboard(Target.hold("FAY9VDPF")).inline_keyboard[0][0].callback_data)
+
     def test_reason_menu_presets_other_and_cancel(self):
         kb = reason_menu_keyboard("FAY9VDPF").inline_keyboard
         codes = [btn.callback_data for row in kb for btn in row]
@@ -549,6 +586,31 @@ class ActionCallbackTest(IsolatedAsyncioTestCase):
         u = _fake_cq(111, "pv:v:FAY9VDPF")         # uid matches owner env
         await h(u, None)
         self.assertEqual(len(client.confirm_calls), 1)   # owner bypasses role check
+
+    async def test_manager_verify_booking_target_routes_to_booking(self):
+        # A bot-created booking's ✅ Verify (pv:v:b:<id>) routes to the booking
+        # verify path — same UX, different target.
+        client = FakeActionClient(role="manager",
+                                  confirm=(200, {"ok": True, "by": "Aisha"}))
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:v:b:42", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.confirm_calls, [("b:42", "Aisha")])   # booking token
+        u.callback_query.message.edit_text.assert_awaited_once()
+        self.assertIn("CONFIRMED by Aisha",
+                      u.callback_query.message.edit_text.await_args.args[0])
+
+    async def test_preset_reason_rejects_booking_target(self):
+        client = FakeActionClient(role="manager", reject=(200, {"ok": True}))
+        pr = {}
+        h = make_action_callback(client, owner_id=None, pending_rejects=pr)
+        ctx = _fake_ctx()
+        u = _fake_cq(111, "pv:rr:amt:b:42", name="Aisha", chat_id=-100)
+        await h(u, ctx)
+        ref, reason, actor = client.reject_calls[0]
+        self.assertEqual(ref, "b:42")                       # booking token
+        self.assertEqual(reason, REJECT_REASONS["amt"])
+        self.assertEqual(pr, {})
 
     async def test_reject_opens_reason_menu(self):
         client = FakeActionClient(role="manager")

@@ -18,6 +18,10 @@ env/
 *.sqlite
 *.sqlite3
 
+# Runtime upload artifacts (payment slips, id cards) — created by _save_file at
+# runtime / by tests; never source-tracked.
+app/uploads/
+
 # Logs
 *.log
 

@@ -20,6 +20,7 @@ from datetime import datetime
 
 from .alerts import format_booking_created, format_slip_caption
 from .handlers import verify_keyboard
+from .target import Target
 
 log = logging.getLogger("pepper_bot")
 
@@ -68,12 +69,23 @@ class Poller:
             if not data:
                 return False          # slip not fetchable yet -> retry
             # The ✅ Verify / ❌ Reject buttons live on the SLIP alert — it has a
-            # slip by definition (slip guard, bot side).
+            # slip by definition (slip guard, bot side). Arm them against the RIGHT
+            # target: a bot-created booking (by id) OR a portal hold (by ref), so
+            # the tap routes to the matching verify/reject endpoint.
+            bid = (a or {}).get("booking_id") or ev.get("booking_id")
+            hold_ref = (a or {}).get("ref") if not bid else None
+            hold_ref = hold_ref or (ev.get("reference") if not bid else None)
+            if bid is not None:
+                target = Target.booking(bid)
+            elif hold_ref is not None:
+                target = Target.hold(hold_ref)
+            else:
+                target = None
             await bot.send_photo(
                 chat_id=chat_id, message_thread_id=thread, photo=data[0],
                 caption=format_slip_caption(ref, (a or {}).get("total")),
                 reply_to_message_id=self.msgids.get(ref),
-                reply_markup=verify_keyboard(ref) if ref is not None else None)
+                reply_markup=verify_keyboard(target) if target is not None else None)
             return True
         # booking.created — notification only; NO buttons (no slip to verify yet).
         if not a:

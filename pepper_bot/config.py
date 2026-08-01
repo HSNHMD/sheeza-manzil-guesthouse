@@ -18,3 +18,8 @@ class Config:
         self.topics_path = os.path.join(self.state_dir, "topics.json")
         self.msgids_path = os.path.join(self.state_dir, "msgids.json")
         self.poll_interval = float(os.environ.get("PEPPER_POLL_INTERVAL", "5"))
+        # OpenRouter (Gemini Flash) key for date/nationality PARSING only. When
+        # unset the flow degrades to strict-format parsing (never breaks). Read
+        # by pepper_bot.llm directly from env (PEPPER_OPENROUTER_KEY); surfaced
+        # here for visibility / a future disable flag.
+        self.openrouter_key = os.environ.get("PEPPER_OPENROUTER_KEY") or None

@@ -71,6 +71,20 @@ def whitelist(telegram_id):
     return jsonify(allowed=True, role=u.role)
 
 
+@internal_api_bp.get('/brand')
+@require_bearer
+def brand():
+    """Bank/payment block for the flow's success message — property config, NOT
+    guest data. Values come from branding.get_brand() (property_settings), never
+    hardcoded in the bot."""
+    from ..services.branding import get_brand
+    b = get_brand()
+    return jsonify(bank_name=b.get('bank_name', ''),
+                   bank_account_name=b.get('bank_account_name', ''),
+                   bank_account_number=b.get('bank_account_number', ''),
+                   short_name=b.get('short_name', ''))
+
+
 @internal_api_bp.get('/availability')
 @require_bearer
 def availability():
@@ -197,7 +211,7 @@ def _assemble_alert(ev):
             return None
         g = b.guest
         nat = g.nationality if g else None
-        return {'source': 'bot', 'ref': b.booking_ref,
+        return {'source': 'bot', 'ref': b.booking_ref, 'booking_id': b.id,
                 'guest_name': (g.full_name if g else '—') or '—',
                 'nationality': nat or '—', 'green_tax': _green_tax(nat),
                 'check_in': b.check_in_date.isoformat(),
@@ -205,7 +219,11 @@ def _assemble_alert(ev):
                 'nights': (b.check_out_date - b.check_in_date).days,
                 'rooms': '—', 'adults': b.adults, 'children': b.children,
                 'total': float(b.total_amount or 0), 'deadline': None,
-                'has_slip': bool(b.payment_slip_filename)}
+                # a VALID slip = filename on file AND not soft-rejected (mirror
+                # the hold branch), so a rejected booking slip re-reads as
+                # 'awaiting slip' rather than falsely 'uploaded'.
+                'has_slip': bool(b.payment_slip_filename and not b.slip_rejected_at),
+                'slip_rejected': bool(b.slip_rejected_at)}
     if ev.reference:
         holds = _pending_holds_for_ref(ev.reference)
         if not holds:
@@ -290,6 +308,13 @@ def slip():
 def _last_actor(reference, actions):
     """Actor name from the most recent matching pepper audit for a reference —
     for the loser's 'already handled by X' message."""
+    return _last_actor_by('reference', reference, actions)
+
+
+def _last_actor_by(match_key, match_val, actions):
+    """Actor name from the most recent pepper audit whose metadata[match_key]
+    equals match_val — the target-kind-agnostic form (reference for holds,
+    booking_id for bookings). For the loser's 'already handled by X' message."""
     import json
     from ..models import ActivityLog
     rows = (ActivityLog.query.filter(ActivityLog.action.in_(actions))
@@ -299,7 +324,7 @@ def _last_actor(reference, actions):
             meta = json.loads(r.metadata_json or '{}')
         except ValueError:
             meta = {}
-        if meta.get('reference') == reference:
+        if meta.get(match_key) == match_val:
             return meta.get('actor_name') or 'someone'
     return 'someone'
 
@@ -418,6 +443,186 @@ def holds_state():
                    by=_last_actor(reference, ['pepper.hold_confirmed']))
 
 
+# ── Bot-created booking slip flow (D-slip) ──────────────────────────────────
+# Mirror of the hold machinery above, targeted at a BOOKING that the guided
+# /newbooking flow created as status='pending_verification'. The bot's own
+# booking flows through the SAME §7 slip → verify/reject path as a portal hold —
+# only the target differs (Booking vs Hold).
+
+
+def _uploads_dir():
+    """The `app/uploads` package dir — the same dir the GET /slip endpoint reads
+    from. NOT current_app.root_path (the internal WSGI app's root_path is the
+    repo root, so root_path/uploads would be wrong here)."""
+    import os
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
+
+
+def _save_booking_slip(file):
+    """Hardened save for a booking slip: reuse the Phase 0 allowlist + size cap
+    from public._save_file, but write to app/uploads (matching GET /slip) and
+    use a fresh unique filename (supersede-never-delete). Returns (name, drive_id).
+    Raises UploadRejected on a disallowed/empty/oversized file."""
+    import os
+    import uuid
+    from .public import (_upload_ext, ALLOWED_UPLOAD_EXTS, MAX_UPLOAD_BYTES,
+                         UploadRejected)
+    ext = _upload_ext(getattr(file, 'filename', None))
+    if ext not in ALLOWED_UPLOAD_EXTS:
+        raise UploadRejected(
+            'Unsupported file type — upload an image (JPG/PNG/…) or PDF.')
+    file_bytes = file.read()
+    if not file_bytes:
+        raise UploadRejected('That file was empty — please re-upload.')
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise UploadRejected('File too large — the maximum is 10 MB.')
+    from ..services.drive import upload_file as drive_upload
+    name = f'pepperslip_{uuid.uuid4().hex[:10]}.{ext}'
+    upload_dir = _uploads_dir()
+    os.makedirs(upload_dir, exist_ok=True)
+    with open(os.path.join(upload_dir, name), 'wb') as fh:
+        fh.write(file_bytes)
+    return name, drive_upload(file_bytes, name, 'payment_slips')
+
+
+@internal_api_bp.post('/bookings/<int:booking_id>/slip')
+@require_bearer
+def booking_slip_attach(booking_id):
+    """Attach a payment slip to a bot-created booking. Hardened save,
+    supersede-never-delete (fresh filename; the old file is KEPT), clears any
+    prior soft-reject, and emits `slip.uploaded` (booking-targeted) in the SAME
+    transaction so the alert is durable."""
+    from ..models import db, Booking
+    from ..services import pepper_outbox
+    from .public import UploadRejected
+    b = Booking.query.get(booking_id)
+    if b is None:
+        return jsonify(error='not found'), 404
+    file = request.files.get('slip') or request.files.get('file')
+    if file is None:
+        return jsonify(error='no slip file (multipart field "slip")'), 400
+    try:
+        name, drive_id = _save_booking_slip(file)
+    except UploadRejected as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    # Supersede: point at the new file, keep the old one on disk (never delete /
+    # overwrite). Clear any earlier rejection so the slip re-arms clean.
+    b.payment_slip_filename = name
+    b.payment_slip_drive_id = drive_id
+    b.slip_rejected_at = None
+    b.slip_rejected_reason = None
+    pepper_outbox.emit('slip.uploaded', booking_id=b.id,
+                       payload={'source': 'bot'})
+    db.session.commit()
+    return jsonify(ok=True, booking_id=b.id, filename=name)
+
+
+def _lock_booking(booking_id):
+    """Row-lock (FOR UPDATE) a single booking — the DB-level idempotency claim
+    for verify. On Postgres two racing taps serialize here; only one sees it
+    still 'pending_verification'. (FOR UPDATE no-ops on SQLite — the status
+    check still makes verify idempotent single-threaded.)"""
+    from ..models import Booking
+    return (Booking.query.filter(Booking.id == booking_id)
+            .with_for_update().first())
+
+
+@internal_api_bp.post('/bookings/<int:booking_id>/verify')
+@require_bearer
+def booking_verify(booking_id):
+    """✅ Verify a bot-created booking: pending_verification → confirmed.
+    DB-idempotent: exactly one caller wins; the loser gets who already verified.
+    Refuses a booking with no valid (non-rejected) slip."""
+    from ..models import db
+    from ..services.audit import log_activity
+    data = request.get_json(silent=True) or {}
+    actor_name = data.get('actor_name') or 'staff'
+    b = _lock_booking(booking_id)
+    if b is None:
+        return jsonify(error='not found'), 404
+    if b.status != 'pending_verification':
+        # Already confirmed (or otherwise moved on) — the loser of a race.
+        return jsonify(ok=False, already=True,
+                       by=_last_actor_by('booking_id', booking_id,
+                                         ['pepper.booking_confirmed'])), 409
+    if not (b.payment_slip_filename and not b.slip_rejected_at):
+        return jsonify(ok=False, no_slip=True,
+                       reasons=['no valid slip on record — cannot verify']), 409
+    b.status = 'confirmed'
+    log_activity('pepper.booking_confirmed', actor_type='ai_agent',
+                 booking_id=b.id, old_value='pending_verification',
+                 new_value='confirmed',
+                 description=(f'Booking {b.booking_ref} confirmed via Pepper by '
+                              f'{actor_name}.'),
+                 metadata={'booking_id': booking_id, 'actor_name': actor_name,
+                           'telegram_id': data.get('actor_id')})
+    db.session.commit()
+    return jsonify(ok=True, by=actor_name, booking_id=b.id)
+
+
+@internal_api_bp.post('/bookings/<int:booking_id>/reject')
+@require_bearer
+def booking_reject(booking_id):
+    """❌ Reject a bot-created booking's slip: SOFT reject — mark
+    slip_rejected_at/reason, KEEP status='pending_verification' (so staff can
+    re-attach) and KEEP the file (never deleted). Idempotent-ish: a booking that
+    already left pending_verification (confirmed) can't be rejected."""
+    from datetime import datetime
+    from ..models import db
+    from ..services.audit import log_activity
+    data = request.get_json(silent=True) or {}
+    actor_name = data.get('actor_name') or 'staff'
+    reason = (data.get('reason') or '').strip() or 'no reason given'
+    b = _lock_booking(booking_id)
+    if b is None:
+        return jsonify(error='not found'), 404
+    if b.status != 'pending_verification':
+        return jsonify(ok=False, already=True,
+                       by=_last_actor_by('booking_id', booking_id,
+                                         ['pepper.booking_confirmed',
+                                          'pepper.slip_rejected'])), 409
+    b.slip_rejected_at = datetime.utcnow()
+    b.slip_rejected_reason = reason[:255]
+    log_activity('pepper.slip_rejected', actor_type='ai_agent',
+                 new_value='slip_rejected', booking_id=b.id,
+                 description=(f'Slip for booking {b.booking_ref} rejected via '
+                              f'Pepper by {actor_name}: {reason}'),
+                 metadata={'booking_id': booking_id, 'actor_name': actor_name,
+                           'reason': reason, 'telegram_id': data.get('actor_id')})
+    db.session.commit()
+    return jsonify(ok=True, by=actor_name)
+
+
+@internal_api_bp.get('/bookings/<int:booking_id>/state')
+@require_bearer
+def booking_state(booking_id):
+    """Authoritative disposition for a bot-created booking — the ↩︎ Cancel /
+    reject-timeout re-arm authority (mirror of /holds/state):
+
+      pending       -> pending_verification WITH a valid slip  (armable ✅/❌)
+      slip_rejected -> pending_verification, slip soft-rejected (not armable)
+      awaiting_slip -> pending_verification, no slip yet        (not armable)
+      confirmed     -> already confirmed (by whom, if known)    (not armable)
+      other         -> any other status                         (not armable)
+    """
+    from ..models import Booking
+    b = Booking.query.get(booking_id)
+    if b is None:
+        return jsonify(error='not found'), 404
+    if b.status == 'pending_verification':
+        if b.payment_slip_filename and not b.slip_rejected_at:
+            return jsonify(ok=True, state='pending', armable=True)
+        if b.slip_rejected_at:
+            return jsonify(ok=True, state='slip_rejected', armable=False,
+                           reason=b.slip_rejected_reason)
+        return jsonify(ok=True, state='awaiting_slip', armable=False)
+    if b.status == 'confirmed':
+        return jsonify(ok=True, state='confirmed', armable=False,
+                       by=_last_actor_by('booking_id', booking_id,
+                                         ['pepper.booking_confirmed']))
+    return jsonify(ok=True, state=b.status, armable=False)
+
+
 @internal_api_bp.post('/whitelist')
 @require_bearer
 def whitelist_add():
@@ -455,6 +660,56 @@ def whitelist_revoke(telegram_id):
         u.revoked_at = datetime.utcnow()
         db.session.commit()
     return jsonify(ok=True, telegram_id=telegram_id)
+
+
+# ── Flow snapshots (restart recovery) ───────────────────────────────────────
+# The bot holds no DB creds, so the per-user /newbooking flow snapshot
+# (pepper_flows) round-trips through here. One row per active flow; the bot
+# writes on each step and deletes on confirm/cancel, and reads all open flows on
+# startup to resume them. Conversational state only — the durable booking state
+# lives in bookings/holds.
+
+
+@internal_api_bp.put('/flows/<int:telegram_id>')
+@require_bearer
+def flow_upsert(telegram_id):
+    from ..models import db, PepperFlow
+    data = request.get_json(silent=True) or {}
+    f = PepperFlow.query.get(telegram_id)
+    if f is None:
+        f = PepperFlow(telegram_id=telegram_id)
+        db.session.add(f)
+    f.chat_id = data.get('chat_id')
+    f.thread_id = data.get('thread_id')
+    f.step = (data.get('step') or None)
+    f.draft_json = data.get('draft_json')
+    db.session.commit()
+    return jsonify(ok=True, telegram_id=telegram_id)
+
+
+@internal_api_bp.delete('/flows/<int:telegram_id>')
+@require_bearer
+def flow_delete(telegram_id):
+    from ..models import db, PepperFlow
+    f = PepperFlow.query.get(telegram_id)
+    if f is not None:
+        db.session.delete(f)
+        db.session.commit()
+    return jsonify(ok=True, telegram_id=telegram_id)
+
+
+@internal_api_bp.get('/flows')
+@require_bearer
+def flow_list():
+    """All open flow snapshots — the bot reads this once on startup to resume."""
+    from ..models import PepperFlow
+    rows = PepperFlow.query.order_by(PepperFlow.telegram_id).all()
+    return jsonify(flows=[{'telegram_id': f.telegram_id, 'chat_id': f.chat_id,
+                           'thread_id': f.thread_id, 'step': f.step,
+                           'draft_json': f.draft_json,
+                           'updated_at': f.updated_at.isoformat()
+                           if f.updated_at else None}
+                          for f in rows])
 
 
 @internal_api_bp.post('/outbox/<int:row_id>/delivered')

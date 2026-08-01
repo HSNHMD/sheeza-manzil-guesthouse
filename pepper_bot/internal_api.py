@@ -119,6 +119,46 @@ class InternalAPIClient:
                 return self._json(resp)
             return {"state": "unknown", "armable": False}
 
+    # --- target-aware verify/reject/state (hold OR booking) ---
+    async def confirm_target(self, target, *, actor_id=None, actor_name=None):
+        """✅ Verify a Target (hold -> confirm; booking -> pending_verification →
+        confirmed). Returns (status_code, json)."""
+        if target.kind == "booking":
+            async with self._client() as client:
+                resp = await client.post(
+                    self._url(f"/bookings/{target.booking_id}/verify"),
+                    headers=self._auth(),
+                    json={"actor_id": actor_id, "actor_name": actor_name})
+                return resp.status_code, self._json(resp)
+        return await self.confirm_hold(target.ref, actor_id=actor_id,
+                                       actor_name=actor_name)
+
+    async def reject_target(self, target, reason, *, actor_id=None, actor_name=None):
+        """❌ Reject a Target's slip (soft in both cases). Returns (status, json)."""
+        if target.kind == "booking":
+            async with self._client() as client:
+                resp = await client.post(
+                    self._url(f"/bookings/{target.booking_id}/reject"),
+                    headers=self._auth(),
+                    json={"reason": reason, "actor_id": actor_id,
+                          "actor_name": actor_name})
+                return resp.status_code, self._json(resp)
+        return await self.reject_hold(target.ref, reason, actor_id=actor_id,
+                                      actor_name=actor_name)
+
+    async def target_state(self, target):
+        """Authoritative disposition for a Target — the ↩︎ Cancel / timeout re-arm
+        authority. Non-armable 'unknown' on any transport error (never re-arm)."""
+        if target.kind == "booking":
+            async with self._client() as client:
+                resp = await client.get(
+                    self._url(f"/bookings/{target.booking_id}/state"),
+                    headers=self._auth())
+                if resp.status_code == 200:
+                    return self._json(resp)
+                return {"state": "unknown", "armable": False}
+        return await self.hold_state(target.ref)
+
     @staticmethod
     def _json(resp):
         try:
@@ -135,3 +175,59 @@ class InternalAPIClient:
             if resp.status_code == 200:
                 return resp.content, resp.headers.get("content-type", "image/jpeg")
             return None
+
+    # ── guided-flow surface (availability / quote / create / slip / snapshots) ─
+    async def availability(self, check_in, check_out, *, guests=1):
+        """GET /availability -> list of room cards (advisory; no hold)."""
+        async with self._client() as client:
+            resp = await client.get(
+                self._url(f"/availability?check_in={check_in}"
+                          f"&check_out={check_out}&guests={guests}"),
+                headers=self._auth())
+            return resp.json().get("rooms", []) if resp.status_code == 200 else []
+
+    async def quote(self, check_in, check_out, items, *, guests=1):
+        async with self._client() as client:
+            resp = await client.post(self._url("/quote"), headers=self._auth(),
+                                     json={"check_in": check_in, "check_out": check_out,
+                                           "items": items, "guests": guests})
+            return self._json(resp) if resp.status_code == 200 else {}
+
+    async def create_booking(self, body):
+        """POST /bookings -> (status, json). status 201 ok / 400 validation /
+        409 availability-vanished. The flow surfaces 4xx verbatim."""
+        async with self._client() as client:
+            resp = await client.post(self._url("/bookings"), headers=self._auth(),
+                                     json=body)
+            return resp.status_code, self._json(resp)
+
+    async def booking_slip(self, booking_id, photo_bytes, filename):
+        """POST /bookings/<id>/slip (multipart) -> (status, json)."""
+        async with self._client() as client:
+            resp = await client.post(
+                self._url(f"/bookings/{booking_id}/slip"), headers=self._auth(),
+                files={"slip": (filename, photo_bytes)})
+            return resp.status_code, self._json(resp)
+
+    async def flow_put(self, telegram_id, snapshot):
+        async with self._client() as client:
+            resp = await client.put(self._url(f"/flows/{telegram_id}"),
+                                    headers=self._auth(), json=snapshot)
+            return resp.status_code == 200
+
+    async def flow_delete(self, telegram_id):
+        async with self._client() as client:
+            resp = await client.request(
+                "DELETE", self._url(f"/flows/{telegram_id}"), headers=self._auth())
+            return resp.status_code == 200
+
+    async def flow_list(self):
+        async with self._client() as client:
+            resp = await client.get(self._url("/flows"), headers=self._auth())
+            return resp.json().get("flows", []) if resp.status_code == 200 else []
+
+    async def get_brand(self):
+        """Bank/brand block for the success message — fetched, never hardcoded."""
+        async with self._client() as client:
+            resp = await client.get(self._url("/brand"), headers=self._auth())
+            return self._json(resp) if resp.status_code == 200 else {}

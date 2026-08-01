@@ -352,6 +352,186 @@ class InternalApiTest(unittest.TestCase):
         self.assertEqual(r.status_code, 409)
         self.assertFalse(r.get_json()['ok'])
 
+    def test_bot_booking_created_as_pending_verification(self):
+        # D-slip: the guided flow creates the booking pending_verification so
+        # nothing becomes revenue before the slip is verified.
+        from app.models import Booking
+        r = self.c.post('/api/internal/pepper/bookings',
+                        json=self._booking_body(status='pending_verification'),
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 201, r.get_data(as_text=True))
+        bid = r.get_json()['booking_ids'][0]
+        with self.app.app_context():
+            self.assertEqual(Booking.query.get(bid).status, 'pending_verification')
+
+    # --- D-slip: booking-side slip / verify / reject / state ---
+    def _pending_verif_booking(self, slip='bkslip_test.jpg'):
+        """Create a pending_verification booking (optionally with a slip on file)."""
+        from app.models import db, Booking, Guest, Room
+        with self.app.app_context():
+            g = Guest(first_name='B', last_name='K', phone='7', nationality='MDV')
+            db.session.add(g); db.session.commit()
+            room = Room.query.first()
+            b = Booking(booking_ref='BKPEND01', room_id=room.id, guest_id=g.id,
+                        check_in_date=date.today() + timedelta(days=20),
+                        check_out_date=date.today() + timedelta(days=22),
+                        adults=1, children=0, num_guests=1, total_amount=1000.0,
+                        status='pending_verification',
+                        payment_slip_filename=slip)
+            db.session.add(b); db.session.commit()
+            return b.id
+
+    def test_booking_verify_pending_to_confirmed(self):
+        from app.models import Booking
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Aisha', 'actor_id': 111},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['ok'])
+        self.assertEqual(r.get_json()['by'], 'Aisha')
+        with self.app.app_context():
+            self.assertEqual(Booking.query.get(bid).status, 'confirmed')
+
+    def test_booking_verify_refuses_slipless(self):
+        bid = self._pending_verif_booking(slip=None)
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Aisha'}, headers=self._auth())
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.get_json()['no_slip'])
+
+    def test_booking_verify_idempotent_loser_gets_winner(self):
+        bid = self._pending_verif_booking()
+        r1 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                         json={'actor_name': 'Aisha'}, headers=self._auth())
+        self.assertTrue(r1.get_json()['ok'])
+        r2 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                         json={'actor_name': 'Bob'}, headers=self._auth())
+        self.assertEqual(r2.status_code, 409)
+        self.assertTrue(r2.get_json()['already'])
+        self.assertEqual(r2.get_json()['by'], 'Aisha')      # the winner, not Bob
+
+    def test_booking_reject_soft_keeps_pending_and_file(self):
+        from app.models import Booking
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
+                        json={'actor_name': 'Aisha', 'reason': 'blurry slip'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['ok'])
+        with self.app.app_context():
+            b = Booking.query.get(bid)
+            self.assertEqual(b.status, 'pending_verification')   # NOT confirmed/cancelled
+            self.assertIsNotNone(b.slip_rejected_at)
+            self.assertIn('blurry slip', b.slip_rejected_reason)
+            self.assertEqual(b.payment_slip_filename, 'bkslip_test.jpg')  # file kept
+
+    def test_booking_verify_refused_after_soft_reject(self):
+        bid = self._pending_verif_booking()
+        self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
+                    json={'actor_name': 'Aisha', 'reason': 'x'}, headers=self._auth())
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Bob'}, headers=self._auth())
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.get_json().get('no_slip'))         # rejected slip = no valid slip
+
+    def test_booking_slip_attach_supersedes_clears_rejection_emits(self):
+        import io
+        from app.models import Booking, PepperOutbox
+        bid = self._pending_verif_booking(slip='old_bkslip.jpg')
+        # soft-reject first so we can prove the attach clears it
+        self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
+                    json={'actor_name': 'A', 'reason': 'blurry'}, headers=self._auth())
+        data = {'slip': (io.BytesIO(b'\xff\xd8\xffNEWJPEG'), 'new.jpg')}
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/slip',
+                        data=data, content_type='multipart/form-data',
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        newname = r.get_json()['filename']
+        with self.app.app_context():
+            b = Booking.query.get(bid)
+            self.assertEqual(b.payment_slip_filename, newname)   # superseded
+            self.assertNotEqual(newname, 'old_bkslip.jpg')       # fresh filename
+            self.assertIsNone(b.slip_rejected_at)                # rejection cleared
+            # slip.uploaded emitted, booking-targeted
+            self.assertTrue(PepperOutbox.query.filter_by(
+                event_type='slip.uploaded', booking_id=bid).count() >= 1)
+        # the superseded old file is NEVER deleted (supersede-never-delete)
+        import os, app as app_pkg
+        old_path = os.path.join(os.path.dirname(app_pkg.__file__), 'uploads',
+                                'old_bkslip.jpg')
+        # (old file was only a DB name in this test; the guarantee is that the
+        # attach writes a NEW name and does not remove/rename any prior file.)
+        self.assertNotEqual(newname, 'old_bkslip.jpg')
+
+    def test_booking_slip_attach_rejects_bad_extension(self):
+        import io
+        bid = self._pending_verif_booking(slip=None)
+        data = {'slip': (io.BytesIO(b'MZ...'), 'evil.exe')}
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/slip',
+                        data=data, content_type='multipart/form-data',
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(r.get_json()['ok'])
+
+    def test_booking_state_pending_armable(self):
+        bid = self._pending_verif_booking()
+        r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
+                       headers=self._auth())
+        self.assertEqual(r.get_json()['state'], 'pending')
+        self.assertTrue(r.get_json()['armable'])
+
+    def test_booking_state_confirmed_not_armable(self):
+        bid = self._pending_verif_booking()
+        self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                    json={'actor_name': 'Aisha'}, headers=self._auth())
+        r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
+                       headers=self._auth())
+        self.assertEqual(r.get_json()['state'], 'confirmed')
+        self.assertFalse(r.get_json()['armable'])
+
+    def test_booking_state_soft_rejected_not_armable(self):
+        bid = self._pending_verif_booking()
+        self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
+                    json={'actor_name': 'Aisha', 'reason': 'blurry'}, headers=self._auth())
+        r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
+                       headers=self._auth())
+        self.assertEqual(r.get_json()['state'], 'slip_rejected')
+        self.assertFalse(r.get_json()['armable'])
+        self.assertIn('blurry', r.get_json()['reason'])
+
+    def test_booking_slip_uploaded_alert_has_buttons_intent(self):
+        # The booking slip.uploaded alert must render with a booking_id + a valid
+        # slip so the poller arms ✅/❌ (booking.created carries no slip -> none).
+        from app.models import db, PepperOutbox
+        bid = self._pending_verif_booking()
+        with self.app.app_context():
+            db.session.add(PepperOutbox(event_type='slip.uploaded', booking_id=bid))
+            db.session.commit()
+        o = self.c.get('/api/internal/pepper/outbox?undelivered=1',
+                       headers=self._auth())
+        ev = next(e for e in o.get_json()['events']
+                  if e['event_type'] == 'slip.uploaded')
+        self.assertEqual(ev['alert']['booking_id'], bid)
+        self.assertTrue(ev['alert']['has_slip'])            # valid slip -> armable
+
+    # --- flow snapshots (restart recovery) ---
+    def test_flow_upsert_list_delete_roundtrip(self):
+        self.c.put('/api/internal/pepper/flows/424242',
+                   json={'chat_id': -100, 'thread_id': 7, 'step': 'checkin',
+                         'draft_json': '{"guest":{"first_name":"Ann"}}'},
+                   headers=self._auth())
+        lst = self.c.get('/api/internal/pepper/flows', headers=self._auth())
+        flows = lst.get_json()['flows']
+        f = next(f for f in flows if f['telegram_id'] == 424242)
+        self.assertEqual((f['chat_id'], f['thread_id'], f['step']),
+                         (-100, 7, 'checkin'))
+        self.assertIn('Ann', f['draft_json'])
+        self.c.delete('/api/internal/pepper/flows/424242', headers=self._auth())
+        lst2 = self.c.get('/api/internal/pepper/flows', headers=self._auth())
+        self.assertFalse(any(f['telegram_id'] == 424242
+                             for f in lst2.get_json()['flows']))
+
 
 if __name__ == '__main__':
     unittest.main()

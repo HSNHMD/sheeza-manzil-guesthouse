@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 
 from .gate import resolve_access
+from .target import Target, parse_token
 
 # Reject-reason timeout: a pending reject that gets no reason auto-cancels so the
 # alert never sits half-armed. First lapse -> one re-prompt; second -> disarm.
@@ -99,12 +100,33 @@ def make_topics_handler(client, owner_id, store):
     return cmd_topics
 
 
-def verify_keyboard(reference):
-    """✅ Verify / ❌ Reject inline keyboard for a booking alert (by reference)."""
+def _as_target(target_or_ref):
+    """Accept a Target OR a bare hold-reference string (Phase 3 call sites pass a
+    ref; Phase 2 booking call sites pass a Target). A bare string => hold."""
+    if isinstance(target_or_ref, Target):
+        return target_or_ref
+    return Target.hold(target_or_ref)
+
+
+def _pend_target(pend):
+    """The Target a pending reject acts on — from pend['target'] if present, else
+    derived from the legacy pend['ref'] (hold). Keeps manually-built pend dicts
+    (and every Phase 3 test) working unchanged."""
+    t = pend.get("target")
+    if isinstance(t, Target):
+        return t
+    return Target.hold(pend.get("ref"))
+
+
+def verify_keyboard(target_or_ref):
+    """✅ Verify / ❌ Reject inline keyboard. Accepts a Target (hold or booking)
+    or a bare hold reference (Phase 3 wire-compatible: a hold ref emits the same
+    `pv:v:<ref>` as before)."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    tok = _as_target(target_or_ref).token()
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Verify", callback_data=f"pv:v:{reference}"),
-        InlineKeyboardButton("❌ Reject", callback_data=f"pv:r:{reference}"),
+        InlineKeyboardButton("✅ Verify", callback_data=f"pv:v:{tok}"),
+        InlineKeyboardButton("❌ Reject", callback_data=f"pv:r:{tok}"),
     ]])
 
 
@@ -121,22 +143,24 @@ async def _finalize_alert(message, outcome_line):
             pass
 
 
-def reason_menu_keyboard(reference):
-    """Preset reject reasons + ✍️ Other… + ↩︎ Cancel (replaces ✅/❌ in place)."""
+def reason_menu_keyboard(target_or_ref):
+    """Preset reject reasons + ✍️ Other… + ↩︎ Cancel (replaces ✅/❌ in place).
+    Target-aware; a bare hold ref keeps the Phase 3 `pv:rr:<code>:<ref>` wire."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     b = InlineKeyboardButton
+    tok = _as_target(target_or_ref).token()
     return InlineKeyboardMarkup([
-        [b(_REASON_LABELS["blur"], callback_data=f"pv:rr:blur:{reference}"),
-         b(_REASON_LABELS["amt"], callback_data=f"pv:rr:amt:{reference}")],
-        [b(_REASON_LABELS["acct"], callback_data=f"pv:rr:acct:{reference}"),
-         b(_REASON_LABELS["noslip"], callback_data=f"pv:rr:noslip:{reference}")],
-        [b("✍️ Other…", callback_data=f"pv:ro:{reference}"),
-         b("↩︎ Cancel", callback_data=f"pv:rc:{reference}")],
+        [b(_REASON_LABELS["blur"], callback_data=f"pv:rr:blur:{tok}"),
+         b(_REASON_LABELS["amt"], callback_data=f"pv:rr:amt:{tok}")],
+        [b(_REASON_LABELS["acct"], callback_data=f"pv:rr:acct:{tok}"),
+         b(_REASON_LABELS["noslip"], callback_data=f"pv:rr:noslip:{tok}")],
+        [b("✍️ Other…", callback_data=f"pv:ro:{tok}"),
+         b("↩︎ Cancel", callback_data=f"pv:rc:{tok}")],
     ])
 
 
 def _pend_from_message(message, name, thread_id):
-    return {"ref": None, "alert_msg_id": message.message_id,
+    return {"ref": None, "target": None, "alert_msg_id": message.message_id,
             "alert_text": message.text or message.caption or "",
             "thread_id": thread_id, "name": name,
             "stage": "menu", "reprompted": False, "task": None}
@@ -164,10 +188,11 @@ async def _notify(bot, pend, text):
 
 async def _complete_reject(bot, client, pend, reason, actor_id):
     """Reject through the idempotent endpoint + edit the alert in place. Returns
-    (ok, by): ok True on reject; else `by` names who already handled it (or None)."""
-    ref, name = pend["ref"], pend["name"]
-    status, body = await client.reject_hold(ref, reason, actor_id=actor_id,
-                                            actor_name=name)
+    (ok, by): ok True on reject; else `by` names who already handled it (or None).
+    Target-aware: acts on the hold OR booking the pend points at."""
+    target, name = _pend_target(pend), pend["name"]
+    status, body = await client.reject_target(target, reason, actor_id=actor_id,
+                                              actor_name=name)
     if status == 200 and body.get("ok"):
         await _edit_alert_by_id(bot, pend["chat_id"], pend["alert_msg_id"],
             (pend["alert_text"] + f"\n\n❌ SLIP REJECTED by {name}: {reason}").strip())
@@ -181,20 +206,22 @@ async def _complete_reject(bot, client, pend, reason, actor_id):
 
 
 async def _resolve_to_state(bot, client, pend, note=None):
-    """↩︎ Cancel / timeout: go through the authoritative hold state. Re-arm ✅/❌
-    ONLY if it's still an armable pending hold; otherwise show the real current
-    state and drop the buttons — never re-arm dead buttons. Returns the state."""
-    st = await client.hold_state(pend["ref"])
-    state, ref, mid = st.get("state"), pend["ref"], pend["alert_msg_id"]
+    """↩︎ Cancel / timeout: go through the authoritative target state. Re-arm ✅/❌
+    ONLY if it's still an armable pending target; otherwise show the real current
+    state and drop the buttons — never re-arm dead buttons. Returns the state.
+    Target-aware (hold OR booking)."""
+    target = _pend_target(pend)
+    st = await client.target_state(target)
+    state, mid = st.get("state"), pend["alert_msg_id"]
     if state == "pending" and st.get("armable"):
         try:
             await bot.edit_message_reply_markup(
                 chat_id=pend["chat_id"], message_id=mid,
-                reply_markup=verify_keyboard(ref))
+                reply_markup=verify_keyboard(target))
         except Exception:
             pass
         if note:
-            await _notify(bot, pend, f"{note} #{ref} re-armed (✅ / ❌).")
+            await _notify(bot, pend, f"{note} {target.label()} re-armed (✅ / ❌).")
         return "pending"
     line = {
         "confirmed": f"✅ CONFIRMED by {st.get('by', 'someone')}",
@@ -242,7 +269,7 @@ async def _reject_timeout(bot, client, pending_rejects, key):
         try:
             p = await bot.send_message(
                 chat_id=pend["chat_id"], message_thread_id=pend.get("thread_id"),
-                text=(f"⏳ Still need a reject reason for #{pend['ref']}. "
+                text=(f"⏳ Still need a reject reason for {_pend_target(pend).label()}. "
                       "SWIPE TO REPLY to THIS message, or send /reason <text>. "
                       "Auto-cancels in 2 min."),
                 reply_markup=ForceReply(selective=True))
@@ -255,14 +282,24 @@ async def _reject_timeout(bot, client, pending_rejects, key):
     await _resolve_to_state(bot, client, pend, note="⌛ Reject timed out —")
 
 
+def _set_target(pend, target):
+    """Store the Target on a pend (and mirror ref for legacy back-compat)."""
+    pend["target"] = target
+    pend["ref"] = target.ref if target.kind == "hold" else None
+    return pend
+
+
 def make_action_callback(client, owner_id, pending_rejects):
     """Handle ✅/❌ + the reject sub-menu taps. Role-gated (manager/owner; staff ->
-    ephemeral 'requires manager', no state change).
-      pv:v:<ref>          ✅ Verify  -> confirm_hold (idempotent; loser told who won)
-      pv:r:<ref>          ❌ Reject  -> swap keyboard to the preset-reason menu
-      pv:rr:<code>:<ref>  preset     -> reject with the mapped GUEST-facing sentence
-      pv:ro:<ref>         ✍️ Other…  -> force-reply prompt (reply OR /reason <text>)
-      pv:rc:<ref>         ↩︎ Cancel  -> state-checked re-arm (never dead buttons)
+    ephemeral 'requires manager', no state change). TARGET-aware: the token after
+    the tag is either a bare hold ref (`FAY9VDPF`, Phase 3 wire) or `b:<id>` for a
+    bot-created booking — parsed identically for both, so the SAME UX composes:
+      pv:v:<tok>          ✅ Verify  -> confirm_target (idempotent; loser told who won)
+      pv:r:<tok>          ❌ Reject  -> swap keyboard to the preset-reason menu
+      pv:rr:<code>:<tok>  preset     -> reject with the mapped GUEST-facing sentence
+      pv:ro:<tok>         ✍️ Other…  -> force-reply prompt (reply OR /reason <text>)
+      pv:rc:<tok>         ↩︎ Cancel  -> state-checked re-arm (never dead buttons)
+    (<tok> is 1 segment for a hold, 2 for a booking `b:<id>`.)
     """
     from telegram import ForceReply
 
@@ -272,12 +309,14 @@ def make_action_callback(client, owner_id, pending_rejects):
         if len(parts) < 3 or parts[0] != "pv":
             await cq.answer(); return
         tag = parts[1]
+        # rr carries a reason code before the token; every other tag: token only.
         if tag == "rr":
-            if len(parts) != 4:
-                await cq.answer(); return
-            code, ref = parts[2], parts[3]
+            code, tok_parts = parts[2], parts[3:]
         else:
-            code, ref = None, parts[2]
+            code, tok_parts = None, parts[2:]
+        target = parse_token(tok_parts)
+        if target is None:
+            await cq.answer(); return
         uid = cq.from_user.id
         name = cq.from_user.full_name or cq.from_user.first_name or "staff"
         _allowed, role = await resolve_access(client, owner_id, uid)
@@ -289,7 +328,8 @@ def make_action_callback(client, owner_id, pending_rejects):
 
         if tag == "v":
             _cancel_timeout(pending_rejects.pop(key, None))   # a pending reject is moot
-            status, body = await client.confirm_hold(ref, actor_id=uid, actor_name=name)
+            status, body = await client.confirm_target(
+                target, actor_id=uid, actor_name=name)
             if status == 200 and body.get("ok"):
                 await cq.answer("Confirmed ✅")
                 await _finalize_alert(cq.message, f"✅ CONFIRMED by {name}")
@@ -305,11 +345,11 @@ def make_action_callback(client, owner_id, pending_rejects):
 
         if tag == "r":                                  # show the reason menu
             pend = _pend_from_message(cq.message, name, thread_id)
-            pend["ref"], pend["chat_id"] = ref, cq.message.chat_id
+            _set_target(pend, target); pend["chat_id"] = cq.message.chat_id
             pending_rejects[key] = pend
             try:
                 await cq.message.edit_reply_markup(
-                    reply_markup=reason_menu_keyboard(ref))
+                    reply_markup=reason_menu_keyboard(target))
             except Exception:
                 pass
             _schedule_timeout(context.bot, client, pending_rejects, key)
@@ -323,7 +363,7 @@ def make_action_callback(client, owner_id, pending_rejects):
             pend = pending_rejects.pop(key, None) or _pend_from_message(
                 cq.message, name, thread_id)
             _cancel_timeout(pend)
-            pend["ref"], pend["chat_id"] = ref, cq.message.chat_id
+            _set_target(pend, target); pend["chat_id"] = cq.message.chat_id
             ok, by = await _complete_reject(context.bot, client, pend, reason, uid)
             await cq.answer("Rejected ❌" if ok else
                             (f"Already handled by {by}." if by else "Could not reject."),
@@ -333,12 +373,13 @@ def make_action_callback(client, owner_id, pending_rejects):
         if tag == "ro":                                 # ✍️ Other -> typed reason
             pend = pending_rejects.get(key) or _pend_from_message(
                 cq.message, name, thread_id)
-            pend["ref"], pend["chat_id"], pend["stage"] = ref, cq.message.chat_id, "await_text"
+            _set_target(pend, target)
+            pend["chat_id"], pend["stage"] = cq.message.chat_id, "await_text"
             pending_rejects[key] = pend
             _cancel_timeout(pend)
             try:
                 p = await cq.message.reply_text(
-                    f"Reply with a one-line reason to reject #{ref} "
+                    f"Reply with a one-line reason to reject {target.label()} "
                     "(shown to the guest), or send /reason <text>:",
                     reply_markup=ForceReply(selective=True))
                 pend["prompt_id"] = p.message_id
@@ -352,7 +393,7 @@ def make_action_callback(client, owner_id, pending_rejects):
             pend = pending_rejects.pop(key, None) or _pend_from_message(
                 cq.message, name, thread_id)
             _cancel_timeout(pend)
-            pend["ref"], pend["chat_id"] = ref, cq.message.chat_id
+            _set_target(pend, target); pend["chat_id"] = cq.message.chat_id
             state = await _resolve_to_state(context.bot, client, pend)
             await cq.answer("Re-armed ✅/❌." if state == "pending"
                             else "State changed — see alert.",
@@ -373,7 +414,7 @@ async def _finish_typed_reason(client, pending_rejects, context, msg, uid, reaso
     pend["chat_id"] = msg.chat_id
     ok, by = await _complete_reject(context.bot, client, pend, reason, uid)
     if ok:
-        await msg.reply_text(f"❌ Rejected #{pend['ref']}.")
+        await msg.reply_text(f"❌ Rejected {_pend_target(pend).label()}.")
     elif by:
         await msg.reply_text(f"Already handled by {by}.")
     else:
@@ -491,3 +532,112 @@ def make_whitelist_gate(client, owner_id):
             from telegram.ext import ApplicationHandlerStop
             raise ApplicationHandlerStop  # silent drop
     return gate
+
+
+# ── Guided /newbooking wiring (Phase 2) ─────────────────────────────────────
+
+def _in_newbooking_topic(update, store):
+    """True only when the message is in the bound New Booking topic. Flow commands
+    are ignored everywhere else (§3.2). If no topic is bound yet, allow (setup)."""
+    bound = store.get("newbooking")
+    if not bound:
+        return True
+    msg = update.effective_message
+    thread_id = getattr(msg, "message_thread_id", None)
+    return (update.effective_chat.id == bound["chat_id"]
+            and thread_id == bound["thread_id"])
+
+
+def make_newbooking_handler(flow_manager, store):
+    """/newbooking (/nb) — start the guided flow in the New Booking topic."""
+    async def cmd_newbooking(update, context):
+        if not _in_newbooking_topic(update, store):
+            return   # ignored outside the bound New Booking topic
+        u = update.effective_user
+        msg = update.effective_message
+        name = u.full_name or u.first_name or str(u.id)
+        thread_id = getattr(msg, "message_thread_id", None)
+        await flow_manager.start(context.bot, u.id, update.effective_chat.id,
+                                 thread_id, name)
+    return cmd_newbooking
+
+
+def make_flow_callback(flow_manager):
+    """nb:* inline taps (room/count/adults/children/confirm/edit/cancel/abandon)."""
+    async def on_nb(update, context):
+        cq = update.callback_query
+        await flow_manager.handle_callback(context.bot, cq, cq.from_user.id)
+    return on_nb
+
+
+def make_flow_text_router(flow_manager, reject_reason_handler):
+    """Single non-command text handler. A force-reply that threads to a live FLOW
+    prompt is consumed by the flow; otherwise it falls through to the Phase 3
+    reject-reason handler. Order matters: the flow claims its own replies first so
+    booking answers never leak into a pending reject (and vice-versa)."""
+    async def on_text(update, context):
+        msg = update.effective_message
+        uid = update.effective_user.id
+        if await flow_manager.handle_reply(context.bot, msg, uid):
+            return   # consumed by the guided flow
+        await reject_reason_handler(update, context)   # Phase 3 fallback
+    return on_text
+
+
+def make_slip_command_handler(flow_manager, store):
+    """/slip <booking_id> with a photo attached — attach the slip to a bot-created
+    booking. Works from the New Booking topic; the booking id is explicit so it
+    needs no reply threading."""
+    async def cmd_slip(update, context):
+        msg = update.effective_message
+        args = list(getattr(context, "args", None) or [])
+        if not args or not args[0].isdigit():
+            await msg.reply_text("Usage: /slip <booking_id> (attach the slip photo).")
+            return
+        booking_id = int(args[0])
+        data = await _extract_photo(context.bot, msg)
+        if data is None:
+            await msg.reply_text("Attach the slip photo to the /slip message.")
+            return
+        await flow_manager.attach_slip(context.bot, msg, booking_id, data[0], data[1])
+    return cmd_slip
+
+
+def make_slip_photo_handler(flow_manager):
+    """A photo REPLIED to the flow's step-10 success message -> attach to that
+    booking. The booking id is parsed from the replied-to message ('#<id>')."""
+    import re
+
+    async def on_photo(update, context):
+        msg = update.effective_message
+        reply_to = getattr(msg, "reply_to_message", None)
+        base = (getattr(reply_to, "text", None)
+                or getattr(reply_to, "caption", None) or "")
+        m = re.search(r"#(\d+)", base)
+        if not m:
+            return   # not a reply to a booking success message -> ignore
+        booking_id = int(m.group(1))
+        data = await _extract_photo(context.bot, msg)
+        if data is None:
+            return
+        await flow_manager.attach_slip(context.bot, msg, booking_id, data[0], data[1])
+    return on_photo
+
+
+async def _extract_photo(bot, msg):
+    """Download the largest photo (or an image/pdf document) on a message ->
+    (bytes, filename), or None. Kept here so the flow stays telegram-thin."""
+    try:
+        photos = getattr(msg, "photo", None)
+        if photos:
+            file = await bot.get_file(photos[-1].file_id)
+            buf = await file.download_as_bytearray()
+            return bytes(buf), "slip.jpg"
+        doc = getattr(msg, "document", None)
+        if doc is not None:
+            file = await bot.get_file(doc.file_id)
+            buf = await file.download_as_bytearray()
+            return bytes(buf), (getattr(doc, "file_name", None) or "slip.bin")
+    except Exception:  # noqa: BLE001
+        return None
+    return None
