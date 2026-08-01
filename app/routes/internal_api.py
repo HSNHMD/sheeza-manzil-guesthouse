@@ -384,6 +384,40 @@ def holds_reject():
     return jsonify(ok=True, by=actor_name)
 
 
+@internal_api_bp.get('/holds/state')
+@require_bearer
+def holds_state():
+    """Authoritative current disposition for a reference. The bot's ↩︎ Cancel and
+    reject-timeout re-arm decision goes through THIS (the same truth as
+    verify/reject) so it never re-arms ✅/❌ on a hold someone already confirmed.
+
+      pending       -> active pending hold WITH a valid slip  (armable ✅/❌)
+      slip_rejected -> active pending hold, slip soft-rejected (not armable)
+      awaiting_slip -> active pending hold, no slip yet        (not armable)
+      expired       -> holds lapsed
+      confirmed     -> holds consumed by a confirm (by whom, if known)
+    """
+    from datetime import datetime
+    reference = (request.args.get('reference') or '').strip()
+    if not reference:
+        return jsonify(error='reference required'), 400
+    rows = _pending_holds_for_ref(reference)          # active + expired pending
+    now = datetime.utcnow()
+    active = [h for h in rows if h.state == 'active' and h.expires_at > now]
+    if active:
+        if any(h.payment_slip_filename and not h.slip_rejected_at for h in active):
+            return jsonify(ok=True, state='pending', armable=True)
+        if any(h.slip_rejected_at for h in active):
+            reason = next((h.slip_rejected_reason for h in active
+                           if h.slip_rejected_at), None)
+            return jsonify(ok=True, state='slip_rejected', armable=False, reason=reason)
+        return jsonify(ok=True, state='awaiting_slip', armable=False)
+    if rows:                                           # rows exist but none active
+        return jsonify(ok=True, state='expired', armable=False)
+    return jsonify(ok=True, state='confirmed', armable=False,   # consumed by confirm
+                   by=_last_actor(reference, ['pepper.hold_confirmed']))
+
+
 @internal_api_bp.post('/whitelist')
 @require_bearer
 def whitelist_add():

@@ -108,6 +108,17 @@ class InternalAPIClient:
                                            "actor_id": actor_id, "actor_name": actor_name})
             return resp.status_code, self._json(resp)
 
+    async def hold_state(self, reference):
+        """Authoritative current disposition — for ↩︎ Cancel / timeout re-arm
+        decisions. Returns the JSON dict (state / armable / by / reason); falls
+        back to a non-armable 'unknown' on any transport error (never re-arm)."""
+        async with self._client() as client:
+            resp = await client.get(self._url(f"/holds/state?reference={reference}"),
+                                     headers=self._auth())
+            if resp.status_code == 200:
+                return self._json(resp)
+            return {"state": "unknown", "armable": False}
+
     @staticmethod
     def _json(resp):
         try:

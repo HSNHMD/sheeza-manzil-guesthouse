@@ -8,7 +8,28 @@ bot — no reliance on reading arbitrary group messages.
 
 from __future__ import annotations
 
+import asyncio
+
 from .gate import resolve_access
+
+# Reject-reason timeout: a pending reject that gets no reason auto-cancels so the
+# alert never sits half-armed. First lapse -> one re-prompt; second -> disarm.
+TIMEOUT_SECONDS = 120
+_TIMEOUTS_ENABLED = True   # tests flip this off to avoid scheduling real timers
+
+# Preset reject reasons. Button label (manager-facing, terse) -> guest-facing
+# sentence that is what actually lands on the hold + the guest's status page.
+# ✍️ Other… collects a custom sentence (typed verbatim, already guest-facing).
+REJECT_REASONS = {
+    "blur":   "The payment slip is unclear — please re-send a clear photo of the full slip.",
+    "amt":    "The amount doesn't match — please send the full transfer slip.",
+    "acct":   "The transfer went to the wrong account — please re-send to the correct account and upload the new slip.",
+    "noslip": "That doesn't look like a payment slip — please upload your bank transfer slip.",
+}
+_REASON_LABELS = {
+    "blur": "Blurry / unclear", "amt": "Amount doesn't match",
+    "acct": "Wrong account", "noslip": "Not a slip",
+}
 
 
 async def cmd_myid(update, context):
@@ -100,25 +121,174 @@ async def _finalize_alert(message, outcome_line):
             pass
 
 
+def reason_menu_keyboard(reference):
+    """Preset reject reasons + ✍️ Other… + ↩︎ Cancel (replaces ✅/❌ in place)."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    b = InlineKeyboardButton
+    return InlineKeyboardMarkup([
+        [b(_REASON_LABELS["blur"], callback_data=f"pv:rr:blur:{reference}"),
+         b(_REASON_LABELS["amt"], callback_data=f"pv:rr:amt:{reference}")],
+        [b(_REASON_LABELS["acct"], callback_data=f"pv:rr:acct:{reference}"),
+         b(_REASON_LABELS["noslip"], callback_data=f"pv:rr:noslip:{reference}")],
+        [b("✍️ Other…", callback_data=f"pv:ro:{reference}"),
+         b("↩︎ Cancel", callback_data=f"pv:rc:{reference}")],
+    ])
+
+
+def _pend_from_message(message, name, thread_id):
+    return {"ref": None, "alert_msg_id": message.message_id,
+            "alert_text": message.text or message.caption or "",
+            "thread_id": thread_id, "name": name,
+            "stage": "menu", "reprompted": False, "task": None}
+
+
+async def _edit_alert_by_id(bot, chat_id, message_id, text):
+    """Edit an alert to `text` whether it's a text message or a photo (caption)."""
+    try:
+        await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text)
+    except Exception:
+        try:
+            await bot.edit_message_caption(chat_id=chat_id, message_id=message_id,
+                                           caption=text)
+        except Exception:
+            pass
+
+
+async def _notify(bot, pend, text):
+    try:
+        await bot.send_message(chat_id=pend["chat_id"],
+                               message_thread_id=pend.get("thread_id"), text=text)
+    except Exception:
+        pass
+
+
+async def _complete_reject(bot, client, pend, reason, actor_id):
+    """Reject through the idempotent endpoint + edit the alert in place. Returns
+    (ok, by): ok True on reject; else `by` names who already handled it (or None)."""
+    ref, name = pend["ref"], pend["name"]
+    status, body = await client.reject_hold(ref, reason, actor_id=actor_id,
+                                            actor_name=name)
+    if status == 200 and body.get("ok"):
+        await _edit_alert_by_id(bot, pend["chat_id"], pend["alert_msg_id"],
+            (pend["alert_text"] + f"\n\n❌ SLIP REJECTED by {name}: {reason}").strip())
+        return True, None
+    if body.get("already"):
+        by = body.get("by", "someone")
+        await _edit_alert_by_id(bot, pend["chat_id"], pend["alert_msg_id"],
+            (pend["alert_text"] + f"\n\n✅ Already handled by {by}").strip())
+        return False, by
+    return False, None
+
+
+async def _resolve_to_state(bot, client, pend, note=None):
+    """↩︎ Cancel / timeout: go through the authoritative hold state. Re-arm ✅/❌
+    ONLY if it's still an armable pending hold; otherwise show the real current
+    state and drop the buttons — never re-arm dead buttons. Returns the state."""
+    st = await client.hold_state(pend["ref"])
+    state, ref, mid = st.get("state"), pend["ref"], pend["alert_msg_id"]
+    if state == "pending" and st.get("armable"):
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=pend["chat_id"], message_id=mid,
+                reply_markup=verify_keyboard(ref))
+        except Exception:
+            pass
+        if note:
+            await _notify(bot, pend, f"{note} #{ref} re-armed (✅ / ❌).")
+        return "pending"
+    line = {
+        "confirmed": f"✅ CONFIRMED by {st.get('by', 'someone')}",
+        "slip_rejected": f"❌ SLIP already rejected: {st.get('reason') or '—'}",
+        "expired": "⌛ Hold expired.",
+        "awaiting_slip": "⏳ Awaiting a slip.",
+    }.get(state, "ℹ️ State changed — buttons cleared.")
+    await _edit_alert_by_id(bot, pend["chat_id"], mid,
+                            (pend["alert_text"] + "\n\n" + line).strip())
+    return state
+
+
+def _cancel_timeout(pend):
+    task = pend.get("task") if pend else None
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def _schedule_timeout(bot, client, pending_rejects, key):
+    pend = pending_rejects.get(key)
+    if pend is None or not _TIMEOUTS_ENABLED:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pend["task"] = None            # no loop (unit tests) -> timeout inert
+        return
+    pend["task"] = loop.create_task(
+        _reject_timeout(bot, client, pending_rejects, key))
+
+
+async def _reject_timeout(bot, client, pending_rejects, key):
+    """After TIMEOUT_SECONDS of no reason: re-prompt once (await-text stage), then
+    on the next lapse disarm cleanly through the state check."""
+    from telegram import ForceReply
+    try:
+        await asyncio.sleep(TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        return
+    pend = pending_rejects.get(key)
+    if pend is None:
+        return
+    if pend.get("stage") == "await_text" and not pend.get("reprompted"):
+        pend["reprompted"] = True
+        try:
+            p = await bot.send_message(
+                chat_id=pend["chat_id"], message_thread_id=pend.get("thread_id"),
+                text=(f"⏳ Still need a reject reason for #{pend['ref']}. "
+                      "SWIPE TO REPLY to THIS message, or send /reason <text>. "
+                      "Auto-cancels in 2 min."),
+                reply_markup=ForceReply(selective=True))
+            pend["prompt_id"] = p.message_id
+        except Exception:
+            pass
+        _schedule_timeout(bot, client, pending_rejects, key)
+        return
+    pending_rejects.pop(key, None)
+    await _resolve_to_state(bot, client, pend, note="⌛ Reject timed out —")
+
+
 def make_action_callback(client, owner_id, pending_rejects):
-    """Handle ✅/❌ taps. Role-gated (manager/owner only; staff -> ephemeral
-    'requires manager', no state change). ✅ -> confirm_hold (idempotent; loser
-    told who won). ❌ -> force-reply reason flow (see make_reject_reason_handler)."""
+    """Handle ✅/❌ + the reject sub-menu taps. Role-gated (manager/owner; staff ->
+    ephemeral 'requires manager', no state change).
+      pv:v:<ref>          ✅ Verify  -> confirm_hold (idempotent; loser told who won)
+      pv:r:<ref>          ❌ Reject  -> swap keyboard to the preset-reason menu
+      pv:rr:<code>:<ref>  preset     -> reject with the mapped GUEST-facing sentence
+      pv:ro:<ref>         ✍️ Other…  -> force-reply prompt (reply OR /reason <text>)
+      pv:rc:<ref>         ↩︎ Cancel  -> state-checked re-arm (never dead buttons)
+    """
     from telegram import ForceReply
 
     async def on_action(update, context):
         cq = update.callback_query
         parts = (cq.data or "").split(":")
-        if len(parts) != 3 or parts[0] != "pv":
+        if len(parts) < 3 or parts[0] != "pv":
             await cq.answer(); return
-        _tag, action, ref = parts
+        tag = parts[1]
+        if tag == "rr":
+            if len(parts) != 4:
+                await cq.answer(); return
+            code, ref = parts[2], parts[3]
+        else:
+            code, ref = None, parts[2]
         uid = cq.from_user.id
         name = cq.from_user.full_name or cq.from_user.first_name or "staff"
         _allowed, role = await resolve_access(client, owner_id, uid)
         if role not in ("manager", "owner"):
             await cq.answer("Verification requires manager role.", show_alert=True)
             return
-        if action == "v":
+        key = (cq.message.chat_id, uid)
+        thread_id = getattr(cq.message, "message_thread_id", None)
+
+        if tag == "v":
+            _cancel_timeout(pending_rejects.pop(key, None))   # a pending reject is moot
             status, body = await client.confirm_hold(ref, actor_id=uid, actor_name=name)
             if status == 200 and body.get("ok"):
                 await cq.answer("Confirmed ✅")
@@ -131,50 +301,115 @@ def make_action_callback(client, owner_id, pending_rejects):
                 await cq.answer(
                     "; ".join(body.get("reasons", ["could not confirm"]))[:190],
                     show_alert=True)
-        elif action == "r":
-            prompt = await cq.message.reply_text(
-                f"Reply with a one-line reason to reject #{ref}:",
-                reply_markup=ForceReply(selective=True))
-            pending_rejects[(cq.message.chat_id, uid)] = {
-                "ref": ref, "alert_msg_id": cq.message.message_id,
-                "alert_text": cq.message.text or cq.message.caption or "",
-                "prompt_id": prompt.message_id, "name": name}
-            await cq.answer("Reply with a reason.")
-        else:
-            await cq.answer()
+            return
+
+        if tag == "r":                                  # show the reason menu
+            pend = _pend_from_message(cq.message, name, thread_id)
+            pend["ref"], pend["chat_id"] = ref, cq.message.chat_id
+            pending_rejects[key] = pend
+            try:
+                await cq.message.edit_reply_markup(
+                    reply_markup=reason_menu_keyboard(ref))
+            except Exception:
+                pass
+            _schedule_timeout(context.bot, client, pending_rejects, key)
+            await cq.answer("Pick a reason — or ✍️ Other / ↩︎ Cancel.")
+            return
+
+        if tag == "rr":                                 # preset -> guest-facing text
+            reason = REJECT_REASONS.get(code)
+            if reason is None:
+                await cq.answer(); return
+            pend = pending_rejects.pop(key, None) or _pend_from_message(
+                cq.message, name, thread_id)
+            _cancel_timeout(pend)
+            pend["ref"], pend["chat_id"] = ref, cq.message.chat_id
+            ok, by = await _complete_reject(context.bot, client, pend, reason, uid)
+            await cq.answer("Rejected ❌" if ok else
+                            (f"Already handled by {by}." if by else "Could not reject."),
+                            show_alert=not ok)
+            return
+
+        if tag == "ro":                                 # ✍️ Other -> typed reason
+            pend = pending_rejects.get(key) or _pend_from_message(
+                cq.message, name, thread_id)
+            pend["ref"], pend["chat_id"], pend["stage"] = ref, cq.message.chat_id, "await_text"
+            pending_rejects[key] = pend
+            _cancel_timeout(pend)
+            try:
+                p = await cq.message.reply_text(
+                    f"Reply with a one-line reason to reject #{ref} "
+                    "(shown to the guest), or send /reason <text>:",
+                    reply_markup=ForceReply(selective=True))
+                pend["prompt_id"] = p.message_id
+            except Exception:
+                pass
+            _schedule_timeout(context.bot, client, pending_rejects, key)
+            await cq.answer("Type the reason.")
+            return
+
+        if tag == "rc":                                 # ↩︎ Cancel -> state-checked
+            pend = pending_rejects.pop(key, None) or _pend_from_message(
+                cq.message, name, thread_id)
+            _cancel_timeout(pend)
+            pend["ref"], pend["chat_id"] = ref, cq.message.chat_id
+            state = await _resolve_to_state(context.bot, client, pend)
+            await cq.answer("Re-armed ✅/❌." if state == "pending"
+                            else "State changed — see alert.",
+                            show_alert=(state != "pending"))
+            return
+
+        await cq.answer()
     return on_action
 
 
+async def _finish_typed_reason(client, pending_rejects, context, msg, uid, reason):
+    """Shared completion for a typed reason (force-reply OR /reason command)."""
+    key = (msg.chat_id, uid)
+    pend = pending_rejects.pop(key, None)
+    if not pend:
+        return
+    _cancel_timeout(pend)
+    pend["chat_id"] = msg.chat_id
+    ok, by = await _complete_reject(context.bot, client, pend, reason, uid)
+    if ok:
+        await msg.reply_text(f"❌ Rejected #{pend['ref']}.")
+    elif by:
+        await msg.reply_text(f"Already handled by {by}.")
+    else:
+        await msg.reply_text("Could not reject — please retry.")
+
+
 def make_reject_reason_handler(client, pending_rejects):
-    """The manager's force-reply reason -> reject the hold + edit the alert."""
+    """A reply to the ✍️ Other prompt -> reject with the typed reason."""
     async def on_reason(update, context):
         msg = update.effective_message
-        key = (msg.chat_id, update.effective_user.id)
-        pend = pending_rejects.get(key)
-        if not pend:
+        uid = update.effective_user.id
+        if (msg.chat_id, uid) not in pending_rejects:
             return   # not a pending reject for this user -> ignore
         reason = (msg.text or "").strip()
         if not reason:
             await msg.reply_text("Please give a one-line reason to reject.")
             return
-        pending_rejects.pop(key, None)
-        status, body = await client.reject_hold(
-            pend["ref"], reason, actor_id=update.effective_user.id,
-            actor_name=pend["name"])
-        if status == 200 and body.get("ok"):
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=msg.chat_id, message_id=pend["alert_msg_id"],
-                    text=(pend["alert_text"]
-                          + f"\n\n❌ REJECTED by {pend['name']}: {reason}").strip())
-            except Exception:
-                pass
-            await msg.reply_text(f"❌ Rejected #{pend['ref']}.")
-        elif body.get("already"):
-            await msg.reply_text(f"Already handled by {body.get('by', 'someone')}.")
-        else:
-            await msg.reply_text("Could not reject — please retry.")
+        await _finish_typed_reason(client, pending_rejects, context, msg, uid, reason)
     return on_reason
+
+
+def make_reason_command_handler(client, pending_rejects):
+    """/reason <text> — privacy-mode-proof typed reason from ANY topic, no reply
+    threading needed. Completes the caller's pending reject."""
+    async def cmd_reason(update, context):
+        msg = update.effective_message
+        uid = update.effective_user.id
+        reason = " ".join(getattr(context, "args", None) or []).strip()
+        if (msg.chat_id, uid) not in pending_rejects:
+            await msg.reply_text("No pending rejection — tap ❌ Reject on an alert first.")
+            return
+        if not reason:
+            await msg.reply_text("Usage: /reason <one-line reason shown to the guest>")
+            return
+        await _finish_typed_reason(client, pending_rejects, context, msg, uid, reason)
+    return cmd_reason
 
 
 def make_authorize_handler(client, owner_id):
