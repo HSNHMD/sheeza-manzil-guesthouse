@@ -16,3 +16,5 @@ class Config:
         # Bot-local state (systemd StateDirectory) for topic bindings.
         self.state_dir = os.environ.get("PEPPER_STATE_DIR", "/var/lib/pepper-bot")
         self.topics_path = os.path.join(self.state_dir, "topics.json")
+        self.msgids_path = os.path.join(self.state_dir, "msgids.json")
+        self.poll_interval = float(os.environ.get("PEPPER_POLL_INTERVAL", "5"))

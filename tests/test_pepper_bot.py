@@ -23,6 +23,9 @@ from pepper_bot.handlers import (cmd_myid, make_ping_handler, make_whitelist_gat
 from pepper_bot.gate import resolve_access
 from pepper_bot.internal_api import _TTLCache
 from pepper_bot.topics import TopicStore
+from pepper_bot.msgids import MsgIdStore
+from pepper_bot.alerts import format_booking_created, format_slip_caption
+from pepper_bot.poller import poll_once
 
 try:  # the gate's silent-drop path imports telegram.ext; skip only that test w/o PTB
     import telegram  # noqa: F401
@@ -180,6 +183,137 @@ class TopicStoreTest(unittest.TestCase):
         # reload from a fresh instance (persisted to disk)
         self.assertEqual(TopicStore(os.path.join(d, "topics.json")).get("general"),
                          {"chat_id": -100, "thread_id": 9})
+
+
+_ALERT = {"source": "portal", "ref": "ABC12345", "guest_name": "Ahmed Hassan",
+          "nationality": "MDV", "green_tax": "exempt", "check_in": "2026-09-05",
+          "check_out": "2026-09-07", "nights": 2, "rooms": "1× Deluxe",
+          "adults": 2, "children": 0, "total": 1200.0,
+          "deadline": "2026-08-01T17:10:00", "has_slip": False}
+
+
+class AlertFormatTest(unittest.TestCase):
+    def test_booking_created_fields(self):
+        t = format_booking_created(_ALERT)
+        for frag in ("#ABC12345", "WEB PORTAL", "Ahmed Hassan",
+                     "Green Tax exempt", "2026-09-05", "1× Deluxe",
+                     "MVR 1200", "Aug 01, 17:10 UTC", "awaiting slip"):
+            self.assertIn(frag, t)
+
+    def test_no_pii_in_alert(self):
+        t = format_booking_created({**_ALERT, "id_number": "A1234567"}).lower()
+        self.assertNotIn("passport", t)
+        self.assertNotIn("a1234567", t)   # formatter never reads id fields
+
+    def test_has_slip_toggle(self):
+        self.assertIn("slip uploaded",
+                      format_booking_created({**_ALERT, "has_slip": True}))
+
+    def test_slip_caption(self):
+        c = format_slip_caption("ABC12345", 1200.0)
+        self.assertIn("#ABC12345", c)
+        self.assertIn("MVR 1200", c)
+
+
+class FakeOutboxClient:
+    def __init__(self, events, slip=None):
+        self.events = events
+        self.slip = slip
+        self.marked = []
+
+    async def outbox_undelivered(self):
+        return self.events
+
+    async def mark_delivered(self, eid):
+        self.marked.append(eid)
+        return True
+
+    async def slip_bytes(self, reference=None, booking_id=None):
+        return self.slip
+
+
+class FakeBot:
+    def __init__(self, message_id=555, fail=False):
+        self.message_id, self.fail = message_id, fail
+        self.messages, self.photos = [], []
+
+    async def send_message(self, **kw):
+        if self.fail:
+            raise RuntimeError("telegram unreachable")
+        self.messages.append(kw)
+        m = MagicMock(); m.message_id = self.message_id; return m
+
+    async def send_photo(self, **kw):
+        self.photos.append(kw)
+        m = MagicMock(); m.message_id = self.message_id + 1; return m
+
+
+def _stores():
+    d = tempfile.mkdtemp()
+    topics = TopicStore(os.path.join(d, "t.json"))
+    msgids = MsgIdStore(os.path.join(d, "m.json"))
+    return topics, msgids
+
+
+class PollerTest(IsolatedAsyncioTestCase):
+    async def test_booking_created_posted_and_marked(self):
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        ev = {"id": 1, "event_type": "booking.created", "reference": "ABC12345",
+              "booking_id": None, "alert": _ALERT}
+        bot, client = FakeBot(555), FakeOutboxClient([ev])
+        n = await poll_once(bot, client, topics, msgids)
+        self.assertEqual(n, 1)
+        self.assertEqual(len(bot.messages), 1)
+        self.assertEqual(bot.messages[0]["message_thread_id"], 7)
+        self.assertIn("Ahmed Hassan", bot.messages[0]["text"])
+        self.assertEqual(client.marked, [1])
+        self.assertEqual(msgids.get("ABC12345"), 555)   # remembered for slip
+
+    async def test_slip_threaded_reply(self):
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        msgids.set("ABC12345", 555)                      # original alert msg id
+        ev = {"id": 2, "event_type": "slip.uploaded", "reference": "ABC12345",
+              "booking_id": None, "alert": {"ref": "ABC12345", "total": 1200.0}}
+        bot = FakeBot(555)
+        client = FakeOutboxClient([ev], slip=(b"PNGDATA", "image/png"))
+        await poll_once(bot, client, topics, msgids)
+        self.assertEqual(len(bot.photos), 1)
+        self.assertEqual(bot.photos[0]["reply_to_message_id"], 555)
+        self.assertEqual(bot.photos[0]["photo"], b"PNGDATA")
+        self.assertEqual(client.marked, [2])
+
+    async def test_no_alerts_topic_leaves_undelivered(self):
+        topics, msgids = _stores()                       # nothing bound
+        ev = {"id": 3, "event_type": "booking.created", "reference": "X",
+              "booking_id": None, "alert": _ALERT}
+        bot, client = FakeBot(), FakeOutboxClient([ev])
+        n = await poll_once(bot, client, topics, msgids)
+        self.assertEqual(n, 0)
+        self.assertEqual(bot.messages, [])
+        self.assertEqual(client.marked, [])              # NOT marked -> retried
+
+    async def test_delivery_failure_not_marked(self):
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        ev = {"id": 4, "event_type": "booking.created", "reference": "X",
+              "booking_id": None, "alert": _ALERT}
+        bot, client = FakeBot(fail=True), FakeOutboxClient([ev])
+        n = await poll_once(bot, client, topics, msgids)
+        self.assertEqual(n, 0)
+        self.assertEqual(client.marked, [])              # failure -> retried, not lost
+
+
+class MsgIdStoreTest(unittest.TestCase):
+    def test_roundtrip_and_cap(self):
+        d = tempfile.mkdtemp()
+        s = MsgIdStore(os.path.join(d, "m.json"), cap=3)
+        for i in range(5):
+            s.set(f"ref{i}", 100 + i)
+        self.assertIsNone(s.get("ref0"))                 # evicted (cap 3)
+        self.assertEqual(s.get("ref4"), 104)
+        self.assertLessEqual(len(s._load()), 3)
 
 
 class TTLCacheTest(unittest.TestCase):

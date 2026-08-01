@@ -166,6 +166,73 @@ def booking_detail(booking_id):
                    total_amount=float(b.total_amount or 0))
 
 
+_MDV = {'mdv', 'maldivian', 'mv', 'maldives'}
+
+
+def _green_tax(nationality):
+    if not nationality:
+        return 'unknown'
+    return 'exempt' if nationality.strip().lower() in _MDV else 'applies'
+
+
+def _pending_holds_for_ref(reference):
+    from ..models import Hold
+    from sqlalchemy import func
+    return (Hold.query.filter(
+        Hold.hold_type == 'pending', Hold.state == 'active',
+        func.upper(func.substr(Hold.session_token, 1, 8)) == reference)
+        .order_by(Hold.id).all())
+
+
+def _assemble_alert(ev):
+    """Render the §7.2 alert fields server-side (bot stays PMS-logic-free).
+    Deliberately OMITS id/passport numbers (PII discipline)."""
+    from ..models import Booking, RoomType
+    from ..services import inventory, occupancy
+    if ev.booking_id:
+        b = Booking.query.get(ev.booking_id)
+        if b is None:
+            return None
+        g = b.guest
+        nat = g.nationality if g else None
+        return {'source': 'bot', 'ref': b.booking_ref,
+                'guest_name': (g.full_name if g else '—') or '—',
+                'nationality': nat or '—', 'green_tax': _green_tax(nat),
+                'check_in': b.check_in_date.isoformat(),
+                'check_out': b.check_out_date.isoformat(),
+                'nights': (b.check_out_date - b.check_in_date).days,
+                'rooms': '—', 'adults': b.adults, 'children': b.children,
+                'total': float(b.total_amount or 0), 'deadline': None,
+                'has_slip': bool(b.payment_slip_filename)}
+    if ev.reference:
+        holds = _pending_holds_for_ref(ev.reference)
+        if not holds:
+            return None
+        h0 = holds[0]
+        g = h0.lead_guest
+        ci, co = h0.check_in_date, h0.check_out_date
+        nights = max(1, (co - ci).days)
+        items = [{'room_type_id': h.room_type_id, 'qty': h.qty} for h in holds]
+        room_total = sum(inventory.price_stay(h.room_type_id, ci, co)['total'] * h.qty
+                         for h in holds)
+        adults = h0.adults if h0.adults is not None else 1
+        children = h0.children if h0.children is not None else 0
+        occ = occupancy.compute(items, adults + children, nights)
+        rooms = ', '.join(f"{h.qty}× {RoomType.query.get(h.room_type_id).name}"
+                          for h in holds)
+        nat = g.nationality if g else None
+        return {'source': 'portal', 'ref': ev.reference,
+                'guest_name': (g.full_name if g else h0.guest_name) or '—',
+                'nationality': nat or '—', 'green_tax': _green_tax(nat),
+                'check_in': ci.isoformat(), 'check_out': co.isoformat(),
+                'nights': nights, 'rooms': rooms,
+                'adults': adults, 'children': children,
+                'total': round(room_total + occ['fee_total'], 2),
+                'deadline': min(h.expires_at for h in holds).isoformat(),
+                'has_slip': any(h.payment_slip_filename for h in holds)}
+    return None
+
+
 @internal_api_bp.get('/outbox')
 @require_bearer
 def outbox_list():
@@ -177,8 +244,35 @@ def outbox_list():
     return jsonify(events=[{'id': r.id, 'event_type': r.event_type,
                             'booking_id': r.booking_id, 'reference': r.reference,
                             'payload': r.payload_json,
-                            'created_at': r.created_at.isoformat()}
+                            'created_at': r.created_at.isoformat(),
+                            'alert': _assemble_alert(r)}
                            for r in rows])
+
+
+@internal_api_bp.get('/slip')
+@require_bearer
+def slip():
+    """Return the payment-slip image bytes for a pending hold (by reference) or a
+    booking (by id), so the bot can re-upload it to Telegram (no PMS session)."""
+    import os
+    from flask import send_file, current_app
+    from ..models import Booking
+    ref = request.args.get('reference')
+    bid = request.args.get('booking_id')
+    filename = None
+    if ref:
+        h = next((x for x in _pending_holds_for_ref(ref)
+                  if x.payment_slip_filename), None)
+        filename = h.payment_slip_filename if h else None
+    elif bid:
+        b = Booking.query.get(int(bid))
+        filename = b.payment_slip_filename if b else None
+    if not filename:
+        return jsonify(error='no slip on file'), 404
+    path = os.path.join(current_app.root_path, 'uploads', filename)
+    if not os.path.exists(path):
+        return jsonify(error='slip file missing'), 404
+    return send_file(path)
 
 
 @internal_api_bp.post('/outbox/<int:row_id>/delivered')
