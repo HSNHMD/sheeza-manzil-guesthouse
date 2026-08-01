@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import logging
 
-from telegram.ext import Application, CommandHandler, TypeHandler
+from telegram.ext import (Application, CommandHandler, TypeHandler,
+                          CallbackQueryHandler, MessageHandler, filters)
 
 from .config import Config
 from .internal_api import InternalAPIClient
@@ -23,7 +24,8 @@ from .topics import TopicStore
 from .msgids import MsgIdStore
 from .poller import poller_loop
 from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
-                       make_bindtopics_handler, make_topics_handler)
+                       make_bindtopics_handler, make_topics_handler,
+                       make_action_callback, make_reject_reason_handler)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +67,14 @@ def build_application(cfg: Config | None = None) -> Application:
                                    make_bindtopics_handler(client, cfg.owner_id, store)))
     app.add_handler(CommandHandler("topics",
                                    make_topics_handler(client, cfg.owner_id, store)))
+    # Phase 3: inline ✅ Verify / ❌ Reject on booking alerts + the reject-reason
+    # force-reply. pending_rejects is shared between the callback and the reply.
+    pending_rejects: dict = {}
+    app.add_handler(CallbackQueryHandler(
+        make_action_callback(client, cfg.owner_id, pending_rejects), pattern=r"^pv:"))
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        make_reject_reason_handler(client, pending_rejects)))
     app.add_error_handler(_on_error)
     return app
 

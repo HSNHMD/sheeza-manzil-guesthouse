@@ -19,6 +19,7 @@ import logging
 from datetime import datetime
 
 from .alerts import format_booking_created, format_slip_caption
+from .handlers import verify_keyboard
 
 log = logging.getLogger("pepper_bot")
 
@@ -71,11 +72,12 @@ class Poller:
                 caption=format_slip_caption(ref, (a or {}).get("total")),
                 reply_to_message_id=self.msgids.get(ref))
             return True
-        # booking.created
+        # booking.created — with ✅ Verify / ❌ Reject buttons (Phase 3)
         if not a:
             return False              # can't render yet -> retry
+        kb = verify_keyboard(ref) if ref is not None else None
         msg = await bot.send_message(chat_id=chat_id, message_thread_id=thread,
-                                     text=format_booking_created(a))
+                                     text=format_booking_created(a), reply_markup=kb)
         if ref is not None:
             self.msgids.set(ref, msg.message_id)
         return True
