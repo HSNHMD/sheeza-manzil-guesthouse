@@ -103,6 +103,37 @@ class InternalApiTest(unittest.TestCase):
                        headers=self._auth())
         self.assertEqual(r.status_code, 404)
 
+    def test_slip_serves_real_file_from_app_uploads(self):
+        # Would fail with the old current_app.root_path bug (internal app's
+        # root_path is the repo root, not app/), which returned 404.
+        import app as app_pkg
+        from datetime import datetime, timedelta
+        uploads = os.path.join(os.path.dirname(app_pkg.__file__), 'uploads')
+        os.makedirs(uploads, exist_ok=True)
+        fn = 'pepper_test_slip.jpg'
+        fpath = os.path.join(uploads, fn)
+        with open(fpath, 'wb') as fh:
+            fh.write(b'\xff\xd8\xffTESTJPEG')
+        try:
+            tok = 'SLIP1234-session-token'
+            with self.app.app_context():
+                g = Guest(first_name='S', last_name='L', phone='7', nationality='MDV')
+                db.session.add(g); db.session.commit()
+                db.session.add(Hold(session_token=tok, hold_type='pending',
+                                    state='active', room_type_id=self.rt_id, qty=1,
+                                    check_in_date=date.today() + timedelta(days=20),
+                                    check_out_date=date.today() + timedelta(days=22),
+                                    expires_at=datetime.utcnow() + timedelta(hours=6),
+                                    adults=1, children=0, lead_guest_id=g.id,
+                                    payment_slip_filename=fn))
+                db.session.commit()
+            r = self.c.get('/api/internal/pepper/slip?reference=' + tok[:8].upper(),
+                           headers=self._auth())
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.data, b'\xff\xd8\xffTESTJPEG')
+        finally:
+            os.remove(fpath)
+
     # --- auth gate ---
     def test_ping_without_token_401(self):
         self.assertEqual(self.c.get('/api/internal/pepper/ping').status_code, 401)
