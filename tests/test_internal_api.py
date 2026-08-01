@@ -18,7 +18,8 @@ for _v in ('DATABASE_URL', 'WHATSAPP_ENABLED', 'AI_DRAFT_PROVIDER',
 os.environ.setdefault('SECRET_KEY', 'test-secret-do-not-use-in-prod')
 
 from config import Config                                            # noqa: E402
-from app.models import db, Property, RoomType, Room, PepperUser      # noqa: E402
+from app.models import (db, Property, RoomType, Room, PepperUser,     # noqa: E402
+                        Guest, Hold, PepperOutbox)
 from internal_wsgi import create_internal_app                        # noqa: E402
 
 _CI = (date.today() + timedelta(days=20)).isoformat()
@@ -66,6 +67,41 @@ class InternalApiTest(unittest.TestCase):
 
     def _auth(self):
         return {'Authorization': f'Bearer {_TOKEN}'}
+
+    # --- alert assembly (§7.2) + slip ---
+    def test_outbox_alert_assembly_portal_pending(self):
+        from datetime import datetime, timedelta
+        tok = 'ABC12345-long-session-token'
+        with self.app.app_context():
+            g = Guest(first_name='Ahmed', last_name='Hassan', phone='7',
+                      nationality='MDV')
+            db.session.add(g); db.session.commit()
+            db.session.add(Hold(session_token=tok, hold_type='pending',
+                                state='active', room_type_id=self.rt_id, qty=1,
+                                check_in_date=date.today() + timedelta(days=20),
+                                check_out_date=date.today() + timedelta(days=22),
+                                expires_at=datetime.utcnow() + timedelta(hours=6),
+                                adults=2, children=0, lead_guest_id=g.id))
+            db.session.add(PepperOutbox(event_type='booking.created',
+                                        reference=tok[:8].upper()))
+            db.session.commit()
+        r = self.c.get('/api/internal/pepper/outbox?undelivered=1',
+                       headers=self._auth())
+        a = next(e['alert'] for e in r.get_json()['events'] if e['alert'])
+        self.assertEqual(a['guest_name'], 'Ahmed Hassan')
+        self.assertEqual((a['nationality'], a['green_tax']), ('MDV', 'exempt'))
+        self.assertEqual(a['adults'], 2)
+        self.assertIsInstance(a['total'], (int, float))   # value depends on rate config
+        self.assertGreaterEqual(a['total'], 0)
+        self.assertIn('Standard', a['rooms'])
+        self.assertIsNotNone(a['deadline'])
+        self.assertNotIn('id_number', a)                 # PII discipline
+        self.assertNotIn('passport', str(a).lower())
+
+    def test_slip_404_when_none(self):
+        r = self.c.get('/api/internal/pepper/slip?reference=NOPE1234',
+                       headers=self._auth())
+        self.assertEqual(r.status_code, 404)
 
     # --- auth gate ---
     def test_ping_without_token_401(self):

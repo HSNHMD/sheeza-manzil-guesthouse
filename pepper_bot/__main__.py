@@ -20,6 +20,8 @@ from telegram.ext import Application, CommandHandler, TypeHandler
 from .config import Config
 from .internal_api import InternalAPIClient
 from .topics import TopicStore
+from .msgids import MsgIdStore
+from .poller import poller_loop
 from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
                        make_bindtopics_handler, make_topics_handler)
 
@@ -44,7 +46,15 @@ def build_application(cfg: Config | None = None) -> Application:
     cfg = cfg or Config()
     client = InternalAPIClient(cfg.socket_path, cfg.internal_token)
     store = TopicStore(cfg.topics_path)
-    app = Application.builder().token(cfg.bot_token).build()
+    msgids = MsgIdStore(cfg.msgids_path)
+
+    async def _post_init(application):
+        # Start the outbox->Alerts poller tied to the app lifecycle.
+        application.create_task(
+            poller_loop(application.bot, client, store, msgids, cfg.poll_interval))
+        log.info("poller task scheduled")
+
+    app = Application.builder().token(cfg.bot_token).post_init(_post_init).build()
     # group -1: whitelist-before-everything (except /myid).
     app.add_handler(TypeHandler(object, make_whitelist_gate(client, cfg.owner_id)),
                     group=-1)

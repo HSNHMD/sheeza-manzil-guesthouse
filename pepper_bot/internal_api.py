@@ -35,6 +35,17 @@ class InternalAPIClient:
         self.base_url = base_url.rstrip("/")
         self.cache = _TTLCache(ttl_seconds)
 
+    def _auth(self):
+        return {"Authorization": f"Bearer {self.token}"}
+
+    def _client(self):
+        import httpx  # lazy
+        return httpx.AsyncClient(
+            transport=httpx.AsyncHTTPTransport(uds=self.socket_path), timeout=10.0)
+
+    def _url(self, path):
+        return f"{self.base_url}/api/internal/pepper{path}"
+
     async def whitelist(self, telegram_id: int) -> dict:
         """Return {'allowed': bool, 'role': str|None}. Cached for ttl_seconds.
         Never raises for a normal deny — only propagates transport errors so the
@@ -42,14 +53,32 @@ class InternalAPIClient:
         cached = self.cache.get(telegram_id)
         if cached is not None:
             return cached
-        import httpx  # lazy
-        transport = httpx.AsyncHTTPTransport(uds=self.socket_path)
-        async with httpx.AsyncClient(transport=transport, timeout=5.0) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/internal/pepper/whitelist/{telegram_id}",
-                headers={"Authorization": f"Bearer {self.token}"},
-            )
+        async with self._client() as client:
+            resp = await client.get(self._url(f"/whitelist/{telegram_id}"),
+                                    headers=self._auth())
             data = (resp.json() if resp.status_code == 200
                     else {"allowed": False, "role": None})
         self.cache.put(telegram_id, data)
         return data
+
+    async def outbox_undelivered(self) -> list:
+        async with self._client() as client:
+            resp = await client.get(self._url("/outbox?undelivered=1"),
+                                    headers=self._auth())
+            return resp.json().get("events", []) if resp.status_code == 200 else []
+
+    async def mark_delivered(self, event_id) -> bool:
+        async with self._client() as client:
+            resp = await client.post(self._url(f"/outbox/{event_id}/delivered"),
+                                     headers=self._auth())
+            return resp.status_code == 200
+
+    async def slip_bytes(self, *, reference=None, booking_id=None):
+        """Return (bytes, content_type) for the slip image, or None."""
+        q = (f"reference={reference}" if reference
+             else f"booking_id={booking_id}")
+        async with self._client() as client:
+            resp = await client.get(self._url(f"/slip?{q}"), headers=self._auth())
+            if resp.status_code == 200:
+                return resp.content, resp.headers.get("content-type", "image/jpeg")
+            return None
