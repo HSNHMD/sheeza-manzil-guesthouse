@@ -25,7 +25,7 @@ from pepper_bot.internal_api import _TTLCache
 from pepper_bot.topics import TopicStore
 from pepper_bot.msgids import MsgIdStore
 from pepper_bot.alerts import format_booking_created, format_slip_caption
-from pepper_bot.poller import poll_once
+from pepper_bot.poller import Poller
 
 try:  # the gate's silent-drop path imports telegram.ext; skip only that test w/o PTB
     import telegram  # noqa: F401
@@ -260,14 +260,24 @@ def _stores():
     return topics, msgids
 
 
+def _now_iso():
+    from datetime import datetime
+    return datetime.utcnow().isoformat()
+
+
+def _old_iso(seconds):
+    from datetime import datetime, timedelta
+    return (datetime.utcnow() - timedelta(seconds=seconds)).isoformat()
+
+
 class PollerTest(IsolatedAsyncioTestCase):
     async def test_booking_created_posted_and_marked(self):
         topics, msgids = _stores()
         topics.set_topic("alerts", -100, 7)
         ev = {"id": 1, "event_type": "booking.created", "reference": "ABC12345",
-              "booking_id": None, "alert": _ALERT}
+              "booking_id": None, "alert": _ALERT, "created_at": _now_iso()}
         bot, client = FakeBot(555), FakeOutboxClient([ev])
-        n = await poll_once(bot, client, topics, msgids)
+        n = await Poller(client, topics, msgids).poll_once(bot)
         self.assertEqual(n, 1)
         self.assertEqual(len(bot.messages), 1)
         self.assertEqual(bot.messages[0]["message_thread_id"], 7)
@@ -280,10 +290,11 @@ class PollerTest(IsolatedAsyncioTestCase):
         topics.set_topic("alerts", -100, 7)
         msgids.set("ABC12345", 555)                      # original alert msg id
         ev = {"id": 2, "event_type": "slip.uploaded", "reference": "ABC12345",
-              "booking_id": None, "alert": {"ref": "ABC12345", "total": 1200.0}}
+              "booking_id": None, "alert": {"ref": "ABC12345", "total": 1200.0},
+              "created_at": _now_iso()}
         bot = FakeBot(555)
         client = FakeOutboxClient([ev], slip=(b"PNGDATA", "image/png"))
-        await poll_once(bot, client, topics, msgids)
+        await Poller(client, topics, msgids).poll_once(bot)
         self.assertEqual(len(bot.photos), 1)
         self.assertEqual(bot.photos[0]["reply_to_message_id"], 555)
         self.assertEqual(bot.photos[0]["photo"], b"PNGDATA")
@@ -292,22 +303,65 @@ class PollerTest(IsolatedAsyncioTestCase):
     async def test_no_alerts_topic_leaves_undelivered(self):
         topics, msgids = _stores()                       # nothing bound
         ev = {"id": 3, "event_type": "booking.created", "reference": "X",
-              "booking_id": None, "alert": _ALERT}
+              "booking_id": None, "alert": _ALERT, "created_at": _now_iso()}
         bot, client = FakeBot(), FakeOutboxClient([ev])
-        n = await poll_once(bot, client, topics, msgids)
+        n = await Poller(client, topics, msgids).poll_once(bot)
         self.assertEqual(n, 0)
         self.assertEqual(bot.messages, [])
         self.assertEqual(client.marked, [])              # NOT marked -> retried
 
-    async def test_delivery_failure_not_marked(self):
+    async def test_telegram_failure_not_marked(self):
         topics, msgids = _stores()
         topics.set_topic("alerts", -100, 7)
         ev = {"id": 4, "event_type": "booking.created", "reference": "X",
-              "booking_id": None, "alert": _ALERT}
+              "booking_id": None, "alert": _ALERT, "created_at": _now_iso()}
         bot, client = FakeBot(fail=True), FakeOutboxClient([ev])
-        n = await poll_once(bot, client, topics, msgids)
+        n = await Poller(client, topics, msgids).poll_once(bot)
         self.assertEqual(n, 0)
         self.assertEqual(client.marked, [])              # failure -> retried, not lost
+
+    async def test_slip_fetch_fail_retries_no_fallback_no_mark(self):
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        ev = {"id": 5, "event_type": "slip.uploaded", "reference": "ABC12345",
+              "booking_id": None, "alert": {"ref": "ABC12345", "total": 1200.0},
+              "created_at": _now_iso()}
+        bot = FakeBot()
+        client = FakeOutboxClient([ev], slip=None)       # image not fetchable
+        n = await Poller(client, topics, msgids).poll_once(bot)
+        self.assertEqual(n, 0)
+        self.assertEqual(bot.photos, [])                 # nothing posted
+        self.assertEqual(bot.messages, [])               # NO "unavailable" excuse text
+        self.assertEqual(client.marked, [])              # NOT marked -> retried
+
+    async def test_booking_no_alert_retries_no_fallback_no_mark(self):
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        ev = {"id": 6, "event_type": "booking.created", "reference": "X",
+              "booking_id": None, "alert": None, "created_at": _now_iso()}
+        bot, client = FakeBot(), FakeOutboxClient([ev])
+        n = await Poller(client, topics, msgids).poll_once(bot)
+        self.assertEqual(n, 0)
+        self.assertEqual(bot.messages, [])               # NO "details unavailable" text
+        self.assertEqual(client.marked, [])              # NOT marked -> retried
+
+    async def test_giveup_logs_loud_after_1h_but_stays_undelivered(self):
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        ev = {"id": 7, "event_type": "slip.uploaded", "reference": "X",
+              "booking_id": None, "alert": {"ref": "X"},
+              "created_at": _old_iso(4000)}              # >1h old, still failing
+        bot = FakeBot()
+        client = FakeOutboxClient([ev], slip=None)
+        poller = Poller(client, topics, msgids)
+        with self.assertLogs("pepper_bot", level="ERROR") as cm:
+            await poller.poll_once(bot)
+        self.assertTrue(any("UNDELIVERED" in m for m in cm.output))
+        self.assertEqual(client.marked, [])              # stays undelivered (visible)
+        # loud only ONCE
+        with self.assertRaises(AssertionError):
+            with self.assertLogs("pepper_bot", level="ERROR"):
+                await poller.poll_once(bot)
 
 
 class MsgIdStoreTest(unittest.TestCase):
