@@ -23,7 +23,9 @@ def format_booking_created(a: dict) -> str:
     total_line = f"Total: MVR {a.get('total', 0):.0f}"
     dl = _fmt_deadline(a.get('deadline'))
     if dl:
-        total_line += f" · Hold expires: {dl}"
+        # An expired hold must never read as still actionable.
+        total_line += (f" · ⚠️ Hold EXPIRED {dl}" if a.get('expired')
+                       else f" · Hold expires: {dl}")
     pay = '🧾 slip uploaded' if a.get('has_slip') else '⏳ awaiting slip'
     return "\n".join([
         f"🆕 Booking #{a.get('ref', '?')} — {src}",
