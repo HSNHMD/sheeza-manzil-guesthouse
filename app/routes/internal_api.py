@@ -260,7 +260,7 @@ def slip():
     """Return the payment-slip image bytes for a pending hold (by reference) or a
     booking (by id), so the bot can re-upload it to Telegram (no PMS session)."""
     import os
-    from flask import send_file, current_app
+    from flask import send_file
     from ..models import Booking
     ref = request.args.get('reference')
     bid = request.args.get('booking_id')
@@ -274,7 +274,11 @@ def slip():
         filename = b.payment_slip_filename if b else None
     if not filename:
         return jsonify(error='no slip on file'), 404
-    path = os.path.join(current_app.root_path, 'uploads', filename)
+    # Uploads live in the `app` PACKAGE dir (app/uploads), NOT the running app's
+    # root_path — the internal API is served by a separate WSGI app whose
+    # root_path is the repo root, so current_app.root_path would be wrong here.
+    upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
+    path = os.path.join(upload_dir, filename)
     if not os.path.exists(path):
         return jsonify(error='slip file missing'), 404
     return send_file(path)
