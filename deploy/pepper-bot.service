@@ -15,8 +15,9 @@
 [Unit]
 Description=Pepper Telegram bot (long-poll) — Sheeza PMS agent
 After=network-online.target pepper-internal.service
-Wants=network-online.target
-Requires=pepper-internal.service
+# Wants (not Requires): order after pepper-internal, but a restart of it must NOT
+# bounce the bot (Requires= did, which auto-started the poller mid-deploy).
+Wants=network-online.target pepper-internal.service
 
 [Service]
 Type=simple
