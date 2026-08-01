@@ -26,7 +26,14 @@ def format_booking_created(a: dict) -> str:
         # An expired hold must never read as still actionable.
         total_line += (f" · ⚠️ Hold EXPIRED {dl}" if a.get('expired')
                        else f" · Hold expires: {dl}")
-    pay = '🧾 slip uploaded' if a.get('has_slip') else '⏳ awaiting slip'
+    if a.get('payment_method') == 'cash':
+        # Cash walk-in: no slip is coming; a manager taps 💵 Cash received to
+        # confirm. The alert says so instead of "awaiting slip".
+        pay = '💵 CASH — tap “Cash received” to confirm'
+    elif a.get('has_slip'):
+        pay = '🧾 slip uploaded'
+    else:
+        pay = '⏳ awaiting slip'
     return "\n".join([
         f"🆕 Booking #{a.get('ref', '?')} — {src}",
         f"Guest: {a.get('guest_name', '—')} "

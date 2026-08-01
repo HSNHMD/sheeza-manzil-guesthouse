@@ -202,6 +202,17 @@ class Booking(db.Model):
     payment_slip_filename = db.Column(db.String(255))
     id_card_drive_id      = db.Column(db.String(255))
     payment_slip_drive_id = db.Column(db.String(255))
+    # Pepper soft-reject (mirror of the Hold columns): ❌ Reject marks a bot-
+    # created booking's slip rejected + reason WITHOUT leaving pending_verification,
+    # so staff can re-attach. A VALID slip = payment_slip_filename set AND
+    # slip_rejected_at is None. Nullable/additive — a revert leaves them unused.
+    slip_rejected_at      = db.Column(db.DateTime, nullable=True)
+    slip_rejected_reason  = db.Column(db.String(255), nullable=True)
+    # How the guest is paying ('cash' | 'bank_transfer' | …, cashiering vocab).
+    # Nullable so legacy/portal bookings stay unchanged. Drives the bot alert
+    # (cash-received button vs slip flow) and lets finance (Alfred) split cash
+    # vs transfer. Distinct from Invoice.payment_method (a paid-invoice fact).
+    payment_method        = db.Column(db.String(30), nullable=True)
 
     # Group Bookings V1 — both nullable so standalone bookings stay
     # unchanged. `booking_group_id` is set when the booking is
@@ -2283,6 +2294,10 @@ class PepperFlow(db.Model):
     __tablename__ = 'pepper_flows'
 
     telegram_id = db.Column(db.BigInteger, primary_key=True)
+    # WHICH forum topic to resume the flow in after a restart (post the
+    # "I restarted; @user, we were at step N" message back into New Booking).
+    chat_id     = db.Column(db.BigInteger, nullable=True)
+    thread_id   = db.Column(db.BigInteger, nullable=True)
     step        = db.Column(db.String(40), nullable=True)
     draft_json  = db.Column(db.Text, nullable=True)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow,

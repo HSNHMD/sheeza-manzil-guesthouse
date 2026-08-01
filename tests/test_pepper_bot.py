@@ -28,7 +28,7 @@ from pepper_bot.handlers import (cmd_myid, make_ping_handler, make_whitelist_gat
                                  make_reason_command_handler, reason_menu_keyboard,
                                  REJECT_REASONS, _reject_timeout,
                                  make_authorize_handler, make_revoke_handler,
-                                 verify_keyboard)
+                                 verify_keyboard, cash_keyboard)
 
 _h._TIMEOUTS_ENABLED = False   # don't spawn real 120s timers during unit tests
 from pepper_bot.gate import resolve_access                       # noqa: E402
@@ -293,6 +293,32 @@ class PollerTest(IsolatedAsyncioTestCase):
         self.assertEqual(client.marked, [1])
         self.assertEqual(msgids.get("ABC12345"), 555)   # remembered for slip
 
+    async def test_cash_booking_created_carries_cash_received_button(self):
+        # A CASH booking.created alert gets the manager-gated 💵 Cash received
+        # button (no slip is coming); a bank-transfer one does NOT.
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        cash_alert = {**_ALERT, "source": "bot", "booking_id": 42,
+                      "payment_method": "cash", "ref": "BKCASH01"}
+        ev = {"id": 8, "event_type": "booking.created", "reference": None,
+              "booking_id": 42, "alert": cash_alert, "created_at": _now_iso()}
+        bot, client = FakeBot(600), FakeOutboxClient([ev])
+        await Poller(client, topics, msgids).poll_once(bot)
+        mk = bot.messages[0].get("reply_markup")
+        self.assertIsNotNone(mk)                                  # cash -> button
+        self.assertEqual(mk.inline_keyboard[0][0].callback_data, "pv:cash:b:42")
+
+    async def test_bank_booking_created_has_no_button(self):
+        topics, msgids = _stores()
+        topics.set_topic("alerts", -100, 7)
+        bank_alert = {**_ALERT, "source": "bot", "booking_id": 43,
+                      "payment_method": "bank_transfer", "ref": "BKBANK01"}
+        ev = {"id": 9, "event_type": "booking.created", "reference": None,
+              "booking_id": 43, "alert": bank_alert, "created_at": _now_iso()}
+        bot, client = FakeBot(601), FakeOutboxClient([ev])
+        await Poller(client, topics, msgids).poll_once(bot)
+        self.assertIsNone(bot.messages[0].get("reply_markup"))    # bank -> no button
+
     async def test_slip_threaded_reply(self):
         topics, msgids = _stores()
         topics.set_topic("alerts", -100, 7)
@@ -434,6 +460,27 @@ class FakeActionClient:
         self.reject_calls.append((ref, reason, actor_name))
         return self._reject
 
+    # target-aware forms (hold OR booking). For a hold, record the bare ref so the
+    # existing Phase 3 assertions (confirm_calls == [("FAY9VDPF", ...)]) still hold;
+    # for a booking, record its token 'b:<id>'.
+    @staticmethod
+    def _tok(target):
+        return target.ref if target.kind == "hold" else f"b:{target.booking_id}"
+
+    async def confirm_target(self, target, actor_id=None, actor_name=None,
+                             cash=False):
+        self.confirm_calls.append((self._tok(target), actor_name)
+                                  if not cash else
+                                  (self._tok(target), actor_name, "cash"))
+        return self._confirm
+
+    async def reject_target(self, target, reason, actor_id=None, actor_name=None):
+        return await self.reject_hold(self._tok(target), reason, actor_id=actor_id,
+                                      actor_name=actor_name)
+
+    async def target_state(self, target):
+        return await self.hold_state(self._tok(target))
+
     async def authorize(self, tid, role, name, added_by=None):
         self.authorize_calls.append((tid, role, name))
         return (200, {"ok": True})
@@ -498,6 +545,33 @@ class VerifyKeyboardTest(unittest.TestCase):
         self.assertEqual(row[0].callback_data, "pv:v:FAY9VDPF")
         self.assertEqual(row[1].callback_data, "pv:r:FAY9VDPF")
 
+    def test_booking_target_uses_b_token(self):
+        from pepper_bot.target import Target
+        row = verify_keyboard(Target.booking(42)).inline_keyboard[0]
+        self.assertEqual(row[0].callback_data, "pv:v:b:42")
+        self.assertEqual(row[1].callback_data, "pv:r:b:42")
+        # reason menu, booking target -> pv:rr:<code>:b:<id> (still ≤ 64 bytes)
+        kb = reason_menu_keyboard(Target.booking(42)).inline_keyboard
+        codes = [b.callback_data for r in kb for b in r]
+        self.assertIn("pv:rr:amt:b:42", codes)
+        self.assertIn("pv:ro:b:42", codes)
+        self.assertIn("pv:rc:b:42", codes)
+        self.assertTrue(all(len(c.encode()) <= 64 for c in codes))
+
+    def test_hold_ref_token_is_backward_compatible(self):
+        # a bare hold ref (Phase 3 wire) is unchanged whether passed as str or Target
+        from pepper_bot.target import Target
+        self.assertEqual(verify_keyboard("FAY9VDPF").inline_keyboard[0][0].callback_data,
+                         verify_keyboard(Target.hold("FAY9VDPF")).inline_keyboard[0][0].callback_data)
+
+    def test_cash_keyboard_single_manager_button(self):
+        from pepper_bot.target import Target
+        kb = cash_keyboard(Target.booking(42)).inline_keyboard
+        self.assertEqual(len(kb), 1)
+        self.assertEqual(len(kb[0]), 1)                       # single button
+        self.assertEqual(kb[0][0].callback_data, "pv:cash:b:42")
+        self.assertIn("Cash", kb[0][0].text)
+
     def test_reason_menu_presets_other_and_cancel(self):
         kb = reason_menu_keyboard("FAY9VDPF").inline_keyboard
         codes = [btn.callback_data for row in kb for btn in row]
@@ -549,6 +623,105 @@ class ActionCallbackTest(IsolatedAsyncioTestCase):
         u = _fake_cq(111, "pv:v:FAY9VDPF")         # uid matches owner env
         await h(u, None)
         self.assertEqual(len(client.confirm_calls), 1)   # owner bypasses role check
+
+    async def test_manager_verify_booking_target_routes_to_booking(self):
+        # A bot-created booking's ✅ Verify (pv:v:b:<id>) routes to the booking
+        # verify path — same UX, different target.
+        client = FakeActionClient(role="manager",
+                                  confirm=(200, {"ok": True, "by": "Aisha"}))
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:v:b:42", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.confirm_calls, [("b:42", "Aisha")])   # booking token
+        u.callback_query.message.edit_text.assert_awaited_once()
+        self.assertIn("CONFIRMED by Aisha",
+                      u.callback_query.message.edit_text.await_args.args[0])
+
+    async def test_manager_cash_received_confirms_cash_mode(self):
+        # 💵 Cash received (pv:cash:b:<id>) routes through state (armable pending)
+        # -> confirm_target(cash=True); the alert edits to the DISTINCT cash
+        # signature "💵 CASH confirmed by <name>".
+        client = FakeActionClient(role="manager",
+                                  state={"state": "pending", "armable": True,
+                                         "payment_method": "cash"},
+                                  confirm=(200, {"ok": True, "by": "Aisha",
+                                                 "method": "cash"}))
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:cash:b:42", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.state_calls, ["b:42"])             # state checked FIRST
+        self.assertEqual(client.confirm_calls, [("b:42", "Aisha", "cash")])
+        edit = u.callback_query.message.edit_text.await_args.args[0]
+        self.assertIn("CASH confirmed by Aisha", edit)             # distinct signature
+        self.assertNotIn("✅ CONFIRMED by Aisha", edit)            # NOT the bank one
+
+    async def test_cash_and_bank_signatures_differ(self):
+        # Bank verify -> "✅ CONFIRMED by X"; cash -> "💵 CASH confirmed by X".
+        bank = FakeActionClient(role="manager",
+                                confirm=(200, {"ok": True, "by": "Aisha"}))
+        hb = make_action_callback(bank, owner_id=None, pending_rejects={})
+        ub = _fake_cq(111, "pv:v:b:42", name="Aisha")
+        await hb(ub, None)
+        bank_line = ub.callback_query.message.edit_text.await_args.args[0]
+
+        cash = FakeActionClient(role="manager",
+                                state={"state": "pending", "armable": True},
+                                confirm=(200, {"ok": True, "by": "Aisha"}))
+        hc = make_action_callback(cash, owner_id=None, pending_rejects={})
+        uc = _fake_cq(111, "pv:cash:b:42", name="Aisha")
+        await hc(uc, None)
+        cash_line = uc.callback_query.message.edit_text.await_args.args[0]
+
+        self.assertNotEqual(bank_line, cash_line)                  # ledger-distinct
+        self.assertIn("✅ CONFIRMED by Aisha", bank_line)
+        self.assertIn("💵 CASH confirmed by Aisha", cash_line)
+
+    async def test_stale_cash_tap_on_confirmed_shows_truth_no_fire(self):
+        # A tap on an OLD cash alert for a booking already confirmed by someone
+        # else -> shows "CONFIRMED by X", does NOT fire the cash confirm.
+        client = FakeActionClient(role="manager",
+                                  state={"state": "confirmed", "armable": False,
+                                         "by": "Bob"})
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:cash:b:42", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.state_calls, ["b:42"])
+        self.assertEqual(client.confirm_calls, [])                 # DID NOT fire
+        self.assertIn("CONFIRMED by Bob",
+                      u.callback_query.message.edit_text.await_args.args[0])
+
+    async def test_stale_cash_tap_on_cancelled_shows_truth_no_fire(self):
+        client = FakeActionClient(role="manager",
+                                  state={"state": "cancelled", "armable": False})
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(111, "pv:cash:b:42", name="Aisha")
+        await h(u, None)
+        self.assertEqual(client.confirm_calls, [])                 # DID NOT fire
+        self.assertIn("cancelled",
+                      u.callback_query.message.edit_text.await_args.args[0].lower())
+
+    async def test_staff_cash_tap_bounces_no_confirm(self):
+        # A staff-role tap on 💵 Cash received is denied (manager-gated) — no confirm.
+        client = FakeActionClient(role="staff")
+        h = make_action_callback(client, owner_id=None, pending_rejects={})
+        u = _fake_cq(222, "pv:cash:b:42")
+        await h(u, None)
+        self.assertIn("manager", u.callback_query.answer.await_args.args[0].lower())
+        self.assertEqual(client.confirm_calls, [])                 # NO confirm
+        self.assertEqual(client.state_calls, [])                   # gated before state
+        u.callback_query.message.edit_text.assert_not_awaited()
+
+    async def test_preset_reason_rejects_booking_target(self):
+        client = FakeActionClient(role="manager", reject=(200, {"ok": True}))
+        pr = {}
+        h = make_action_callback(client, owner_id=None, pending_rejects=pr)
+        ctx = _fake_ctx()
+        u = _fake_cq(111, "pv:rr:amt:b:42", name="Aisha", chat_id=-100)
+        await h(u, ctx)
+        ref, reason, actor = client.reject_calls[0]
+        self.assertEqual(ref, "b:42")                       # booking token
+        self.assertEqual(reason, REJECT_REASONS["amt"])
+        self.assertEqual(pr, {})
 
     async def test_reject_opens_reason_menu(self):
         client = FakeActionClient(role="manager")
