@@ -209,6 +209,11 @@ class AlertFormatTest(unittest.TestCase):
         self.assertIn("slip uploaded",
                       format_booking_created({**_ALERT, "has_slip": True}))
 
+    def test_expired_hold_not_actionable(self):
+        t = format_booking_created({**_ALERT, "expired": True})
+        self.assertIn("Hold EXPIRED", t)
+        self.assertNotIn("Hold expires:", t)   # never reads as still open
+
     def test_slip_caption(self):
         c = format_slip_caption("ABC12345", 1200.0)
         self.assertIn("#ABC12345", c)

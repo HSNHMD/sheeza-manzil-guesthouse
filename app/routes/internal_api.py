@@ -176,10 +176,12 @@ def _green_tax(nationality):
 
 
 def _pending_holds_for_ref(reference):
+    # Include 'expired' (swept) pending holds too, so a lapsed request still
+    # renders a truthful (EXPIRED-marked) alert instead of "details unavailable".
     from ..models import Hold
     from sqlalchemy import func
     return (Hold.query.filter(
-        Hold.hold_type == 'pending', Hold.state == 'active',
+        Hold.hold_type == 'pending', Hold.state.in_(('active', 'expired')),
         func.upper(func.substr(Hold.session_token, 1, 8)) == reference)
         .order_by(Hold.id).all())
 
@@ -220,7 +222,9 @@ def _assemble_alert(ev):
         occ = occupancy.compute(items, adults + children, nights)
         rooms = ', '.join(f"{h.qty}× {RoomType.query.get(h.room_type_id).name}"
                           for h in holds)
+        from datetime import datetime
         nat = g.nationality if g else None
+        deadline = min(h.expires_at for h in holds)
         return {'source': 'portal', 'ref': ev.reference,
                 'guest_name': (g.full_name if g else h0.guest_name) or '—',
                 'nationality': nat or '—', 'green_tax': _green_tax(nat),
@@ -228,7 +232,8 @@ def _assemble_alert(ev):
                 'nights': nights, 'rooms': rooms,
                 'adults': adults, 'children': children,
                 'total': round(room_total + occ['fee_total'], 2),
-                'deadline': min(h.expires_at for h in holds).isoformat(),
+                'deadline': deadline.isoformat(),
+                'expired': deadline <= datetime.utcnow(),
                 'has_slip': any(h.payment_slip_filename for h in holds)}
     return None
 
