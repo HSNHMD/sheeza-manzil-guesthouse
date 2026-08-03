@@ -7,6 +7,7 @@ required), and the transactional outbox.
 
 from __future__ import annotations
 
+import datetime as _dt
 import os
 import tempfile
 import unittest
@@ -53,6 +54,13 @@ class InternalApiTest(unittest.TestCase):
                                     status='available', housekeeping_status='clean'))
             db.session.add(PepperUser(telegram_id=111, role='manager',
                                       display_name='Aisha'))
+            # a non-manager staff member + a revoked manager, for the HITL-1 403 probe
+            db.session.add(PepperUser(telegram_id=222, role='staff',
+                                      display_name='Sana'))
+            revoked = PepperUser(telegram_id=333, role='manager',
+                                 display_name='Old Mgr')
+            revoked.revoked_at = _dt.datetime.utcnow()
+            db.session.add(revoked)
             db.session.commit()
         self.c = self.app.test_client()
 
@@ -396,7 +404,7 @@ class InternalApiTest(unittest.TestCase):
     def test_booking_verify_refuses_slipless(self):
         bid = self._pending_verif_booking(slip=None)
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                        json={'actor_name': 'Aisha'}, headers=self._auth())
+                        json={'actor_name': 'Aisha', 'actor_id': 111}, headers=self._auth())
         self.assertEqual(r.status_code, 409)
         self.assertTrue(r.get_json()['no_slip'])
 
@@ -422,7 +430,7 @@ class InternalApiTest(unittest.TestCase):
         from app.models import Booking
         bid = self._pending_cash_booking()
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                        json={'actor_name': 'Aisha', 'cash': True},
+                        json={'actor_name': 'Aisha', 'actor_id': 111, 'cash': True},
                         headers=self._auth())
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertTrue(r.get_json()['ok'])
@@ -433,7 +441,7 @@ class InternalApiTest(unittest.TestCase):
     def test_cash_verify_via_require_slip_false_alias(self):
         bid = self._pending_cash_booking()
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                        json={'actor_name': 'A', 'require_slip': False},
+                        json={'actor_name': 'A', 'actor_id': 111, 'require_slip': False},
                         headers=self._auth())
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.get_json()['ok'])
@@ -441,10 +449,10 @@ class InternalApiTest(unittest.TestCase):
     def test_cash_verify_idempotent_loser_told_winner(self):
         bid = self._pending_cash_booking()
         r1 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                         json={'actor_name': 'Aisha', 'cash': True}, headers=self._auth())
+                         json={'actor_name': 'Aisha', 'actor_id': 111, 'cash': True}, headers=self._auth())
         self.assertTrue(r1.get_json()['ok'])
         r2 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                         json={'actor_name': 'Bob', 'cash': True}, headers=self._auth())
+                         json={'actor_name': 'Bob', 'actor_id': 111, 'cash': True}, headers=self._auth())
         self.assertEqual(r2.status_code, 409)
         self.assertTrue(r2.get_json()['already'])
         self.assertEqual(r2.get_json()['by'], 'Aisha')       # first winner
@@ -454,7 +462,7 @@ class InternalApiTest(unittest.TestCase):
         # (no cash flag) on a slipless booking is still refused.
         bid = self._pending_verif_booking(slip=None)
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                        json={'actor_name': 'Aisha'}, headers=self._auth())
+                        json={'actor_name': 'Aisha', 'actor_id': 111}, headers=self._auth())
         self.assertEqual(r.status_code, 409)
         self.assertTrue(r.get_json()['no_slip'])
 
@@ -501,7 +509,7 @@ class InternalApiTest(unittest.TestCase):
     def test_cash_booking_state_confirmed_after_cash_verify(self):
         bid = self._pending_cash_booking()
         self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                    json={'actor_name': 'Aisha', 'cash': True}, headers=self._auth())
+                    json={'actor_name': 'Aisha', 'actor_id': 111, 'cash': True}, headers=self._auth())
         r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
                        headers=self._auth())
         self.assertEqual(r.get_json()['state'], 'confirmed')
@@ -521,10 +529,10 @@ class InternalApiTest(unittest.TestCase):
     def test_booking_verify_idempotent_loser_gets_winner(self):
         bid = self._pending_verif_booking()
         r1 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                         json={'actor_name': 'Aisha'}, headers=self._auth())
+                         json={'actor_name': 'Aisha', 'actor_id': 111}, headers=self._auth())
         self.assertTrue(r1.get_json()['ok'])
         r2 = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                         json={'actor_name': 'Bob'}, headers=self._auth())
+                         json={'actor_name': 'Bob', 'actor_id': 111}, headers=self._auth())
         self.assertEqual(r2.status_code, 409)
         self.assertTrue(r2.get_json()['already'])
         self.assertEqual(r2.get_json()['by'], 'Aisha')      # the winner, not Bob
@@ -533,7 +541,7 @@ class InternalApiTest(unittest.TestCase):
         from app.models import Booking
         bid = self._pending_verif_booking()
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
-                        json={'actor_name': 'Aisha', 'reason': 'blurry slip'},
+                        json={'actor_name': 'Aisha', 'actor_id': 111, 'reason': 'blurry slip'},
                         headers=self._auth())
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.get_json()['ok'])
@@ -547,9 +555,9 @@ class InternalApiTest(unittest.TestCase):
     def test_booking_verify_refused_after_soft_reject(self):
         bid = self._pending_verif_booking()
         self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
-                    json={'actor_name': 'Aisha', 'reason': 'x'}, headers=self._auth())
+                    json={'actor_name': 'Aisha', 'actor_id': 111, 'reason': 'x'}, headers=self._auth())
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                        json={'actor_name': 'Bob'}, headers=self._auth())
+                        json={'actor_name': 'Bob', 'actor_id': 111}, headers=self._auth())
         self.assertEqual(r.status_code, 409)
         self.assertTrue(r.get_json().get('no_slip'))         # rejected slip = no valid slip
 
@@ -559,7 +567,7 @@ class InternalApiTest(unittest.TestCase):
         bid = self._pending_verif_booking(slip='old_bkslip.jpg')
         # soft-reject first so we can prove the attach clears it
         self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
-                    json={'actor_name': 'A', 'reason': 'blurry'}, headers=self._auth())
+                    json={'actor_name': 'A', 'actor_id': 111, 'reason': 'blurry'}, headers=self._auth())
         data = {'slip': (io.BytesIO(b'\xff\xd8\xffNEWJPEG'), 'new.jpg')}
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/slip',
                         data=data, content_type='multipart/form-data',
@@ -602,7 +610,7 @@ class InternalApiTest(unittest.TestCase):
     def test_booking_state_confirmed_not_armable(self):
         bid = self._pending_verif_booking()
         self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
-                    json={'actor_name': 'Aisha'}, headers=self._auth())
+                    json={'actor_name': 'Aisha', 'actor_id': 111}, headers=self._auth())
         r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
                        headers=self._auth())
         self.assertEqual(r.get_json()['state'], 'confirmed')
@@ -611,7 +619,7 @@ class InternalApiTest(unittest.TestCase):
     def test_booking_state_soft_rejected_not_armable(self):
         bid = self._pending_verif_booking()
         self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
-                    json={'actor_name': 'Aisha', 'reason': 'blurry'}, headers=self._auth())
+                    json={'actor_name': 'Aisha', 'actor_id': 111, 'reason': 'blurry'}, headers=self._auth())
         r = self.c.get(f'/api/internal/pepper/bookings/{bid}/state',
                        headers=self._auth())
         self.assertEqual(r.get_json()['state'], 'slip_rejected')
@@ -649,6 +657,147 @@ class InternalApiTest(unittest.TestCase):
         lst2 = self.c.get('/api/internal/pepper/flows', headers=self._auth())
         self.assertFalse(any(f['telegram_id'] == 424242
                              for f in lst2.get_json()['flows']))
+
+
+class HitlActorRoleTest(InternalApiTest):
+    """HITL-1 interim server-side actor-role enforcement (#20 / review §C.1).
+
+    verify / reject / cancel-confirmed require a manager-or-owner ACTOR resolved
+    server-side from pepper_users. The bot's bearer token alone (no manager actor)
+    is 403 — the credential-level gap Phase 2 left open. The bot-side role gate stays
+    as defence in depth; THIS proves the endpoint no longer trusts the caller."""
+
+    def test_verify_agent_token_no_actor_is_403(self):
+        # Bearer token present (transport ok) but NO actor id -> 403, and the booking
+        # is NOT confirmed (the guard runs before any mutation).
+        from app.models import Booking
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'ghost'}, headers=self._auth())
+        self.assertEqual(r.status_code, 403, r.get_data(as_text=True))
+        with self.app.app_context():
+            self.assertEqual(Booking.query.get(bid).status, 'pending_verification')
+
+    def test_verify_manager_actor_allowed(self):
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Aisha', 'actor_id': 111},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['ok'])
+
+    def test_verify_non_manager_staff_actor_is_403(self):
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Sana', 'actor_id': 222},  # staff role
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_verify_revoked_manager_actor_is_403(self):
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Old Mgr', 'actor_id': 333},  # revoked
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_verify_accepts_actor_telegram_id_alias(self):
+        # The spec field name `actor_telegram_id` is honoured as well as `actor_id`.
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Aisha', 'actor_telegram_id': 111},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def test_reject_non_manager_actor_is_403(self):
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
+                        json={'actor_name': 'Sana', 'actor_id': 222,
+                              'reason': 'blurry'}, headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_reject_manager_actor_allowed(self):
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/reject',
+                        json={'actor_name': 'Aisha', 'actor_id': 111,
+                              'reason': 'blurry'}, headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def test_cash_received_no_actor_is_403(self):
+        # cash-received == booking verify with cash=True — same actor gate.
+        bid = self._pending_cash_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'ghost', 'cash': True},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+
+    # ── new cancel-confirmed endpoint ────────────────────────────────────────
+    def test_cancel_confirmed_no_actor_is_403(self):
+        from app.models import Booking
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/cancel-confirmed',
+                        json={'actor_name': 'ghost', 'reason': 'dup'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+        with self.app.app_context():
+            self.assertEqual(Booking.query.get(bid).status, 'pending_verification')
+
+    def test_cancel_confirmed_non_manager_is_403(self):
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/cancel-confirmed',
+                        json={'actor_name': 'Sana', 'actor_id': 222, 'reason': 'x'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_cancel_confirmed_manager_cancels(self):
+        from app.models import Booking
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/cancel-confirmed',
+                        json={'actor_name': 'Aisha', 'actor_id': 111,
+                              'reason': 'guest no-show'}, headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['ok'])
+        with self.app.app_context():
+            self.assertEqual(Booking.query.get(bid).status, 'cancelled')
+
+    def test_cancel_confirmed_requires_reason(self):
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/cancel-confirmed',
+                        json={'actor_name': 'Aisha', 'actor_id': 111},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 400)   # reason mandatory
+
+    def test_cancel_confirmed_flags_was_confirmed_paid_booking(self):
+        # Cancelling a CONFIRMED (money-attached) booking reports was_confirmed=True
+        # (the caller pings the owner on this).
+        from app.models import db, Booking
+        bid = self._pending_verif_booking()
+        with self.app.app_context():
+            Booking.query.get(bid).status = 'confirmed'
+            db.session.commit()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/cancel-confirmed',
+                        json={'actor_name': 'Aisha', 'actor_id': 111,
+                              'reason': 'refunded'}, headers=self._auth())
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['was_confirmed'])
+
+    def test_env_owner_allowed_without_pepper_users_row(self):
+        # The env owner id is allowed WITHOUT a pepper_users row (owner is env-only).
+        bid = self._pending_verif_booking()
+        os.environ['PEPPER_OWNER_ID'] = '999000'   # not in pepper_users
+        try:
+            r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                            json={'actor_name': 'Owner', 'actor_id': 999000},
+                            headers=self._auth())
+            self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        finally:
+            os.environ.pop('PEPPER_OWNER_ID', None)
+
+    def test_still_401_without_bearer_token(self):
+        # The actor gate is IN ADDITION to the bearer gate — no token is still 401.
+        bid = self._pending_verif_booking()
+        r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
+                        json={'actor_name': 'Aisha', 'actor_id': 111})  # no headers
+        self.assertEqual(r.status_code, 401)
 
 
 if __name__ == '__main__':

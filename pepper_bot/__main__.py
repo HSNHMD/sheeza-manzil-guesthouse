@@ -19,6 +19,7 @@ from telegram.ext import (Application, CommandHandler, TypeHandler,
                           CallbackQueryHandler, MessageHandler, filters)
 
 from .config import Config
+from .extract import HermesExtractor
 from .internal_api import InternalAPIClient
 from .topics import TopicStore
 from .msgids import MsgIdStore
@@ -55,10 +56,17 @@ def build_application(cfg: Config | None = None) -> Application:
     client = InternalAPIClient(cfg.socket_path, cfg.internal_token)
     store = TopicStore(cfg.topics_path)
     msgids = MsgIdStore(cfg.msgids_path)
+    # Single-dictation extractor: K3 (moonshotai/kimi-k3) THROUGH the Hermes gateway
+    # (config-driven; gateway holds the pooled upstream credential). When disabled or
+    # unconfigured the flow runs the strict step-by-step fallback — booking creation
+    # never depends on the LLM being reachable.
+    extractor = HermesExtractor(base_url=cfg.hermes_base_url, model=cfg.hermes_model,
+                                token=cfg.hermes_token, enabled=cfg.llm_enabled)
     # Guided /newbooking flow manager (per-user state + pepper_flows snapshot).
     # Bank block for the success message is fetched via the internal API, never
     # hardcoded.
-    flow_manager = FlowManager(client, get_brand=client.get_brand)
+    flow_manager = FlowManager(client, get_brand=client.get_brand,
+                               extractor=extractor)
 
     async def _post_init(application):
         # Start the outbox->Alerts poller tied to the app lifecycle.

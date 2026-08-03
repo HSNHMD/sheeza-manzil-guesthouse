@@ -14,11 +14,18 @@ Design constraints (hard requirements, do not relax):
   answer can't stall the flow). A missed/dropped reply RE-PROMPTS once, then
   cleanly cancels — never a silent stall.
 
-* LLM is PARSING-ONLY and OPTIONAL. Dates + nationality go through pepper_bot.llm
-  (strict parser first, Gemini fallback); the flow is fully functional with the
-  LLM off (operator types YYYY-MM-DD / an ISO code). Every parsed value is
-  ECHOED BACK for confirmation before it enters the summary card. User text is
-  DATA — never used to build the payload wholesale or decide validation.
+* TWO ENTRY PATHS.
+  - PRIMARY (build #19): SINGLE DICTATION. `/newbooking` posts one force-reply —
+    "dictate the whole booking in one message" — and the one reply is sent to K3
+    via the Hermes gateway (pepper_bot.extract) which returns a booking schema. The
+    flow seeds the draft, then runs a CLARIFY-LOOP (one question at a time) for any
+    unresolved field, then shows the summary. Every extracted value is ECHOED on the
+    summary card for human confirmation (no LLM-derived value is trusted un-echoed).
+  - FALLBACK: the EXISTING strict step-by-step flow, unchanged. Triggered when the
+    extractor is off/unavailable/returns unusable output. The operator types each
+    field (YYYY-MM-DD / an ISO code) exactly as shipped in Phase 2.
+  User text is DATA — never used to act, never to decide validation. Dates +
+  nationality still re-validate through the DETERMINISTIC pepper_bot.llm parser.
 
 * VALIDATION IS THE API'S JOB. The bot does UX-only checks; enforcement is
   POST /bookings (create_group_booking). On an API 4xx/409 the bot surfaces the
@@ -41,8 +48,7 @@ import asyncio
 import json
 import logging
 
-from .llm import parse_date, resolve_nationality
-from .target import Target
+from .llm import normalize_nationality, parse_date, resolve_nationality
 
 log = logging.getLogger("pepper_bot")
 
@@ -103,6 +109,14 @@ class Flow:
         self.task = None               # idle-timeout task
         self.editing = None            # field being edited via ✏️, else None
         self.rooms: list = []          # last /availability snapshot (advisory)
+        # Single-dictation state (build #19). `dictating` is True while we await the
+        # one dictated message; `clarify_queue` is the ordered list of fields the
+        # extractor left unresolved that we still need to ask, one at a time;
+        # `field_attempts` counts asks per field so a 2nd failure drops to the strict
+        # single-field prompt instead of looping.
+        self.dictating = False
+        self.clarify_queue: list = []
+        self.field_attempts: dict = {}
 
     # --- snapshot (restart recovery) ---
     def to_snapshot(self) -> dict:
@@ -134,11 +148,19 @@ class FlowManager:
     bot wires its /newbooking, /nb, /slip, force-reply and nb:* callback handlers
     to these methods."""
 
-    def __init__(self, client, get_brand=None):
+    def __init__(self, client, get_brand=None, extractor=None):
         self.client = client
         self.flows: dict = {}                 # telegram_id -> Flow
         # brand fetcher: bank block for the success message (never hardcoded).
         self._get_brand = get_brand or _default_brand
+        # Optional single-dictation extractor (K3 via Hermes). When it's present AND
+        # enabled we run the dictation path; otherwise every /newbooking runs the
+        # strict step-by-step flow (LLM-off ⇒ strict, exactly as Phase 2 shipped).
+        self.extractor = extractor
+
+    def _dictation_on(self) -> bool:
+        return bool(self.extractor is not None and getattr(self.extractor,
+                                                          "enabled", False))
 
     # ── lifecycle ───────────────────────────────────────────────────────────
     async def start(self, bot, telegram_id, chat_id, thread_id, name):
@@ -152,9 +174,113 @@ class FlowManager:
     async def _begin(self, bot, telegram_id, chat_id, thread_id, name):
         f = Flow(telegram_id, chat_id, thread_id, name=name)
         self.flows[telegram_id] = f
-        await self._prompt_current(bot, f)
+        if self._dictation_on():
+            await self._prompt_dictation(bot, f)
+        else:
+            await self._prompt_current(bot, f)
         await self._persist(f)
         self._arm_idle(bot, f)
+
+    # ── single-dictation primary path (build #19) ────────────────────────────
+    async def _prompt_dictation(self, bot, f):
+        """Post the ONE force-reply that asks the operator to dictate/type the whole
+        booking in a single message."""
+        from telegram import ForceReply
+        f.dictating = True
+        f.step = "dictate"
+        msg = await bot.send_message(
+            chat_id=f.chat_id, message_thread_id=f.thread_id,
+            text=(f"@{f.name} 📝 Type the WHOLE booking in one message — "
+                  "guest name, nationality, dates, room, guests, payment, phone/ID. "
+                  "e.g. `Deluxe, John Smith British, 20-22 sep, 2 adults, transfer, "
+                  "7712345`.\n(Or type anything and I'll ask for whatever's missing.)"),
+            reply_markup=ForceReply(selective=True))
+        f.prompt_id = getattr(msg, "message_id", None)
+
+    async def _consume_dictation(self, bot, f, text):
+        """Run the one dictation through the extractor, seed the draft, then either
+        clarify the gaps (one question at a time) or go straight to summary. On an
+        unusable/None result, announce and drop to the strict step-by-step flow."""
+        result = None
+        try:
+            result = self.extractor.extract(text)
+        except Exception:  # noqa: BLE001 — extractor is best-effort; fall back
+            result = None
+        f.dictating = False
+        if result is None or not result.ok:
+            await self._fallback_to_strict(bot, f)
+            return
+        self._seed_draft_from_extract(f, result)
+        f.clarify_queue = self._clarify_order(result.unresolved)
+        await self._persist(f)
+        await self._advance_clarify(bot, f)
+
+    def _clarify_order(self, unresolved) -> list:
+        """The queue of fields to clarify, in flow order. ROOM is ALWAYS asked: a
+        model-suggested room name is advisory only — the authoritative room pick is
+        a human tap against LIVE availability (which also re-validates dates). Any
+        extractor-suggested room name rides along as a hint in the prompt.
+        `count` is folded into the room step (the room prompt is followed by count
+        only when count is itself unresolved)."""
+        order = [s for s in STEP_ORDER if s not in ("summary",)]
+        want = set(unresolved)
+        want.add("room")                       # never trust a model room name as id
+        return [s for s in order if s in want]
+
+    async def _fallback_to_strict(self, bot, f):
+        """Dictation unavailable / unusable → announce, then run the EXISTING strict
+        multi-step flow unchanged from the first step."""
+        f.dictating = False
+        f.clarify_queue = []
+        f.step = STEP_ORDER[0]
+        await self._say(bot, f, "🧭 Dictation unavailable — switching to "
+                                "step-by-step. I'll ask one field at a time.")
+        await self._prompt_current(bot, f)
+        await self._persist(f)
+
+    def _seed_draft_from_extract(self, f, result):
+        """Map the extractor's cleaned schema into the flow draft (only present
+        values; nulls are left for the clarify-loop). Room type is a NAME from the
+        model — the room STEP re-resolves it against live availability, so we stash
+        the hint and let the clarify-loop confirm the pick."""
+        d = result.data
+        g = d.get("guest", {})
+        gd = f.draft.setdefault("guest", {})
+        if g.get("first_name") and g.get("last_name"):
+            gd["first_name"] = g["first_name"]
+            gd["last_name"] = g["last_name"]
+        for k in ("phone", "nationality", "id_number", "id_type"):
+            if g.get(k):
+                gd[k] = g[k]
+        if d.get("check_in"):
+            f.draft["check_in"] = d["check_in"]
+        if d.get("check_out"):
+            f.draft["check_out"] = d["check_out"]
+        if d.get("adults") is not None:
+            f.draft["adults"] = d["adults"]
+        if d.get("children") is not None:
+            f.draft["children"] = d["children"]
+        if d.get("payment_method"):
+            f.draft["payment_method"] = d["payment_method"]
+        items = d.get("items") or []
+        if items:
+            f.draft["count"] = items[0].get("qty", 1)
+            if items[0].get("room_type"):
+                f.draft["_room_hint"] = items[0]["room_type"]
+
+    async def _advance_clarify(self, bot, f):
+        """Ask the NEXT unresolved field (one at a time). When the queue is empty
+        every field is known → show the summary card for human confirmation."""
+        if f.clarify_queue:
+            field = f.clarify_queue[0]
+            f.step = field
+            f.editing = None
+            await self._prompt_current(bot, f)
+            await self._persist(f)
+            return
+        f.step = "summary"
+        await self._prompt_summary(bot, f)
+        await self._persist(f)
 
     async def _ask_abandon(self, bot, f):
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -215,6 +341,9 @@ class FlowManager:
                 buttons.append([InlineKeyboardButton(
                     name, callback_data=f"nb:room:{rid}")])
         head = (prefix + _PROMPTS["room"]).strip()
+        hint = f.draft.get("_room_hint")
+        if hint:
+            head = f"{head} (you said “{hint}” — confirm the exact type)"
         body = head + "\n" + "\n".join(lines) if lines else \
             head + "\n(no availability for these dates)"
         kb = InlineKeyboardMarkup(buttons) if buttons else None
@@ -303,7 +432,10 @@ class FlowManager:
             return False               # not a reply to THIS flow's live prompt
         text = (getattr(message, "text", "") or "").strip()
         self._touch_idle(bot, f)
-        await self._consume_text(bot, f, text)
+        if f.dictating:
+            await self._consume_dictation(bot, f, text)
+        else:
+            await self._consume_text(bot, f, text)
         return True
 
     async def _consume_text(self, bot, f, text):
@@ -313,12 +445,44 @@ class FlowManager:
             return
         ok, echo = await handler(f, text)
         if not ok:
-            # UX-only re-ask with the reason; do not advance.
-            await self._prompt_current(bot, f, prefix=f"⚠️ {echo}\n")
+            # Clarify-loop 2-strikes rule (build #19): a 2nd failure on the SAME
+            # field drops to a strict single-field prompt (an explicit, format-only
+            # ask) instead of re-asking the fuzzy prompt forever.
+            f.field_attempts[step] = f.field_attempts.get(step, 0) + 1
+            if f.field_attempts[step] >= 2:
+                await self._prompt_strict_field(bot, f, step, reason=echo)
+            else:
+                await self._prompt_current(bot, f, prefix=f"⚠️ {echo}\n")
             return
+        f.field_attempts.pop(step, None)
         if echo:
             await self._say(bot, f, echo)     # echo parsed value for confirmation
         await self._advance(bot, f)
+
+    # Strict single-field prompts used after a 2nd failure on a clarify field —
+    # unambiguous, format-only asks (never fuzzy).
+    _STRICT_FIELD_PROMPTS = {
+        "name": "Type the guest's FIRST and LAST name exactly, space-separated: "
+                "`Firstname Lastname`.",
+        "phone": "Type the phone number using digits only, e.g. `9607712345`.",
+        "nationality": "Type an ISO country code: `MDV` for Maldivian, `IND`, "
+                       "`GBR`, `USA`, …",
+        "id_number": "Type the ID / passport number exactly.",
+        "check_in": "Type the check-IN date as `YYYY-MM-DD`, e.g. `2026-09-20`.",
+        "check_out": "Type the check-OUT date as `YYYY-MM-DD`, e.g. `2026-09-22`.",
+    }
+
+    async def _prompt_strict_field(self, bot, f, step, reason=""):
+        """After 2 failures, re-ask a text field with an explicit format-only prompt
+        (choice fields already re-render their buttons, so those never reach here)."""
+        from telegram import ForceReply
+        strict = self._STRICT_FIELD_PROMPTS.get(step, _PROMPTS.get(step, ""))
+        head = (f"⚠️ {reason}\n" if reason else "")
+        msg = await bot.send_message(
+            chat_id=f.chat_id, message_thread_id=f.thread_id,
+            text=f"@{f.name} {head}{strict}".strip(),
+            reply_markup=ForceReply(selective=True))
+        f.prompt_id = getattr(msg, "message_id", None)
 
     # field setters: return (ok, echo_or_reason)
     async def _set_name(self, f, text):
@@ -477,7 +641,15 @@ class FlowManager:
             await self._prompt_current(bot, f)
             await self._persist(f)
             return
-        idx = STEP_ORDER.index(f.step)
+        # CLARIFY-LOOP (build #19): if we're filling extractor gaps, the just-set
+        # field is the head of the queue — pop it and ask the NEXT gap (one at a
+        # time). Empty queue ⇒ summary. This bypasses the linear STEP_ORDER walk.
+        if f.clarify_queue:
+            if f.clarify_queue[0] == f.step:
+                f.clarify_queue.pop(0)
+            await self._advance_clarify(bot, f)
+            return
+        idx = STEP_ORDER.index(f.step) if f.step in STEP_ORDER else -1
         f.step = STEP_ORDER[min(idx + 1, len(STEP_ORDER) - 1)]
         await self._prompt_current(bot, f)
         await self._persist(f)

@@ -51,6 +51,56 @@ def _parse_date(s):
     return date.fromisoformat(s)
 
 
+# ── HITL-1 interim: server-side actor-role enforcement (#20 / review §C.1) ──
+# The bot's bearer token is TRANSPORT auth only. Confirm/reject/cancel actions
+# additionally require a manager-or-owner ACTOR, enforced HERE (not just in the bot
+# handler) so the agent credential alone can never confirm/cancel a booking. The
+# actor's Telegram id is bound to the human tap; role is looked up server-side.
+
+_MANAGER_ROLES = ('manager', 'owner')
+
+
+def _actor_role(data):
+    """Resolve the acting human's role from the request body's actor id, server-side.
+    Accepts `actor_telegram_id` (spec name) or `actor_id` (what the bot already
+    sends). Returns a role string ('owner'|'manager'|'staff') or None when no valid
+    actor id was supplied / the user is unknown or revoked. The env owner short-
+    circuits to 'owner' WITHOUT a pepper_users row (mirrors the whitelist endpoint —
+    owner is env-only so a DB compromise can't grant it)."""
+    from ..models import PepperUser
+    raw = data.get('actor_telegram_id', data.get('actor_id'))
+    try:
+        tid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    owner_id = os.environ.get('PEPPER_OWNER_ID')
+    if owner_id and str(tid) == str(owner_id):
+        return 'owner'
+    u = PepperUser.query.get(tid)
+    if u is None or not u.is_active:
+        return None
+    return u.role
+
+
+def require_manager_actor(fn):
+    """Endpoint gate: the acting human (from the JSON body's actor id) must be a
+    manager/owner, enforced server-side. A missing/unknown/non-manager/revoked actor
+    is 403 — the agent bearer token alone (no manager actor) can NOT verify/reject/
+    cancel. Stacks ON TOP of @require_bearer (transport auth): a route carrying this
+    decorator has consciously opted into the manager gate, so no future confirm/
+    cancel endpoint can silently forget it (the holds/* endpoints deliberately do
+    NOT carry it — that omission is now explicit per-route)."""
+    @wraps(fn)
+    def _wrap(*a, **kw):
+        data = request.get_json(silent=True) or {}
+        if _actor_role(data) not in _MANAGER_ROLES:
+            return jsonify(
+                ok=False,
+                error='manager or owner actor required for this action'), 403
+        return fn(*a, **kw)
+    return _wrap
+
+
 @internal_api_bp.get('/ping')
 @require_bearer
 def ping():
@@ -553,6 +603,7 @@ def _lock_booking(booking_id):
 
 @internal_api_bp.post('/bookings/<int:booking_id>/verify')
 @require_bearer
+@require_manager_actor
 def booking_verify(booking_id):
     """✅ Verify a bot-created booking: pending_verification → confirmed.
     DB-idempotent: exactly one caller wins; the loser gets who already verified.
@@ -568,6 +619,7 @@ def booking_verify(booking_id):
     from ..models import db
     from ..services.audit import log_activity
     data = request.get_json(silent=True) or {}
+    # actor role enforced by @require_manager_actor above.
     actor_name = data.get('actor_name') or 'staff'
     # cash mode: explicit cash flag OR require_slip=false. Default = slip required.
     cash = bool(data.get('cash')) or (data.get('require_slip') is False)
@@ -598,6 +650,7 @@ def booking_verify(booking_id):
 
 @internal_api_bp.post('/bookings/<int:booking_id>/reject')
 @require_bearer
+@require_manager_actor
 def booking_reject(booking_id):
     """❌ Reject a bot-created booking's slip: SOFT reject — mark
     slip_rejected_at/reason, KEEP status='pending_verification' (so staff can
@@ -607,6 +660,7 @@ def booking_reject(booking_id):
     from ..models import db
     from ..services.audit import log_activity
     data = request.get_json(silent=True) or {}
+    # actor role enforced by @require_manager_actor above.
     actor_name = data.get('actor_name') or 'staff'
     reason = (data.get('reason') or '').strip() or 'no reason given'
     b = _lock_booking(booking_id)
@@ -627,6 +681,51 @@ def booking_reject(booking_id):
                            'reason': reason, 'telegram_id': data.get('actor_id')})
     db.session.commit()
     return jsonify(ok=True, by=actor_name)
+
+
+@internal_api_bp.post('/bookings/<int:booking_id>/cancel-confirmed')
+@require_bearer
+@require_manager_actor
+def booking_cancel_confirmed(booking_id):
+    """❌ Cancel a bot-created booking (manager/owner only, reason required).
+
+    HITL-1 interim (#20 / review §C.1): cancellation is a manager action, enforced
+    server-side — the agent bearer token alone is 403. A reason is mandatory (audit
+    discipline). Cancels from pending_verification OR confirmed → 'cancelled'; a
+    booking already cancelled (or otherwise terminal) is a no-op 409 with the last
+    actor. This is the missing counterpart to verify; per review §C.1 it lands under
+    the SAME server-side actor gate rather than being left ungated.
+    """
+    from datetime import datetime
+    from ..models import db
+    from ..services.audit import log_activity
+    data = request.get_json(silent=True) or {}
+    # actor role enforced by @require_manager_actor above.
+    actor_name = data.get('actor_name') or 'staff'
+    reason = (data.get('reason') or '').strip()
+    if not reason:
+        return jsonify(ok=False, error='cancellation reason required'), 400
+    b = _lock_booking(booking_id)
+    if b is None:
+        return jsonify(error='not found'), 404
+    if b.status not in ('pending_verification', 'confirmed'):
+        return jsonify(ok=False, already=True, state=b.status,
+                       by=_last_actor_by('booking_id', booking_id,
+                                         ['pepper.booking_cancelled'])), 409
+    prior = b.status
+    b.status = 'cancelled'
+    paid = (prior == 'confirmed')
+    log_activity('pepper.booking_cancelled', actor_type='ai_agent',
+                 booking_id=b.id, old_value=prior, new_value='cancelled',
+                 description=(f'Booking {b.booking_ref} cancelled via Pepper by '
+                              f'{actor_name}: {reason}'),
+                 metadata={'booking_id': booking_id, 'actor_name': actor_name,
+                           'reason': reason, 'was_confirmed': paid,
+                           'telegram_id': data.get('actor_id')
+                           or data.get('actor_telegram_id')})
+    db.session.commit()
+    # A confirmed (money-attached) booking being cancelled is owner-noteworthy.
+    return jsonify(ok=True, by=actor_name, booking_id=b.id, was_confirmed=paid)
 
 
 @internal_api_bp.get('/bookings/<int:booking_id>/state')

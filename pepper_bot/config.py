@@ -18,8 +18,16 @@ class Config:
         self.topics_path = os.path.join(self.state_dir, "topics.json")
         self.msgids_path = os.path.join(self.state_dir, "msgids.json")
         self.poll_interval = float(os.environ.get("PEPPER_POLL_INTERVAL", "5"))
-        # OpenRouter (Gemini Flash) key for date/nationality PARSING only. When
-        # unset the flow degrades to strict-format parsing (never breaks). Read
-        # by pepper_bot.llm directly from env (PEPPER_OPENROUTER_KEY); surfaced
-        # here for visibility / a future disable flag.
-        self.openrouter_key = os.environ.get("PEPPER_OPENROUTER_KEY") or None
+        # Single-dictation extraction runs on K3 (moonshotai/kimi-k3) THROUGH the
+        # Hermes gateway (the gateway holds the pooled upstream credential — Pepper
+        # never holds an OpenRouter key). Config-driven; the live endpoint + a
+        # `pepper-k3` alias + reachability are DEPLOY-time wiring (#23). When the
+        # flag is off (or base_url/token unset) the flow runs the strict step-by-step
+        # fallback — booking creation never depends on the LLM being reachable.
+        self.hermes_base_url = os.environ.get("PEPPER_HERMES_BASE_URL") or ""
+        self.hermes_model = os.environ.get("PEPPER_HERMES_MODEL",
+                                           "moonshotai/kimi-k3")
+        # Gateway auth token (bearer). Distinct from the pooled upstream key.
+        self.hermes_token = os.environ.get("PEPPER_HERMES_TOKEN") or ""
+        self.llm_enabled = (os.environ.get("PEPPER_LLM_ENABLED", "").strip().lower()
+                            in ("1", "true", "yes", "on"))
