@@ -125,8 +125,13 @@ class HermesExtractor:
         return {
             "model": self.model,
             # Sampling params stripped per §3 (K3 fixes its own sampling); only a
-            # bounded completion budget is sent.
-            "max_completion_tokens": 512,
+            # bounded completion budget is sent. K3 is a *reasoning* model — its
+            # reasoning_content is billed against this budget before the JSON is
+            # emitted. Live #23 round-trip measured ~380 completion tokens for a
+            # simple booking, so 512 truncated (finish_reason=length, empty
+            # content). 1024 clears observed usage with headroom while staying
+            # bounded; complex dictations still fail soft to the strict flow.
+            "max_completion_tokens": 1024,
             "messages": [
                 {"role": "system", "content": system},
                 # user dictation is DATA — delivered as the user turn only.
