@@ -130,13 +130,13 @@ class InternalApiTest(unittest.TestCase):
     def test_verify_refuses_slipless_hold(self):
         ref = self._pending_hold('NOSLIP01-session-token', slip=None)
         r = self.c.post('/api/internal/pepper/holds/verify',
-                        json={'reference': ref, 'actor_name': 'Aisha'},
+                        json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111},
                         headers=self._auth())
         self.assertEqual(r.status_code, 409)
         self.assertTrue(r.get_json().get('no_slip'))
 
     def test_verify_requires_reference(self):
-        r = self.c.post('/api/internal/pepper/holds/verify', json={},
+        r = self.c.post('/api/internal/pepper/holds/verify', json={'actor_id': 111},
                         headers=self._auth())
         self.assertEqual(r.status_code, 400)
 
@@ -156,11 +156,11 @@ class InternalApiTest(unittest.TestCase):
     def test_verify_idempotent_loser_gets_winner(self):
         ref = self._pending_hold('VERIFY02-session-token')
         r1 = self.c.post('/api/internal/pepper/holds/verify',
-                         json={'reference': ref, 'actor_name': 'Aisha'},
+                         json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111},
                          headers=self._auth())
         self.assertTrue(r1.get_json()['ok'])
         r2 = self.c.post('/api/internal/pepper/holds/verify',
-                         json={'reference': ref, 'actor_name': 'Bob'},
+                         json={'reference': ref, 'actor_name': 'Bob', 'actor_id': 111},
                          headers=self._auth())
         self.assertEqual(r2.status_code, 409)
         self.assertFalse(r2.get_json()['ok'])
@@ -171,7 +171,7 @@ class InternalApiTest(unittest.TestCase):
         from app.models import Hold
         ref = self._pending_hold('REJECT01-session-token')
         r = self.c.post('/api/internal/pepper/holds/reject',
-                        json={'reference': ref, 'actor_name': 'Aisha',
+                        json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111,
                               'reason': 'blurry slip'},
                         headers=self._auth())
         self.assertEqual(r.status_code, 200)
@@ -186,10 +186,10 @@ class InternalApiTest(unittest.TestCase):
     def test_verify_refused_after_soft_reject(self):
         ref = self._pending_hold('REJECT02-session-token')
         self.c.post('/api/internal/pepper/holds/reject',
-                    json={'reference': ref, 'actor_name': 'Aisha', 'reason': 'x'},
+                    json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111, 'reason': 'x'},
                     headers=self._auth())
         r = self.c.post('/api/internal/pepper/holds/verify',
-                        json={'reference': ref, 'actor_name': 'Bob'},
+                        json={'reference': ref, 'actor_name': 'Bob', 'actor_id': 111},
                         headers=self._auth())
         self.assertEqual(r.status_code, 409)               # rejected slip -> no valid slip
         self.assertTrue(r.get_json().get('no_slip'))
@@ -206,7 +206,7 @@ class InternalApiTest(unittest.TestCase):
     def test_state_confirmed_not_armable(self):
         ref = self._pending_hold('STATE02A-session-token')
         self.c.post('/api/internal/pepper/holds/verify',
-                    json={'reference': ref, 'actor_name': 'Aisha'}, headers=self._auth())
+                    json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111}, headers=self._auth())
         r = self.c.get('/api/internal/pepper/holds/state',
                        query_string={'reference': ref}, headers=self._auth())
         self.assertEqual(r.get_json()['state'], 'confirmed')
@@ -215,7 +215,7 @@ class InternalApiTest(unittest.TestCase):
     def test_state_soft_rejected_not_armable(self):
         ref = self._pending_hold('STATE03A-session-token')
         self.c.post('/api/internal/pepper/holds/reject',
-                    json={'reference': ref, 'actor_name': 'Aisha', 'reason': 'blurry'},
+                    json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111, 'reason': 'blurry'},
                     headers=self._auth())
         r = self.c.get('/api/internal/pepper/holds/state',
                        query_string={'reference': ref}, headers=self._auth())
@@ -729,6 +729,52 @@ class HitlActorRoleTest(InternalApiTest):
                         json={'actor_name': 'ghost', 'cash': True},
                         headers=self._auth())
         self.assertEqual(r.status_code, 403)
+
+    # ── holds/* path — same manager-actor gate (widened per HITL-1 v2) ────────
+    def test_holds_verify_no_actor_is_403(self):
+        ref = self._pending_hold('HITLH01-session-token')
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': ref, 'actor_name': 'ghost'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+        with self.app.app_context():
+            from app.models import Hold
+            self.assertEqual(Hold.query.filter_by(
+                session_token='HITLH01-session-token').first().state, 'active')
+
+    def test_holds_verify_staff_actor_is_403(self):
+        ref = self._pending_hold('HITLH02-session-token')
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': ref, 'actor_name': 'Sana', 'actor_id': 222},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_holds_verify_manager_actor_allowed(self):
+        ref = self._pending_hold('HITLH03-session-token')
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def test_holds_verify_no_bearer_is_401(self):
+        ref = self._pending_hold('HITLH06-session-token')
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': ref, 'actor_id': 111})
+        self.assertEqual(r.status_code, 401)
+
+    def test_holds_reject_no_actor_is_403(self):
+        ref = self._pending_hold('HITLH04-session-token')
+        r = self.c.post('/api/internal/pepper/holds/reject',
+                        json={'reference': ref, 'actor_name': 'ghost', 'reason': 'x'},
+                        headers=self._auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_holds_reject_manager_actor_allowed(self):
+        ref = self._pending_hold('HITLH05-session-token')
+        r = self.c.post('/api/internal/pepper/holds/reject',
+                        json={'reference': ref, 'actor_name': 'Aisha', 'actor_id': 111,
+                              'reason': 'blurry'}, headers=self._auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
 
     # ── new cancel-confirmed endpoint ────────────────────────────────────────
     def test_cancel_confirmed_no_actor_is_403(self):

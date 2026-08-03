@@ -88,8 +88,9 @@ def require_manager_actor(fn):
     is 403 — the agent bearer token alone (no manager actor) can NOT verify/reject/
     cancel. Stacks ON TOP of @require_bearer (transport auth): a route carrying this
     decorator has consciously opted into the manager gate, so no future confirm/
-    cancel endpoint can silently forget it (the holds/* endpoints deliberately do
-    NOT carry it — that omission is now explicit per-route)."""
+    cancel endpoint can silently forget it. Applied to BOTH the booking verify/reject/
+    cancel endpoints AND the portal-hold verify/reject endpoints (owner-approved
+    widening 2026-08-03) — every human-consequential confirm/reject is now gated."""
     @wraps(fn)
     def _wrap(*a, **kw):
         data = request.get_json(silent=True) or {}
@@ -417,6 +418,7 @@ def _lock_active_pending(reference):
 
 @internal_api_bp.post('/holds/verify')
 @require_bearer
+@require_manager_actor
 def holds_verify():
     """✅ Verify = confirm the pending hold (creates the Booking). Idempotent:
     exactly one caller wins; the loser gets who already confirmed."""
@@ -451,6 +453,7 @@ def holds_verify():
 
 @internal_api_bp.post('/holds/reject')
 @require_bearer
+@require_manager_actor
 def holds_reject():
     """❌ Reject = release the pending hold with a reason. Idempotent."""
     from datetime import datetime
