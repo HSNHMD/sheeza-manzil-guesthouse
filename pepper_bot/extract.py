@@ -34,12 +34,15 @@ Design invariants (hard, do not relax):
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 from datetime import date
 
 from .llm import normalize_nationality, parse_date_strict
+
+log = logging.getLogger("pepper_bot.extract")
 
 # ── Schema field set (spec §A) ──────────────────────────────────────────────
 
@@ -107,7 +110,7 @@ class HermesExtractor:
 
     def __init__(self, base_url: str | None = None, model: str | None = None,
                  token: str | None = None, enabled: bool | None = None,
-                 timeout: float = 12.0):
+                 timeout: float = 20.0):
         self.base_url = (base_url
                          or os.environ.get("PEPPER_HERMES_BASE_URL", "")).rstrip("/")
         self.model = model or os.environ.get("PEPPER_HERMES_MODEL",
@@ -132,6 +135,17 @@ class HermesExtractor:
             # content). 1024 clears observed usage with headroom while staying
             # bounded; complex dictations still fail soft to the strict flow.
             "max_completion_tokens": 1024,
+            # K3 is a reasoning model; for structured field extraction the chain of
+            # thought is pure latency + budget burn — measured #23: reasoning-ON spent
+            # the whole 1024-token budget in ~36s and emitted EMPTY JSON
+            # (finish_reason=length) -> silent fallback. Disable it: reasoning-OFF
+            # measured ~7.5s + clean JSON. SHAPE MATTERS — OpenRouter's nested
+            # `reasoning` object is honored; the flat `reasoning_effort` param is
+            # dropped by the gateway (no effect). PLAN-B if a provider update makes
+            # {enabled:false} silently regress (K3 reasons again -> empty content,
+            # caught + WARNed in _chat as EMPTY_JSON_REASONING_OVERRUN): swap to a hard
+            # reasoning cap -> {"reasoning": {"max_tokens": 256}} (measured ~8s + JSON).
+            "reasoning": {"enabled": False},
             "messages": [
                 {"role": "system", "content": system},
                 # user dictation is DATA — delivered as the user turn only.
@@ -158,9 +172,27 @@ class HermesExtractor:
                 json=self._payload(system, user),
                 timeout=self.timeout)
             if resp.status_code != 200:
+                log.warning("pepper extract: K3 HTTP %s — falling back to strict flow",
+                            resp.status_code)
                 return None
-            return (resp.json()["choices"][0]["message"]["content"] or "").strip()
-        except Exception:  # noqa: BLE001 — extraction is best-effort; degrade to fallback
+            choice = resp.json()["choices"][0]
+            content = (choice.get("message", {}).get("content") or "").strip()
+            if not content:
+                # RECOGNIZED FAILURE MODE: empty content with finish_reason=length means
+                # K3 spent its whole token budget on reasoning and never emitted the
+                # schema. We send reasoning:{enabled:false} to prevent this; if the
+                # gateway's param translation regresses on a provider update, reasoning
+                # comes back and we land here — name it loudly so it is NOT a silent
+                # regression. (Plan-B hard cap documented in _payload.)
+                log.warning(
+                    "pepper extract: EMPTY_JSON_REASONING_OVERRUN (finish_reason=%s) — "
+                    "K3 emitted no schema; reasoning may have re-enabled upstream; "
+                    "falling back to strict flow", choice.get("finish_reason"))
+                return None
+            return content
+        except Exception as e:  # noqa: BLE001 — extraction is best-effort; degrade to fallback
+            log.warning("pepper extract: K3 call failed (%s: %s) — falling back to "
+                        "strict flow", type(e).__name__, e)
             return None
 
     # ── public entry ─────────────────────────────────────────────────────────
