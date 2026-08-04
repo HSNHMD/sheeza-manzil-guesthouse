@@ -33,7 +33,8 @@ from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
                        make_authorize_handler, make_revoke_handler,
                        make_newbooking_handler, make_flow_callback,
                        make_group_text_router, make_slip_command_handler,
-                       make_slip_photo_handler, make_ask_handler)
+                       make_slip_photo_handler, make_ask_handler,
+                       make_update_logger)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,6 +90,9 @@ def build_application(cfg: Config | None = None) -> Application:
             log.warning("flow resume_all failed")
 
     app = Application.builder().token(cfg.bot_token).post_init(_post_init).build()
+    # group -2: metadata-only inbound-update log (#25) — runs before the gate so
+    # even a stranger's attempt is recorded (from-id/chat/topic/verb, never body).
+    app.add_handler(TypeHandler(object, make_update_logger()), group=-2)
     # group -1: whitelist-before-everything (except /myid).
     app.add_handler(TypeHandler(object, make_whitelist_gate(client, cfg.owner_id)),
                     group=-1)

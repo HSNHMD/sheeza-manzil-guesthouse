@@ -885,5 +885,35 @@ class TTLCacheTest(unittest.TestCase):
         self.assertIsNone(c.get("k"))
 
 
+class UpdateLoggerTest(IsolatedAsyncioTestCase):
+    """#25 metadata-only inbound-update logger: from/chat/topic/verb, never the body."""
+
+    async def test_logs_metadata_only_no_body(self):
+        from pepper_bot.handlers import make_update_logger
+        h = make_update_logger()
+        upd = fake_update(111, text="/ask what is John Smith passport A123",
+                          chat_id=-100, thread_id=4)
+        upd.effective_user.is_bot = False
+        upd.callback_query = None
+        with self.assertLogs("pepper_bot.updates", level="INFO") as cm:
+            await h(upd, None)
+        line = cm.output[0]
+        self.assertIn("from=111", line)
+        self.assertIn("chat=-100", line)
+        self.assertIn("thread=4", line)
+        self.assertIn("/ask", line)
+        self.assertNotIn("John Smith", line)   # NO body / PII
+        self.assertNotIn("A123", line)
+
+    async def test_skips_bot_origin_updates(self):
+        from pepper_bot.handlers import make_update_logger
+        h = make_update_logger()
+        upd = fake_update(999, text="🆕 Booking alert", chat_id=-100, thread_id=3)
+        upd.effective_user.is_bot = True       # ingested alert post / other bot
+        upd.callback_query = None
+        with self.assertNoLogs("pepper_bot.updates", level="INFO"):
+            await h(upd, None)
+
+
 if __name__ == "__main__":
     unittest.main()

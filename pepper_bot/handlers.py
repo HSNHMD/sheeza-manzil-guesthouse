@@ -9,6 +9,7 @@ bot — no reliance on reading arbitrary group messages.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from .gate import resolve_access
@@ -753,6 +754,44 @@ def make_ask_handler(support_agent):
             ans or "⚠️ I couldn't answer that from live data right now — try "
                    "rephrasing, or check the board.")
     return cmd_ask
+
+
+_ulog = logging.getLogger("pepper_bot.updates")
+
+
+def make_update_logger():
+    """Group -2 pre-handler (#25): one INFO line per inbound update so the bot can
+    always testify that a message arrived. METADATA ONLY — from-id, chat-id, topic,
+    and a coarse verb (command name / callback prefix / 'text' / 'media'). NEVER the
+    message body, guest names, or ID numbers. Bot-origin updates (e.g. ingested
+    Alerts posts) are skipped to avoid noise. Never raises, never blocks."""
+    async def on_any(update, context):
+        try:
+            u = getattr(update, "effective_user", None)
+            if u is None or getattr(u, "is_bot", False):
+                return
+            chat = getattr(update, "effective_chat", None)
+            msg = getattr(update, "effective_message", None)
+            cq = getattr(update, "callback_query", None)
+            if cq is not None:
+                data = getattr(cq, "data", "") or ""
+                verb = "tap:" + (data.split(":", 1)[0] if data else "?")
+            elif msg is not None:
+                txt = getattr(msg, "text", None) or ""
+                if txt.startswith("/"):
+                    verb = txt.split()[0].split("@")[0]   # command name only, no args
+                elif getattr(msg, "photo", None) or getattr(msg, "document", None):
+                    verb = "media"
+                else:
+                    verb = "text"                         # shape only, never the body
+            else:
+                verb = "update"
+            _ulog.info("update from=%s chat=%s thread=%s %s",
+                       getattr(u, "id", None), getattr(chat, "id", None),
+                       getattr(msg, "message_thread_id", None), verb)
+        except Exception:  # noqa: BLE001 — logging must never break the pipeline
+            pass
+    return on_any
 
 
 def make_slip_command_handler(flow_manager, store):
