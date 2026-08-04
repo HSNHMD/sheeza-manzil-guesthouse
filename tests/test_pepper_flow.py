@@ -613,6 +613,19 @@ class FlowWiringTest(IsolatedAsyncioTestCase):
         self.assertTrue(bot.sent)
         self.assertIn("Confirm", bot.last_text())
 
+    async def test_resume_all_dictate_step_reprompts_not_crash(self):
+        # A flow persisted mid-dictation must resume without KeyError('dictate').
+        client = FakeFlowClient()
+        client.flow_list = AsyncMock(return_value=[
+            {"telegram_id": 111, "chat_id": -100, "thread_id": 7,
+             "step": "dictate", "draft_json": "{}"}])
+        mgr = FlowManager(client, get_brand=client.get_brand,
+                          extractor=FakeExtractor(_full_extract()))
+        bot = FakeFlowBot()
+        await mgr.resume_all(bot)                     # must NOT raise
+        self.assertIn(111, mgr.flows)
+        self.assertTrue(mgr.flows[111].dictating)     # dictation re-armed
+
     async def test_slip_photo_handler_parses_booking_id_from_reply(self):
         from pepper_bot.handlers import make_slip_photo_handler
         client = FakeFlowClient()

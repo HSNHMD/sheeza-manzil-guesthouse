@@ -833,7 +833,13 @@ class FlowManager:
             step_no = STEP_ORDER.index(f.step) + 1 if f.step in STEP_ORDER else 1
             await self._say(bot, f,
                             f"🔄 I restarted; @{f.name}, we were at step {step_no}.")
-            await self._prompt_current(bot, f)
+            if f.step == "dictate":
+                # Persisted mid-dictation (build #19): 'dictate' is not a strict-step
+                # key, so _prompt_current would KeyError — re-post the dictation
+                # prompt to resume that state cleanly.
+                await self._prompt_dictation(bot, f)
+            else:
+                await self._prompt_current(bot, f)
             self._arm_idle(bot, f)
 
     # ── idle timeout (ping @30m, auto-cancel @60m) ───────────────────────────
