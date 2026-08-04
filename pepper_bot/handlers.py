@@ -653,18 +653,41 @@ def _is_alerts_topic(update, store):
             and getattr(msg, "message_thread_id", None) == a["thread_id"])
 
 
-async def _nudge_to_newbooking(bot, chat_id, thread_id, uid, nudge_state):
-    """#25/#22: never answer with silence. In a human topic (not New Booking, not
-    the Alerts channel) point the sender at the New Booking topic — rate-limited to
-    once per sender per topic per hour so a chatty topic can't be spammed."""
+_Q_STARTERS = frozenset((
+    "who", "what", "what's", "whats", "when", "where", "why", "how", "how's",
+    "hows", "which", "is", "are", "am", "do", "does", "did", "can", "could",
+    "should", "would", "will", "has", "have", "any", "anyone", "occupancy",
+))
+
+
+def _looks_like_question(text: str) -> bool:
+    """Cheap shape test: a trailing '?' or an interrogative first word. Used only to
+    point a General-topic message at /ask vs New Booking — never to gate anything."""
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if t.endswith("?"):
+        return True
+    first = t.split()[0].strip(".,!'’")
+    return first in _Q_STARTERS
+
+
+async def _nudge_to_newbooking(bot, chat_id, thread_id, uid, nudge_state, text=""):
+    """#25/#22: never answer with silence. In a human topic (not New Booking, not the
+    Alerts channel) point the sender the right way — a question → /ask (teach it in
+    situ, #35), otherwise → the New Booking topic. Rate-limited to once per sender per
+    topic per hour so a chatty topic can't be spammed."""
     key = (chat_id, thread_id, uid)
     now = time.monotonic()
     if now - nudge_state.get(key, 0.0) < _NUDGE_INTERVAL_S:
         return
     nudge_state[key] = now
-    await bot.send_message(
-        chat_id=chat_id, message_thread_id=thread_id,
-        text="📝 To make a booking, post it in the ✍️ New Booking topic.")
+    if _looks_like_question(text):
+        body = ("❓ To ask a question, use `/ask` — e.g. "
+                "`/ask what's the occupancy today?`")
+    else:
+        body = "📝 To make a booking, post it in the ✍️ New Booking topic."
+    await bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=body)
 
 
 def make_group_text_router(flow_manager, store, reject_reason_handler,
@@ -704,8 +727,32 @@ def make_group_text_router(flow_manager, store, reject_reason_handler,
             return
         await _nudge_to_newbooking(context.bot, chat.id,
                                    getattr(msg, "message_thread_id", None),
-                                   uid, nudge_state)
+                                   uid, nudge_state, getattr(msg, "text", "") or "")
     return on_text
+
+
+def make_ask_handler(support_agent):
+    """/ask <question> — Tier 0 read-only Q&A (PEPPER-SUPPORT-001, #35). Works from
+    any topic; the group -1 whitelist gate already restricts it to authorized staff.
+    Read-only: it can look things up but can never make/verify/cancel anything."""
+    async def cmd_ask(update, context):
+        msg = update.effective_message
+        q = " ".join(getattr(context, "args", None) or []).strip()
+        if not q:
+            await msg.reply_text(
+                "Ask me a question — e.g. `/ask what's the occupancy today?`")
+            return
+        if support_agent is None or not getattr(support_agent, "enabled", False):
+            await msg.reply_text("⚠️ Q&A isn't available right now.")
+            return
+        try:
+            ans = await support_agent.answer(q)
+        except Exception:  # noqa: BLE001 — Q&A is best-effort
+            ans = None
+        await msg.reply_text(
+            ans or "⚠️ I couldn't answer that from live data right now — try "
+                   "rephrasing, or check the board.")
+    return cmd_ask
 
 
 def make_slip_command_handler(flow_manager, store):

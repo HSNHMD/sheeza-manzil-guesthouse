@@ -49,6 +49,28 @@ class InternalAPIClient:
     def _url(self, path):
         return f"{self.base_url}/api/internal/pepper{path}"
 
+    # ── Tier 0 read-only support reads (#35). Used by the /ask agent with the
+    #    read-only token; the API 403s that token on every write endpoint. ──────
+    async def occupancy(self, date_str=None) -> dict:
+        q = f"?date={date_str}" if date_str else ""
+        async with self._client() as client:
+            resp = await client.get(self._url(f"/occupancy{q}"), headers=self._auth())
+            return resp.json() if resp.status_code == 200 else {"error": resp.status_code}
+
+    async def availability_search(self, check_in, check_out, guests=1) -> dict:
+        q = f"?check_in={check_in}&check_out={check_out}&guests={guests}"
+        async with self._client() as client:
+            resp = await client.get(self._url(f"/availability{q}"), headers=self._auth())
+            return resp.json() if resp.status_code == 200 else {"error": resp.status_code}
+
+    async def booking_lookup(self, query) -> dict:
+        from urllib.parse import quote as _q
+        async with self._client() as client:
+            resp = await client.get(self._url(f"/booking?query={_q(str(query))}"),
+                                    headers=self._auth())
+            return (resp.json() if resp.status_code in (200, 404)
+                    else {"error": resp.status_code})
+
     async def whitelist(self, telegram_id: int) -> dict:
         """Return {'allowed': bool, 'role': str|None}. Cached for ttl_seconds.
         Never raises for a normal deny — only propagates transport errors so the

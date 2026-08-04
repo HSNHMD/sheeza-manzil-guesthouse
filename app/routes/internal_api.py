@@ -31,17 +31,57 @@ def _expected_token():
             or os.environ.get('PEPPER_INTERNAL_TOKEN') or '')
 
 
+def _support_ro_token():
+    """The read-only Tier 0 support token (PEPPER_SUPPORT_RO_TOKEN). Distinct from
+    the full internal token; grants READ capability only (Q&A tool calls)."""
+    return (current_app.config.get('PEPPER_SUPPORT_RO_TOKEN')
+            or os.environ.get('PEPPER_SUPPORT_RO_TOKEN') or '')
+
+
+def _bearer_token():
+    auth = request.headers.get('Authorization', '')
+    return auth[7:] if auth.startswith('Bearer ') else ''
+
+
+def _token_cap(token):
+    """Capability of a presented bearer: 'write' (full internal token), 'read'
+    (support_ro token), or None (unknown). Constant-time compares."""
+    if not token:
+        return None
+    full = _expected_token()
+    if full and hmac.compare_digest(token, full):
+        return 'write'
+    ro = _support_ro_token()
+    if ro and hmac.compare_digest(token, ro):
+        return 'read'
+    return None
+
+
 def require_bearer(fn):
-    """Constant-time bearer check. 401 on missing/blank/mismatched token; 503 if
-    the server has no token configured (fail closed, never open)."""
+    """WRITE-capability gate. 503 if unconfigured; 401 on unknown/blank token; a
+    valid but READ-ONLY token (support_ro) gets **403** — structurally unable to
+    reach any mutating endpoint. Full internal token passes."""
     @wraps(fn)
     def _wrap(*a, **kw):
-        expected = _expected_token()
-        if not expected:
+        if not _expected_token():
             return jsonify(error='internal API not configured'), 503
-        auth = request.headers.get('Authorization', '')
-        token = auth[7:] if auth.startswith('Bearer ') else ''
-        if not token or not hmac.compare_digest(token, expected):
+        cap = _token_cap(_bearer_token())
+        if cap is None:
+            return jsonify(error='unauthorized'), 401
+        if cap != 'write':
+            return jsonify(error='read-only token cannot perform this action'), 403
+        return fn(*a, **kw)
+    return _wrap
+
+
+def require_read(fn):
+    """READ-capability gate for Tier 0 support endpoints. Accepts EITHER the full
+    internal token or the read-only support_ro token; 401 on anything else."""
+    @wraps(fn)
+    def _wrap(*a, **kw):
+        if not _expected_token():
+            return jsonify(error='internal API not configured'), 503
+        if _token_cap(_bearer_token()) is None:
             return jsonify(error='unauthorized'), 401
         return fn(*a, **kw)
     return _wrap
@@ -137,7 +177,7 @@ def brand():
 
 
 @internal_api_bp.get('/availability')
-@require_bearer
+@require_read
 def availability():
     from ..services import portal as portal_svc
     try:
@@ -155,6 +195,68 @@ def availability():
                            'price_total_per_room': c['price_total_per_room'],
                            'price_per_night': c['price_per_night']}
                           for c in cards])
+
+
+# ── Tier 0 read-only Q&A endpoints (PEPPER-SUPPORT-001) ──────────────────────
+# require_read: full internal token OR the read-only support_ro token. No writes.
+
+@internal_api_bp.get('/occupancy')
+@require_read
+def occupancy():
+    from ..models import Room, Booking
+    from ..services import board
+    raw = request.args.get('date')
+    try:
+        d = _parse_date(raw) if raw else date.today()
+    except ValueError:
+        return jsonify(error='date must be YYYY-MM-DD'), 400
+    rooms = Room.query.all()
+    bookings = Booking.query.filter(
+        Booking.check_in_date <= d, Booking.check_out_date > d).all()
+    total = len(rooms)
+    ooo = sum(1 for r in rooms
+              if (getattr(r, 'status', '') or '').strip().lower()
+              in ('out_of_order', 'maintenance', 'blocked'))
+    occupied = sum(1 for r in rooms if board.is_room_occupied_today(r, d, bookings))
+    available = max(total - ooo - occupied, 0)
+    return jsonify(date=d.isoformat(), total_rooms=total, occupied=occupied,
+                   available=available, out_of_order=ooo,
+                   occupancy_pct=(round(100 * occupied / total) if total else 0))
+
+
+@internal_api_bp.get('/booking')
+@require_read
+def booking_lookup():
+    """Look up ONE booking by id / booking_ref / guest name / phone. Returns status
+    flags only — NO payment artifacts (no slip filename/drive id)."""
+    from sqlalchemy import or_
+    from ..models import Booking, Guest
+    q = (request.args.get('query') or '').strip()
+    if not q:
+        return jsonify(error='query required (id, ref, name, or phone)'), 400
+    b = None
+    if q.isdigit():
+        b = Booking.query.get(int(q))
+    if b is None:
+        b = Booking.query.filter(Booking.booking_ref.ilike(q)).first()
+    if b is None:
+        like = f'%{q}%'
+        b = (Booking.query.join(Guest)
+             .filter(or_(Guest.phone.ilike(like),
+                         Guest.first_name.ilike(like),
+                         Guest.last_name.ilike(like)))
+             .order_by(Booking.id.desc()).first())
+    if b is None:
+        return jsonify(found=False), 404
+    g = b.guest
+    return jsonify(found=True, id=b.id, booking_ref=b.booking_ref, status=b.status,
+                   guest_name=(f'{g.first_name} {g.last_name}'.strip() if g else None),
+                   nationality=(g.nationality if g else None),
+                   check_in=b.check_in_date.isoformat(),
+                   check_out=b.check_out_date.isoformat(),
+                   adults=b.adults, children=b.children, num_guests=b.num_guests,
+                   total_amount=float(b.total_amount or 0),
+                   payment_method=b.payment_method)
 
 
 @internal_api_bp.post('/quote')

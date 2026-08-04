@@ -20,6 +20,7 @@ from telegram.ext import (Application, CommandHandler, TypeHandler,
 
 from .config import Config
 from .extract import HermesExtractor
+from .support import SupportAgent
 from .internal_api import InternalAPIClient
 from .topics import TopicStore
 from .msgids import MsgIdStore
@@ -32,7 +33,7 @@ from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
                        make_authorize_handler, make_revoke_handler,
                        make_newbooking_handler, make_flow_callback,
                        make_group_text_router, make_slip_command_handler,
-                       make_slip_photo_handler)
+                       make_slip_photo_handler, make_ask_handler)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +68,14 @@ def build_application(cfg: Config | None = None) -> Application:
     # hardcoded.
     flow_manager = FlowManager(client, get_brand=client.get_brand,
                                extractor=extractor)
+    # Tier 0 read-only Q&A (/ask, #35): a SECOND internal client bound to the
+    # read-only support token (403s every write endpoint), + the K3 tool-calling
+    # agent through the same pepper-proxy. Disabled unless the RO token is placed.
+    ro_client = (InternalAPIClient(cfg.socket_path, cfg.support_ro_token)
+                 if cfg.support_ro_token else None)
+    support_agent = SupportAgent(ro_client, base_url=cfg.hermes_base_url,
+                                 model=cfg.hermes_model, token=cfg.hermes_token,
+                                 enabled=cfg.llm_enabled)
 
     async def _post_init(application):
         # Start the outbox->Alerts poller tied to the app lifecycle.
@@ -99,6 +108,8 @@ def build_application(cfg: Config | None = None) -> Application:
     pending_rejects: dict = {}
     app.add_handler(CallbackQueryHandler(
         make_action_callback(client, cfg.owner_id, pending_rejects), pattern=r"^pv:"))
+    # Tier 0 read-only Q&A (#35): /ask <question> from any topic (whitelist-gated).
+    app.add_handler(CommandHandler("ask", make_ask_handler(support_agent)))
     # Phase 2: guided /newbooking flow.
     app.add_handler(CommandHandler(
         ["newbooking", "nb"], make_newbooking_handler(flow_manager, store)))

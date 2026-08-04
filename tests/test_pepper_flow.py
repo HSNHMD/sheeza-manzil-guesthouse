@@ -626,6 +626,39 @@ class FlowWiringTest(IsolatedAsyncioTestCase):
         self.assertIn(111, mgr.flows)
         self.assertTrue(mgr.flows[111].dictating)     # dictation re-armed
 
+    async def test_general_nudge_question_points_to_ask(self):
+        router, mgr, bot, *_ = self._wire()
+        await router(_upd(111, _plain_msg("what's the occupancy today?", -100, 3),
+                          -100), self._ctx(bot))
+        self.assertEqual(len(bot.sent), 1)
+        self.assertIn("/ask", bot.last_text())
+
+    async def test_general_nudge_booking_shaped_points_to_newbooking(self):
+        router, mgr, bot, *_ = self._wire()
+        await router(_upd(111, _plain_msg("deluxe for John tomorrow 2 adults", -100, 3),
+                          -100), self._ctx(bot))
+        self.assertEqual(len(bot.sent), 1)
+        self.assertIn("New Booking", bot.last_text())
+
+    async def test_ask_handler_answers_then_usage(self):
+        from pepper_bot.handlers import make_ask_handler
+
+        class _Agent:
+            enabled = True
+            async def answer(self, q):
+                return "7 of 12 rooms occupied."
+        h = make_ask_handler(_Agent())
+        upd = MagicMock(); upd.effective_message.reply_text = AsyncMock()
+        await h(upd, MagicMock(args=["occupancy", "today?"]))
+        upd.effective_message.reply_text.assert_awaited_once()
+        self.assertIn("occupied",
+                      upd.effective_message.reply_text.await_args.args[0])
+        h2 = make_ask_handler(None)                     # empty args -> usage
+        upd2 = MagicMock(); upd2.effective_message.reply_text = AsyncMock()
+        await h2(upd2, MagicMock(args=[]))
+        self.assertIn("ask",
+                      upd2.effective_message.reply_text.await_args.args[0].lower())
+
     async def test_slip_photo_handler_parses_booking_id_from_reply(self):
         from pepper_bot.handlers import make_slip_photo_handler
         client = FakeFlowClient()

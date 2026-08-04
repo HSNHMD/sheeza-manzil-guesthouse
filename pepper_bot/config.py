@@ -9,6 +9,10 @@ class Config:
     def __init__(self):
         self.bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
         self.internal_token = os.environ["PEPPER_INTERNAL_TOKEN"]
+        # Tier 0 read-only support token (PEPPER-SUPPORT-001). Distinct from the full
+        # internal token; the /ask Q&A path uses ONLY this for its tool reads, and the
+        # internal API 403s it on every write/verify/cancel endpoint.
+        self.support_ro_token = os.environ.get("PEPPER_SUPPORT_RO_TOKEN") or ""
         self.socket_path = os.environ.get(
             "PEPPER_SOCKET", "/run/pepper/pepper.sock")
         # Owner is env-only so a DB compromise can't grant owner (spec §4.2/§8).

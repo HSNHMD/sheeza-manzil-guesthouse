@@ -26,6 +26,7 @@ from internal_wsgi import create_internal_app                        # noqa: E40
 _CI = (date.today() + timedelta(days=20)).isoformat()
 _CO = (date.today() + timedelta(days=22)).isoformat()
 _TOKEN = 'test-pepper-internal-token-0123456789abcdef'
+_RO_TOKEN = 'test-pepper-support-ro-token-fedcba9876543210'
 
 
 class InternalApiTest(unittest.TestCase):
@@ -38,6 +39,7 @@ class InternalApiTest(unittest.TestCase):
             WTF_CSRF_ENABLED = False
             WHATSAPP_ENABLED = False
             PEPPER_INTERNAL_TOKEN = _TOKEN
+            PEPPER_SUPPORT_RO_TOKEN = _RO_TOKEN
 
         self.app = create_internal_app(_Cfg)
         with self.app.app_context():
@@ -75,6 +77,9 @@ class InternalApiTest(unittest.TestCase):
 
     def _auth(self):
         return {'Authorization': f'Bearer {_TOKEN}'}
+
+    def _ro_auth(self):
+        return {'Authorization': f'Bearer {_RO_TOKEN}'}
 
     # --- alert assembly (§7.2) + slip ---
     def test_outbox_alert_assembly_portal_pending(self):
@@ -844,6 +849,78 @@ class HitlActorRoleTest(InternalApiTest):
         r = self.c.post(f'/api/internal/pepper/bookings/{bid}/verify',
                         json={'actor_name': 'Aisha', 'actor_id': 111})  # no headers
         self.assertEqual(r.status_code, 401)
+
+
+class Tier0ReadOnlyTest(InternalApiTest):
+    """PEPPER-SUPPORT-001 Tier 0: the read-only support token reads occupancy /
+    availability / booking, and is structurally 403'd on every write endpoint."""
+
+    def test_occupancy_read_with_ro_token(self):
+        r = self.c.get('/api/internal/pepper/occupancy', headers=self._ro_auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        j = r.get_json()
+        self.assertEqual(j['total_rooms'], 3)
+        self.assertIn('occupied', j)
+        self.assertIn('available', j)
+
+    def test_occupancy_bad_date_400(self):
+        r = self.c.get('/api/internal/pepper/occupancy?date=notadate',
+                       headers=self._ro_auth())
+        self.assertEqual(r.status_code, 400)
+
+    def test_availability_read_with_ro_token(self):
+        r = self.c.get(f'/api/internal/pepper/availability?check_in={_CI}'
+                       f'&check_out={_CO}', headers=self._ro_auth())
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertIn('rooms', r.get_json())
+
+    def test_booking_lookup_ro_not_found_then_found_no_payment_artifacts(self):
+        r = self.c.get('/api/internal/pepper/booking?query=NOPE',
+                       headers=self._ro_auth())
+        self.assertEqual(r.status_code, 404)
+        self.assertFalse(r.get_json()['found'])
+        cr = self.c.post('/api/internal/pepper/bookings', json=self._booking_body(),
+                         headers=self._auth())
+        self.assertEqual(cr.status_code, 201, cr.get_data(as_text=True))
+        f = self.c.get('/api/internal/pepper/booking?query=B', headers=self._ro_auth())
+        self.assertEqual(f.status_code, 200, f.get_data(as_text=True))
+        j = f.get_json()
+        self.assertTrue(j['found'])
+        self.assertEqual(j['guest_name'], 'A B')
+        # status flags only — NO payment artifacts
+        self.assertNotIn('payment_slip_filename', j)
+        self.assertNotIn('payment_slip_drive_id', j)
+
+    # ── 403 probe: the read-only token cannot reach ANY write path ───────────
+    def test_ro_403_on_create_booking(self):
+        r = self.c.post('/api/internal/pepper/bookings', json=self._booking_body(),
+                        headers=self._ro_auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_ro_403_on_holds_verify(self):
+        r = self.c.post('/api/internal/pepper/holds/verify',
+                        json={'reference': 'X', 'actor_id': 111},
+                        headers=self._ro_auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_ro_403_on_booking_verify(self):
+        r = self.c.post('/api/internal/pepper/bookings/1/verify',
+                        json={'actor_id': 111}, headers=self._ro_auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_ro_403_on_cancel_confirmed(self):
+        r = self.c.post('/api/internal/pepper/bookings/1/cancel-confirmed',
+                        json={'actor_id': 111, 'reason': 'x'}, headers=self._ro_auth())
+        self.assertEqual(r.status_code, 403)
+
+    def test_unknown_token_401_on_read(self):
+        r = self.c.get('/api/internal/pepper/occupancy',
+                       headers={'Authorization': 'Bearer totally-wrong-token'})
+        self.assertEqual(r.status_code, 401)
+
+    def test_full_token_can_also_read_occupancy(self):
+        r = self.c.get('/api/internal/pepper/occupancy', headers=self._auth())
+        self.assertEqual(r.status_code, 200)
 
 
 if __name__ == '__main__':
