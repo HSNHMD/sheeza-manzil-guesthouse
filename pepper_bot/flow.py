@@ -438,10 +438,63 @@ class FlowManager:
             await self._consume_text(bot, f, text)
         return True
 
+    async def handle_group_text(self, bot, message, telegram_id, *,
+                                in_newbooking_topic) -> bool:
+        """Privacy-off routing (#22): consume a PLAIN message by sender+topic state,
+        with NO reply-to threading. Returns True if a flow consumed it or was started
+        from it. An active flow is continued only from the New Booking topic (where
+        the flow lives); a plain line in the New Booking topic with no open flow
+        STARTS a booking from that text. Anti-contamination now rides on topic-scope
+        + one-draft-per-user (#24), not reply-id matching."""
+        text = (getattr(message, "text", "") or "").strip()
+        f = self.flows.get(telegram_id)
+        if f is not None:
+            if not in_newbooking_topic:
+                return False              # a live flow's answers only count in its topic
+            self._touch_idle(bot, f)
+            if f.dictating:
+                await self._consume_dictation(bot, f, text)
+            else:
+                await self._consume_text(bot, f, text)
+            return True
+        if in_newbooking_topic and text:
+            await self._begin_from_text(bot, telegram_id, message, text)
+            return True
+        return False
+
+    async def _begin_from_text(self, bot, telegram_id, message, text):
+        """A plain line in the New Booking topic with no open flow. With dictation on,
+        the line IS the dictation (no 'type the whole booking' pre-prompt); with it
+        off, open the strict step-by-step flow (the line just triggers the first
+        field). Booking creation still happens ONLY on the summary-card ✅ Confirm."""
+        chat_id = getattr(message, "chat_id", None)
+        thread_id = getattr(message, "message_thread_id", None)
+        u = getattr(message, "from_user", None)
+        name = (getattr(u, "full_name", None) or getattr(u, "first_name", None)
+                or str(telegram_id))
+        f = Flow(telegram_id, chat_id, thread_id, name=name)
+        self.flows[telegram_id] = f
+        self._arm_idle(bot, f)
+        if self._dictation_on():
+            await self._consume_dictation(bot, f, text)   # the line IS the dictation
+        else:
+            await self._prompt_current(bot, f)            # strict: line just triggers
+            await self._persist(f)
+
     async def _consume_text(self, bot, f, text):
         step = f.editing or f.step
         handler = getattr(self, f"_set_{step}", None)
         if handler is None:
+            # #22/#25 — NEVER go silent. At the summary card the only valid actions
+            # are the inline buttons; re-point the operator there instead of dropping
+            # the message. Any other parserless state gets a generic re-prompt.
+            if step == "summary":
+                await self._say(bot, f, "👉 Please tap ✅ Confirm, ✏️ Edit, or ❌ "
+                                        "Cancel on the card above — or /cancel to "
+                                        "start over.")
+            else:
+                await self._say(bot, f, "🤔 I didn't catch that — use the buttons "
+                                        "above, or /cancel to start over.")
             return
         ok, echo = await handler(f, text)
         if not ok:

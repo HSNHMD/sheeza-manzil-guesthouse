@@ -501,37 +501,117 @@ class FlowSlipTest(IsolatedAsyncioTestCase):
         self.assertIn("#42", msg.reply_text.await_args.args[0])
 
 
-class FlowWiringTest(IsolatedAsyncioTestCase):
-    """The __main__ text router: a flow force-reply is claimed by the flow FIRST;
-    anything else falls through to the Phase 3 reject-reason handler (so booking
-    answers and reject reasons never cross-contaminate)."""
+def _plain_msg(text, chat_id, thread_id, uid=111, name="Aisha"):
+    """A non-reply plain group message (privacy OFF)."""
+    m = MagicMock()
+    m.text = text
+    m.chat_id = chat_id
+    m.message_thread_id = thread_id
+    m.reply_to_message = None
+    m.from_user = MagicMock(full_name=name, first_name=name, id=uid)
+    m.reply_text = AsyncMock()
+    return m
 
-    async def test_text_router_flow_claims_then_falls_through(self):
-        from pepper_bot.handlers import make_flow_text_router
+
+def _upd(uid, msg, chat_id):
+    u = MagicMock()
+    u.effective_user.id = uid
+    u.effective_chat.id = chat_id
+    u.effective_message = msg
+    return u
+
+
+class _StubStore:
+    """Minimal TopicStore stand-in for router tests."""
+    def __init__(self, mapping):
+        self._m = mapping
+
+    def get(self, label):
+        return self._m.get(label)
+
+
+_BOUND = {"newbooking": {"chat_id": -100, "thread_id": 7},
+          "alerts": {"chat_id": -100, "thread_id": 9},
+          "general": {"chat_id": -100, "thread_id": 3}}
+
+
+class FlowWiringTest(IsolatedAsyncioTestCase):
+    """The __main__ catch-all text router (privacy OFF, #22): hard-ignore outside
+    the bound chat; New-Booking-topic text → the flow; the Alerts reject-reason
+    path preserved; nudge (rate-limited) in human topics; nothing ever silent."""
+
+    def _wire(self, extractor=None):
+        from pepper_bot.handlers import make_group_text_router
+        client = FakeFlowClient()
+        mgr = FlowManager(client, get_brand=client.get_brand, extractor=extractor)
+        bot = FakeFlowBot()
+        pending, nudge_state, reject = {}, {}, AsyncMock()
+        router = make_group_text_router(mgr, _StubStore(_BOUND), reject,
+                                        pending, nudge_state)
+        return router, mgr, bot, pending, nudge_state, reject
+
+    def _ctx(self, bot):
+        c = MagicMock(); c.bot = bot; return c
+
+    async def test_reply_to_live_prompt_still_claimed_by_flow(self):
+        router, mgr, bot, pending, nudge_state, reject = self._wire()
+        await mgr.start(bot, 111, -100, 7, "Aisha")   # strict flow (no extractor)
+        f = mgr.flows[111]
+        msg = _reply_msg("Ahmed Hassan", f.prompt_id)
+        msg.chat_id = -100; msg.message_thread_id = 7
+        await router(_upd(111, msg, -100), self._ctx(bot))
+        reject.assert_not_awaited()
+        self.assertEqual(f.step, "phone")
+
+    async def test_L0_foreign_chat_hard_ignored(self):
+        router, mgr, bot, pending, nudge_state, reject = self._wire(
+            FakeExtractor(_full_extract()))
+        await router(_upd(111, _plain_msg("hi", -999, 7), -999), self._ctx(bot))
+        self.assertEqual(bot.sent, [])            # no reply
+        self.assertNotIn(111, mgr.flows)          # no flow started
+        reject.assert_not_awaited()
+
+    async def test_plain_text_in_newbooking_starts_dictation(self):
+        ex = FakeExtractor(_full_extract())
+        router, mgr, bot, *_ = self._wire(ex)
+        txt = "Deluxe John Smith British 20-22 sep 2 adults transfer"
+        await router(_upd(111, _plain_msg(txt, -100, 7), -100), self._ctx(bot))
+        self.assertIn(111, mgr.flows)             # flow started from the plain line
+        self.assertEqual(ex.calls, [txt])         # the line WAS the dictation
+
+    async def test_active_flow_plain_text_continues(self):
+        router, mgr, bot, *_ = self._wire()       # strict flow
+        await mgr.start(bot, 111, -100, 7, "Aisha")
+        f = mgr.flows[111]
+        await router(_upd(111, _plain_msg("Ahmed Hassan", -100, 7), -100),
+                     self._ctx(bot))
+        self.assertEqual(f.step, "phone")         # consumed as the name answer
+
+    async def test_general_topic_nudges_once_per_hour(self):
+        router, mgr, bot, pending, nudge_state, reject = self._wire()
+        await router(_upd(111, _plain_msg("hello", -100, 3), -100), self._ctx(bot))
+        self.assertEqual(len(bot.sent), 1)
+        self.assertIn("New Booking", bot.last_text())
+        await router(_upd(111, _plain_msg("again", -100, 3), -100), self._ctx(bot))
+        self.assertEqual(len(bot.sent), 1)        # suppressed within the hour
+
+    async def test_alerts_topic_silent_unless_pending_reject(self):
+        router, mgr, bot, pending, nudge_state, reject = self._wire()
+        await router(_upd(111, _plain_msg("noise", -100, 9), -100), self._ctx(bot))
+        self.assertEqual(bot.sent, [])            # silent in the bot's alert channel
+        reject.assert_not_awaited()
+        pending[(-100, 111)] = {"x": 1}           # a pending reject for this user
+        await router(_upd(111, _plain_msg("blurry", -100, 9), -100), self._ctx(bot))
+        reject.assert_awaited_once()
+
+    async def test_consume_text_at_summary_reprompts_not_silent(self):
         client = FakeFlowClient()
         mgr = FlowManager(client, get_brand=client.get_brand)
         bot = FakeFlowBot()
-        await mgr.start(bot, 111, -100, 7, "Aisha")
-        f = mgr.flows[111]
-
-        fallback = AsyncMock()
-        router = make_flow_text_router(mgr, fallback)
-
-        # a reply threaded to the live flow prompt -> claimed by the flow
-        upd = MagicMock()
-        upd.effective_user.id = 111
-        upd.effective_message = _reply_msg("Ahmed Hassan", f.prompt_id)
-        ctx = MagicMock(); ctx.bot = bot
-        await router(upd, ctx)
-        fallback.assert_not_awaited()             # flow consumed it
-        self.assertEqual(f.step, "phone")
-
-        # a reply that is NOT a live flow prompt -> falls through to reject-reason
-        upd2 = MagicMock()
-        upd2.effective_user.id = 111
-        upd2.effective_message = _reply_msg("some reject reason", 424242)
-        await router(upd2, ctx)
-        fallback.assert_awaited_once()
+        f = Flow(111, -100, 7, "Aisha"); f.step = "summary"; mgr.flows[111] = f
+        await mgr._consume_text(bot, f, "wait no")
+        self.assertTrue(bot.sent)
+        self.assertIn("Confirm", bot.last_text())
 
     async def test_slip_photo_handler_parses_booking_id_from_reply(self):
         from pepper_bot.handlers import make_slip_photo_handler

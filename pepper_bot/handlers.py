@@ -9,6 +9,7 @@ bot — no reliance on reading arbitrary group messages.
 from __future__ import annotations
 
 import asyncio
+import time
 
 from .gate import resolve_access
 from .target import Target, parse_token
@@ -630,17 +631,80 @@ def make_flow_callback(flow_manager):
     return on_nb
 
 
-def make_flow_text_router(flow_manager, reject_reason_handler):
-    """Single non-command text handler. A force-reply that threads to a live FLOW
-    prompt is consumed by the flow; otherwise it falls through to the Phase 3
-    reject-reason handler. Order matters: the flow claims its own replies first so
-    booking answers never leak into a pending reject (and vice-versa)."""
+# One nudge per sender per topic per hour (#22): never silent, never spammy.
+_NUDGE_INTERVAL_S = 3600.0
+
+
+def _bound_chat_id(store):
+    """The single ops-group chat id Pepper acts in, from the New Booking binding.
+    None until /bindtopics newbooking is run (setup mode → no hard gate yet)."""
+    nb = store.get("newbooking")
+    return nb["chat_id"] if nb else None
+
+
+def _is_alerts_topic(update, store):
+    """True in the bot's own Alerts output topic — where plain text stays silent
+    (a nudge there would clutter the alert ledger)."""
+    a = store.get("alerts")
+    if not a:
+        return False
+    msg = update.effective_message
+    return (update.effective_chat.id == a["chat_id"]
+            and getattr(msg, "message_thread_id", None) == a["thread_id"])
+
+
+async def _nudge_to_newbooking(bot, chat_id, thread_id, uid, nudge_state):
+    """#25/#22: never answer with silence. In a human topic (not New Booking, not
+    the Alerts channel) point the sender at the New Booking topic — rate-limited to
+    once per sender per topic per hour so a chatty topic can't be spammed."""
+    key = (chat_id, thread_id, uid)
+    now = time.monotonic()
+    if now - nudge_state.get(key, 0.0) < _NUDGE_INTERVAL_S:
+        return
+    nudge_state[key] = now
+    await bot.send_message(
+        chat_id=chat_id, message_thread_id=thread_id,
+        text="📝 To make a booking, post it in the ✍️ New Booking topic.")
+
+
+def make_group_text_router(flow_manager, store, reject_reason_handler,
+                           pending_rejects, nudge_state):
+    """The catch-all plain-text handler (privacy OFF — #22). Routing order:
+      L0  HARD BOUNDARY — hard-ignore anything outside the bound ops group (incl.
+          DMs). First line; commands keep their own handlers. (L1 authorization is
+          already enforced upstream by the group -1 whitelist gate.)
+      1)  a reply threaded to a live flow prompt   → the flow (legacy reply path)
+      2)  New Booking topic, or an active flow      → the flow (dictation / step)
+      3)  a pending reject reason (reply in Alerts) → the reject-reason handler
+      4)  otherwise NEVER silent: nudge in human topics (rate-limited); stay silent
+          in the bot's own Alerts channel.
+    The summary-card ✅ Confirm remains the ONLY path to booking creation."""
     async def on_text(update, context):
         msg = update.effective_message
-        uid = update.effective_user.id
+        chat = update.effective_chat
+        uid = getattr(update.effective_user, "id", None)
+        # L0 — hard boundary: only ever act in the bound ops group.
+        bound = _bound_chat_id(store)
+        if bound is not None and chat.id != bound:
+            return
+        # 1) reply to a live flow prompt (still supported).
         if await flow_manager.handle_reply(context.bot, msg, uid):
-            return   # consumed by the guided flow
-        await reject_reason_handler(update, context)   # Phase 3 fallback
+            return
+        in_nb = _in_newbooking_topic(update, store)
+        # 2) the flow owns New-Booking-topic text (and any active flow there).
+        if await flow_manager.handle_group_text(context.bot, msg, uid,
+                                                in_newbooking_topic=in_nb):
+            return
+        # 3) a pending reject reason (typed reply in the Alerts topic).
+        if uid is not None and (chat.id, uid) in pending_rejects:
+            await reject_reason_handler(update, context)
+            return
+        # 4) never silent — nudge in human topics only; the Alerts channel stays quiet.
+        if _is_alerts_topic(update, store):
+            return
+        await _nudge_to_newbooking(context.bot, chat.id,
+                                   getattr(msg, "message_thread_id", None),
+                                   uid, nudge_state)
     return on_text
 
 

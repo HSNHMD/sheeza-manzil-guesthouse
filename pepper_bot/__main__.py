@@ -31,7 +31,7 @@ from .handlers import (cmd_myid, make_ping_handler, make_whitelist_gate,
                        make_reason_command_handler,
                        make_authorize_handler, make_revoke_handler,
                        make_newbooking_handler, make_flow_callback,
-                       make_flow_text_router, make_slip_command_handler,
+                       make_group_text_router, make_slip_command_handler,
                        make_slip_photo_handler)
 
 logging.basicConfig(
@@ -113,13 +113,17 @@ def build_application(cfg: Config | None = None) -> Application:
     # /reason <text> command (works from any topic, no reply threading).
     app.add_handler(CommandHandler(
         "reason", make_reason_command_handler(client, pending_rejects)))
-    # ONE non-command text handler: a flow force-reply is claimed by the flow
-    # first (so booking answers never bleed into a pending reject); otherwise it
-    # falls through to the Phase 3 reject-reason handler.
+    # ONE non-command text handler (privacy OFF, #22): the catch-all. Hard-ignores
+    # anything outside the bound ops group, routes New-Booking-topic text to the
+    # flow (dictation/step), keeps the Alerts reject-reason reply path, and nudges
+    # (rate-limited) in human topics so no message is ever met with silence (#25).
+    nudge_state: dict = {}
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
-        make_flow_text_router(
-            flow_manager, make_reject_reason_handler(client, pending_rejects))))
+        make_group_text_router(
+            flow_manager, store,
+            make_reject_reason_handler(client, pending_rejects),
+            pending_rejects, nudge_state)))
     app.add_error_handler(_on_error)
     return app
 
