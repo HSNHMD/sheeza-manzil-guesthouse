@@ -674,10 +674,9 @@ def _looks_like_question(text: str) -> bool:
 
 
 async def _nudge_to_newbooking(bot, chat_id, thread_id, uid, nudge_state, text=""):
-    """#25/#22: never answer with silence. In a human topic (not New Booking, not the
-    Alerts channel) point the sender the right way — a question → /ask (teach it in
-    situ, #35), otherwise → the New Booking topic. Rate-limited to once per sender per
-    topic per hour so a chatty topic can't be spammed."""
+    """Fires ONLY for text the bot couldn't read as a booking (feed-view catch-all,
+    #22 widened). A question → /ask; anything else → the booking format. Rate-limited
+    to once per sender per topic per hour so it can't spam the feed."""
     key = (chat_id, thread_id, uid)
     now = time.monotonic()
     if now - nudge_state.get(key, 0.0) < _NUDGE_INTERVAL_S:
@@ -687,21 +686,25 @@ async def _nudge_to_newbooking(bot, chat_id, thread_id, uid, nudge_state, text="
         body = ("❓ To ask a question, use `/ask` — e.g. "
                 "`/ask what's the occupancy today?`")
     else:
-        body = "📝 To make a booking, post it in the ✍️ New Booking topic."
+        body = ("📝 I couldn't read that as a booking. Include the guest, dates, room, "
+                "guests, and payment — e.g. `Deluxe, John Smith British, 20-22 sep, "
+                "2 adults, transfer, 7712345` — or use /newbooking.")
     await bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=body)
 
 
 def make_group_text_router(flow_manager, store, reject_reason_handler,
                            pending_rejects, nudge_state):
-    """The catch-all plain-text handler (privacy OFF — #22). Routing order:
-      L0  HARD BOUNDARY — hard-ignore anything outside the bound ops group (incl.
-          DMs). First line; commands keep their own handlers. (L1 authorization is
-          already enforced upstream by the group -1 whitelist gate.)
+    """The catch-all plain-text handler (privacy OFF; WIDENED for feed-view — #22).
+    Staff view the group as one continuous feed, so booking-shaped text ANYWHERE
+    (General included) routes to dictation. Order:
+      L0  HARD BOUNDARY — hard-ignore anything outside the bound ops group (incl. DMs).
       1)  a reply threaded to a live flow prompt   → the flow (legacy reply path)
-      2)  New Booking topic, or an active flow      → the flow (dictation / step)
-      3)  a pending reject reason (reply in Alerts) → the reject-reason handler
-      4)  otherwise NEVER silent: nudge in human topics (rate-limited); stay silent
-          in the bot's own Alerts channel.
+      2)  a pending reject reason (typed reply)     → the reject-reason handler
+      3)  the bot's own Alerts channel              → silent (buttons handled by pv:)
+      4)  anywhere else: an active flow continues, or booking-shaped text STARTS a
+          dictation card/confirm. handle_group_text returns False ONLY for genuinely
+          unparseable text →
+      5)  nudge (rate-limited).
     The summary-card ✅ Confirm remains the ONLY path to booking creation."""
     async def on_text(update, context):
         msg = update.effective_message
@@ -714,18 +717,19 @@ def make_group_text_router(flow_manager, store, reject_reason_handler,
         # 1) reply to a live flow prompt (still supported).
         if await flow_manager.handle_reply(context.bot, msg, uid):
             return
-        in_nb = _in_newbooking_topic(update, store)
-        # 2) the flow owns New-Booking-topic text (and any active flow there).
-        if await flow_manager.handle_group_text(context.bot, msg, uid,
-                                                in_newbooking_topic=in_nb):
-            return
-        # 3) a pending reject reason (typed reply in the Alerts topic).
+        # 2) a pending reject reason (typed reply in Alerts) — BEFORE the Alerts-silent
+        #    gate, so reject reasons still land.
         if uid is not None and (chat.id, uid) in pending_rejects:
             await reject_reason_handler(update, context)
             return
-        # 4) never silent — nudge in human topics only; the Alerts channel stays quiet.
+        # 3) the bot's own Alerts channel: plain text stays silent (buttons still work).
         if _is_alerts_topic(update, store):
             return
+        # 4) anywhere else (any topic, General included): active flow continues, or
+        #    booking-shaped text -> dictation card/confirm.
+        if await flow_manager.handle_group_text(context.bot, msg, uid):
+            return
+        # 5) genuinely unparseable -> nudge (rate-limited).
         await _nudge_to_newbooking(context.bot, chat.id,
                                    getattr(msg, "message_thread_id", None),
                                    uid, nudge_state, getattr(msg, "text", "") or "")

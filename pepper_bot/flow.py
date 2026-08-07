@@ -47,6 +47,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 
 from .llm import normalize_nationality, parse_date, resolve_nationality
 
@@ -141,6 +142,49 @@ class Flow:
         g = self.draft.get("guest", {})
         n = (g.get("first_name", "") + " " + g.get("last_name", "")).strip()
         return n or "this guest"
+
+
+def _has_booking_signal(result) -> bool:
+    """A booking-shaped extraction resolved at least one CONCRETE field — dates, a
+    room/item, guest name, adults, or phone. An all-null 'parse' (e.g. 'thanks',
+    'ok noted') is NOT booking-shaped, so the caller nudges instead of opening a
+    clarify chain. This is what separates 'booking' from 'genuinely unparseable' when
+    every non-Alerts line is fed to the extractor (feed-view catch-all)."""
+    d = getattr(result, "data", None) or {}
+    if d.get("check_in") or d.get("check_out") or d.get("adults") or d.get("items"):
+        return True
+    g = d.get("guest") or {}
+    return bool(g.get("first_name") or g.get("last_name") or g.get("phone"))
+
+
+# Cheap pre-gate before spending a K3 call. Bounds: not a one-word ack, not a long
+# announcement — a briefing containing EXAMPLE bookings must NOT parse as a booking,
+# so the length ceiling drops it before extraction (the Confirm card would gate it
+# anyway, but this avoids the wasted K3 call + a spurious card).
+_MIN_CANDIDATE_CHARS = 10
+_MAX_CANDIDATE_CHARS = 400
+_BOOKING_KEYWORDS = frozenset((
+    "book", "booking", "reserve", "reservation", "room", "rooms", "night", "nights",
+    "deluxe", "dlx", "twin", "suite", "single", "double", "adult", "adults", "pax",
+    "guest", "guests", "child", "children", "kid", "kids", "checkin", "check", "cash",
+    "transfer", "bank", "arriving", "arrival", "stay", "tonight", "tomorrow", "today",
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct",
+    "nov", "dec",
+))
+
+
+def _looks_like_booking_candidate(text: str) -> bool:
+    """Cheap pre-gate: only messages of booking LENGTH carrying a booking SIGNAL —
+    a digit (dates/phone/counts) or a booking keyword — are worth a K3 classification.
+    A one-word ack ('ok', 'thanks') or a long announcement fails here → INSTANT nudge,
+    no K3 call. Past the gate, K3 does the real booking-vs-not classification."""
+    t = (text or "").strip()
+    if not (_MIN_CANDIDATE_CHARS <= len(t) <= _MAX_CANDIDATE_CHARS):
+        return False
+    tl = t.lower()
+    if any(ch.isdigit() for ch in tl):
+        return True
+    return bool(set(re.findall(r"[a-z']+", tl)) & _BOOKING_KEYWORDS)
 
 
 class FlowManager:
@@ -438,35 +482,41 @@ class FlowManager:
             await self._consume_text(bot, f, text)
         return True
 
-    async def handle_group_text(self, bot, message, telegram_id, *,
-                                in_newbooking_topic) -> bool:
-        """Privacy-off routing (#22): consume a PLAIN message by sender+topic state,
-        with NO reply-to threading. Returns True if a flow consumed it or was started
-        from it. An active flow is continued only from the New Booking topic (where
-        the flow lives); a plain line in the New Booking topic with no open flow
-        STARTS a booking from that text. Anti-contamination now rides on topic-scope
-        + one-draft-per-user (#24), not reply-id matching."""
+    async def handle_group_text(self, bot, message, telegram_id) -> bool:
+        """Feed-view catch-all routing (widened): an ACTIVE flow is continued (from
+        anywhere in the group); a plain line with no open flow is CLASSIFIED by the
+        extractor and, if booking-shaped, STARTS a booking. Returns False for
+        genuinely unparseable text so the caller nudges — a stray line never starts a
+        flow. Anti-contamination rides on one-draft-per-user (#24)."""
         text = (getattr(message, "text", "") or "").strip()
         f = self.flows.get(telegram_id)
         if f is not None:
-            if not in_newbooking_topic:
-                return False              # a live flow's answers only count in its topic
             self._touch_idle(bot, f)
             if f.dictating:
                 await self._consume_dictation(bot, f, text)
             else:
                 await self._consume_text(bot, f, text)
             return True
-        if in_newbooking_topic and text:
-            await self._begin_from_text(bot, telegram_id, message, text)
-            return True
+        if text:
+            return await self._begin_from_text(bot, telegram_id, message, text)
         return False
 
-    async def _begin_from_text(self, bot, telegram_id, message, text):
-        """A plain line in the New Booking topic with no open flow. With dictation on,
-        the line IS the dictation (no 'type the whole booking' pre-prompt); with it
-        off, open the strict step-by-step flow (the line just triggers the first
-        field). Booking creation still happens ONLY on the summary-card ✅ Confirm."""
+    async def _begin_from_text(self, bot, telegram_id, message, text) -> bool:
+        """Try to start a booking from a plain group line. CLASSIFY FIRST — extract
+        BEFORE creating any flow. If the text yields a real booking signal, open the
+        flow and go to the summary/clarify card; if it's unparseable (or dictation is
+        off, so we can't classify), return False so the caller nudges — a stray line
+        never leaves a half-started flow. Creation still happens ONLY on ✅ Confirm."""
+        if not self._dictation_on():
+            return False                     # can't classify without the LLM; /newbooking still works
+        if not _looks_like_booking_candidate(text):
+            return False                     # cheap pre-gate: too short/long / no signal → instant nudge, no K3
+        try:
+            result = self.extractor.extract(text)
+        except Exception:  # noqa: BLE001 — extractor is best-effort
+            result = None
+        if result is None or not _has_booking_signal(result):
+            return False                     # genuinely unparseable → caller nudges
         chat_id = getattr(message, "chat_id", None)
         thread_id = getattr(message, "message_thread_id", None)
         u = getattr(message, "from_user", None)
@@ -475,11 +525,11 @@ class FlowManager:
         f = Flow(telegram_id, chat_id, thread_id, name=name)
         self.flows[telegram_id] = f
         self._arm_idle(bot, f)
-        if self._dictation_on():
-            await self._consume_dictation(bot, f, text)   # the line IS the dictation
-        else:
-            await self._prompt_current(bot, f)            # strict: line just triggers
-            await self._persist(f)
+        self._seed_draft_from_extract(f, result)
+        f.clarify_queue = self._clarify_order(result.unresolved)
+        await self._persist(f)
+        await self._advance_clarify(bot, f)
+        return True
 
     async def _consume_text(self, bot, f, text):
         step = f.editing or f.step

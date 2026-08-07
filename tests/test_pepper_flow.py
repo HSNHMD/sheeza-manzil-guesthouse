@@ -591,8 +591,8 @@ class FlowWiringTest(IsolatedAsyncioTestCase):
         router, mgr, bot, pending, nudge_state, reject = self._wire()
         await router(_upd(111, _plain_msg("hello", -100, 3), -100), self._ctx(bot))
         self.assertEqual(len(bot.sent), 1)
-        self.assertIn("New Booking", bot.last_text())
-        await router(_upd(111, _plain_msg("again", -100, 3), -100), self._ctx(bot))
+        self.assertIn("/newbooking", bot.last_text())   # unparseable -> booking-format nudge
+        await router(_upd(111, _plain_msg("thanks", -100, 3), -100), self._ctx(bot))
         self.assertEqual(len(bot.sent), 1)        # suppressed within the hour
 
     async def test_alerts_topic_silent_unless_pending_reject(self):
@@ -633,12 +633,51 @@ class FlowWiringTest(IsolatedAsyncioTestCase):
         self.assertEqual(len(bot.sent), 1)
         self.assertIn("/ask", bot.last_text())
 
-    async def test_general_nudge_booking_shaped_points_to_newbooking(self):
-        router, mgr, bot, *_ = self._wire()
-        await router(_upd(111, _plain_msg("deluxe for John tomorrow 2 adults", -100, 3),
-                          -100), self._ctx(bot))
-        self.assertEqual(len(bot.sent), 1)
-        self.assertIn("New Booking", bot.last_text())
+    async def test_booking_in_general_starts_dictation(self):
+        # WIDENED (feed-view): booking-shaped text in GENERAL (not the New Booking
+        # topic) now starts a dictation card instead of nudging.
+        ex = FakeExtractor(_full_extract())
+        router, mgr, bot, *_ = self._wire(ex)
+        txt = "Deluxe John Smith British 20-22 sep 2 adults transfer"
+        await router(_upd(111, _plain_msg(txt, -100, 3), -100), self._ctx(bot))
+        self.assertIn(111, mgr.flows)             # flow started from General
+        self.assertEqual(ex.calls, [txt])         # K3 classified it as a booking
+
+    async def test_short_text_instant_nudge_no_k3(self):
+        ex = FakeExtractor(_full_extract())       # dictation ON, but pre-gate skips K3
+        router, mgr, bot, *_ = self._wire(ex)
+        await router(_upd(111, _plain_msg("ok", -100, 3), -100), self._ctx(bot))
+        self.assertEqual(ex.calls, [])            # pre-gate: too short -> NO K3 call
+        self.assertNotIn(111, mgr.flows)
+        self.assertTrue(bot.sent)                 # instant nudge
+
+    async def test_long_announcement_nudge_no_k3(self):
+        ex = FakeExtractor(_full_extract())
+        router, mgr, bot, *_ = self._wire(ex)
+        announcement = ("Team briefing: from today use the bot for bookings. Example "
+                        "-- Deluxe, John Smith British, 20-22 sep, 2 adults, transfer, "
+                        "7712345. " * 6)          # > 400 chars
+        await router(_upd(111, _plain_msg(announcement, -100, 3), -100), self._ctx(bot))
+        self.assertEqual(ex.calls, [])            # ceiling -> NO K3, not parsed as a booking
+        self.assertNotIn(111, mgr.flows)
+
+    async def test_candidate_but_not_booking_nudges(self):
+        # Passes the cheap pre-gate (has a digit) but K3 finds no booking -> nudge.
+        ex = FakeExtractor(None)                  # dictation ON, extract() -> None
+        router, mgr, bot, *_ = self._wire(ex)
+        txt = "reminder meeting at 3pm about the roster"
+        await router(_upd(111, _plain_msg(txt, -100, 3), -100), self._ctx(bot))
+        self.assertEqual(ex.calls, [txt])         # K3 WAS consulted
+        self.assertNotIn(111, mgr.flows)          # not a booking -> no flow
+        self.assertTrue(bot.sent)                 # nudged
+
+    def test_booking_candidate_pregate(self):
+        from pepper_bot.flow import _looks_like_booking_candidate
+        self.assertFalse(_looks_like_booking_candidate("ok"))            # too short
+        self.assertFalse(_looks_like_booking_candidate("thanks team!"))  # no signal
+        self.assertFalse(_looks_like_booking_candidate("x" * 500))       # too long
+        self.assertTrue(_looks_like_booking_candidate("deluxe tomorrow 2 adults"))  # kw+digit
+        self.assertTrue(_looks_like_booking_candidate("room 20-22 sep +9607712345"))  # digit
 
     async def test_ask_handler_answers_then_usage(self):
         from pepper_bot.handlers import make_ask_handler
