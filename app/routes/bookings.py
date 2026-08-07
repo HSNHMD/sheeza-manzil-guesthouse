@@ -598,12 +598,13 @@ def record_payment(booking_id):
     from .invoices import generate_invoice
     booking = Booking.query.get_or_404(booking_id)
 
-    if not booking.invoice:
-        generate_invoice(booking)
-
     amount = float(request.form.get('amount', 0))
     method = request.form.get('payment_method', 'cash')
-    inv = booking.invoice
+    # generate_invoice is idempotent: returns the existing invoice, or creates +
+    # flushes + returns a new one. Use its RETURN — re-reading booking.invoice right
+    # after a create leaves a stale None (the FK write doesn't refresh the loaded
+    # relationship), which 500'd on invoice-less (cash) bookings.
+    inv = generate_invoice(booking)
     prev_payment_status = inv.payment_status
     inv.amount_paid = min(inv.amount_paid + amount, inv.total_amount)
     inv.payment_method = method

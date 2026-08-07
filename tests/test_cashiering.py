@@ -532,5 +532,56 @@ class CashieringMigrationTests(unittest.TestCase):
         self.assertEqual(dropped, ['cashier_transactions'])
 
 
+def _seed_booking_no_invoice(*, total=2400.0):
+    """A confirmed booking with NO invoice (e.g. a cash booking) — the case that
+    500'd record_payment before the fix."""
+    g = Guest(first_name='Cash', last_name='Guest',
+              phone='+9607000009', email='c@x')
+    db.session.add(g)
+    room = Room(number='88', name='NoInv', room_type='Test',
+                floor=0, capacity=2, price_per_night=600.0)
+    db.session.add(room)
+    db.session.commit()
+    b = Booking(
+        booking_ref='BKNOINV01',
+        room_id=room.id, guest_id=g.id,
+        check_in_date=date.today() + timedelta(days=2),
+        check_out_date=date.today() + timedelta(days=6),
+        num_guests=1, total_amount=total,
+        status='confirmed',
+    )
+    db.session.add(b)
+    db.session.commit()
+    return b
+
+
+class RecordPaymentInvoicelessTests(_RouteBase):
+    """Regression (#38): POST /bookings/<id>/payment on a booking with NO invoice
+    used to 500 — record_payment created the invoice but re-read a stale
+    booking.invoice (None) -> AttributeError. The fix uses generate_invoice()'s
+    return value (idempotent). Covers the exact BKENO4TC cash-booking case."""
+
+    def setUp(self):
+        super().setUp()
+        self._login(self.admin_id)
+
+    def test_payment_on_invoiceless_booking_generates_invoice_no_500(self):
+        b = _seed_booking_no_invoice()
+        self.assertIsNone(b.invoice)                       # precondition
+        bid = b.id
+        r = self.client.post(
+            f'/bookings/{bid}/payment',
+            data={'amount': '600', 'payment_method': 'cash'},
+            follow_redirects=False,
+        )
+        self.assertIn(r.status_code, (301, 302))           # NOT 500 (the bug)
+        b2 = Booking.query.get(bid)
+        self.assertIsNotNone(b2.invoice)                   # invoice generated
+        self.assertEqual(                                  # exactly one — no duplicate
+            Invoice.query.filter_by(booking_id=bid).count(), 1)
+        self.assertEqual(b2.invoice.amount_paid, 600.0)
+        self.assertIn(b2.invoice.payment_status, ('partial', 'paid'))
+
+
 if __name__ == '__main__':
     unittest.main()
